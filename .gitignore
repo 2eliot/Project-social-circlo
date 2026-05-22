@@ -9,6 +9,7 @@ uploads/
 .env.*
 !.env.example
 !.env.local.example
+!.env.vps.example
 *.log
 *.tsbuildinfo
 dump.rdb
