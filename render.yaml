@@ -1,0 +1,72 @@
+services:
+  - type: web
+    name: appchat-backend
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm ci ; npm run prisma:generate ; npm run build
+    startCommand: npm run prisma:deploy ; npm start
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: CORS_ORIGIN
+        value: https://appchat-frontend.onrender.com
+      - key: COOKIE_SAME_SITE
+        value: none
+      - key: COOKIE_SECURE
+        value: true
+      - key: COOKIE_DOMAIN
+        value: ""
+      - key: DATABASE_URL
+        fromDatabase:
+          name: appchat-db
+          property: connectionString
+      - key: REDIS_HOST
+        fromService:
+          type: redis
+          name: appchat-redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          type: redis
+          name: appchat-redis
+          property: port
+      - key: REDIS_PASSWORD
+        fromService:
+          type: redis
+          name: appchat-redis
+          property: password
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: DATA_ENCRYPTION_KEY
+        sync: false
+
+  - type: web
+    name: appchat-frontend
+    runtime: node
+    rootDir: frontend
+    plan: free
+    buildCommand: npm ci ; npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        value: https://appchat-backend.onrender.com/api/v1
+      - key: NEXT_PUBLIC_WS_URL
+        value: https://appchat-backend.onrender.com
+
+  - type: redis
+    name: appchat-redis
+    plan: free
+
+databases:
+  - name: appchat-db
+    plan: free
+    databaseName: appchat
+    user: appchat

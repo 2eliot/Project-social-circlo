@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+uploads/
+.tools/
+.env
+.env.*
+!.env.example
+!.env.local.example
+*.log
+*.tsbuildinfo
+dump.rdb
+out.txt
+.DS_Store
+coverage/
