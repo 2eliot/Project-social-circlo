@@ -2,6 +2,9 @@
   "name": "appchat-backend",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "nest build",
     "start": "node dist/src/main.js",

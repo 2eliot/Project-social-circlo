@@ -1,4 +1,4 @@
-FROM node:20-bullseye AS build
+FROM node:22-bullseye AS build
 WORKDIR /app
 # mediasoup needs Python and build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -10,7 +10,7 @@ COPY tsconfig.json nest-cli.json ./
 COPY src ./src
 RUN npx prisma generate && npm run build
 
-FROM node:20-bullseye-slim AS runtime
+FROM node:22-bullseye-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/node_modules ./node_modules
