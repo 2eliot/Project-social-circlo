@@ -2,7 +2,7 @@ FROM node:22-bullseye AS build
 WORKDIR /app
 # mediasoup needs Python and build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 build-essential pkg-config && rm -rf /var/lib/apt/lists/*
+    python3 python3-pip build-essential pkg-config && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
 COPY prisma ./prisma
 RUN npm ci
