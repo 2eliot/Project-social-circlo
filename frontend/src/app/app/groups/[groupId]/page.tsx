@@ -193,9 +193,11 @@ export default function GroupPage() {
 
   if (!currentGroup) return <p className="p-6 opacity-70">Cargando…</p>;
 
-  async function toggleChannel(channel: Channel, enabled: boolean) {  function handleOpenProfile(userId: string) {
+  function handleOpenProfile(userId: string) {
     router.push(`/app?profileUserId=${encodeURIComponent(userId)}`);
   }
+
+  async function toggleChannel(channel: Channel, enabled: boolean) {
     if (!canManageChannels) return;
     setChannelToggleBusy(channel.id);
     setFeedback(null);
