@@ -16,6 +16,8 @@ export interface SessionUserPayload {
   globalRole: string;
   displayName: string;
   avatarUrl: string | null;
+  isVerifiedModerator: boolean;
+  badges: string[];
 }
 
 @Injectable()
@@ -26,6 +28,13 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly crypto: CryptoService,
   ) {}
+
+  private buildBadges(user: { globalRole: string; isVerifiedModerator: boolean }) {
+    const badges: string[] = [];
+    if (user.globalRole === 'SUPER_ADMIN') badges.push('Admin');
+    if (user.globalRole === 'GLOBAL_MODERATOR' || user.isVerifiedModerator) badges.push('Moderador');
+    return badges;
+  }
 
   async login(email: string, password: string, meta: { ip?: string; userAgent?: string }) {
     const user = await this.prisma.user.findUnique({ where: { email } });
@@ -71,7 +80,7 @@ export class AuthService {
 
     const profile = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { displayName: true, avatarUrl: true },
+      select: { displayName: true, avatarUrl: true, isVerifiedModerator: true },
     });
 
     return {
@@ -83,6 +92,8 @@ export class AuthService {
         globalRole,
         displayName: profile?.displayName ?? email.split('@')[0],
         avatarUrl: profile?.avatarUrl ?? null,
+        isVerifiedModerator: profile?.isVerifiedModerator ?? false,
+        badges: this.buildBadges({ globalRole, isVerifiedModerator: profile?.isVerifiedModerator ?? false }),
       },
     };
   }

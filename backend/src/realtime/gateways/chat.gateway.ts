@@ -14,6 +14,7 @@ import { WsAuthService, SocketUser } from '../ws-auth.service';
 import { MessagesService } from '../../modules/messages/messages.service';
 import { ModerationService } from '../../modules/moderation/moderation.service';
 import { PresenceService, RateLimiterService } from '../../infrastructure/redis/redis.module';
+import { RealtimeEventsService } from '../realtime-events.service';
 
 interface AuthedSocket extends Socket {
   data: { user: SocketUser };
@@ -30,7 +31,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly moderation: ModerationService,
     private readonly presence: PresenceService,
     private readonly rate: RateLimiterService,
+    private readonly realtimeEvents: RealtimeEventsService,
   ) {}
+
+  afterInit() {
+    this.realtimeEvents.registerChatServer(this.server);
+  }
 
   async handleConnection(socket: Socket) {
     try {
@@ -87,6 +93,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         refId: msg.id,
         content: body.content,
       });
+      this.server.to(`channel:${body.channelId}`).emit('message_new', msg);
       socket.emit('message_pending', msg);
     } else {
       this.server.to(`channel:${body.channelId}`).emit('message_new', msg);

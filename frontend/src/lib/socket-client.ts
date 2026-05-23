@@ -1,7 +1,7 @@
 import { io, Socket } from 'socket.io-client';
 import { getAccessToken, onAccessTokenChange } from './api-client';
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'http://localhost:4000';
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? '';
 
 const sockets = new Map<string, Socket>();
 
@@ -10,9 +10,13 @@ export function getSocket(namespace: '/chat' | '/presence' | '/sfu' | '/social')
   let s = sockets.get(key);
   if (s) return s;
   s = io(`${WS_URL}${namespace}`, {
-    transports: ['websocket'],
+    path: '/socket.io',
     auth: { token: getAccessToken() },
     autoConnect: true,
+    reconnection: true,
+    reconnectionDelay: 1500,
+    reconnectionDelayMax: 8000,
+    timeout: 12000,
   });
   // Refresh auth on token rotation.
   onAccessTokenChange((t) => {

@@ -1,9 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+export const dynamic = 'force-dynamic';
+
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
 import { ChannelView } from '@/features/channels/ChannelView';
+import { resolveMediaUrl } from '@/lib/media-url';
 import { getSocket } from '@/lib/socket-client';
 import { useAuth } from '@/store/auth.store';
 
@@ -40,6 +43,15 @@ interface VoiceStateUser {
   micMuted: boolean;
 }
 
+interface GroupAuditLog {
+  id: string;
+  action: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  actor: { id: string; displayName: string; avatarUrl?: string | null } | null;
+  target: { id: string; displayName: string; avatarUrl?: string | null } | null;
+}
+
 export default function GroupPage() {
   const { groupId } = useParams<{ groupId: string }>();
   const router = useRouter();
@@ -56,10 +68,28 @@ export default function GroupPage() {
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [roleChangeBusy, setRoleChangeBusy] = useState<string | null>(null);
   const [memberModerationBusy, setMemberModerationBusy] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<GroupAuditLog[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [groupSaveBusy, setGroupSaveBusy] = useState(false);
+  const [groupForm, setGroupForm] = useState({ name: '', description: '', privacy: 'PRIVATE' as GroupDetail['privacy'], iconUrl: null as string | null });
+  const iconInputRef = useRef<HTMLInputElement | null>(null);
 
   async function loadGroup() {
     const nextGroup = await api<GroupDetail>(`/groups/${groupId}`);
     setGroup(nextGroup);
+  }
+
+  async function loadAuditLogs() {
+    setAuditLoading(true);
+    try {
+      const rows = await api<GroupAuditLog[]>(`/groups/${groupId}/audit-logs`);
+      setAuditLogs(rows);
+    } catch {
+      setAuditLogs([]);
+    } finally {
+      setAuditLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -95,6 +125,22 @@ export default function GroupPage() {
     currentGroup?.currentUserRole === 'GROUP_MODERATOR' ||
     currentMembership?.role === 'GROUP_ADMIN' ||
     currentMembership?.role === 'GROUP_MODERATOR';
+  const canOpenSettings = canManageChannels || canAssignRoles || canModerateMembers;
+
+  useEffect(() => {
+    if (!currentGroup) return;
+    setGroupForm({
+      name: currentGroup.name,
+      description: currentGroup.description ?? '',
+      privacy: currentGroup.privacy,
+      iconUrl: currentGroup.iconUrl ?? null,
+    });
+  }, [currentGroup]);
+
+  useEffect(() => {
+    if (!settingsOpen || !canOpenSettings) return;
+    void loadAuditLogs();
+  }, [settingsOpen, canOpenSettings, groupId]);
 
   useEffect(() => {
     if (!voiceChannel || !user) return;
@@ -277,6 +323,39 @@ export default function GroupPage() {
     }
   }
 
+  async function uploadGroupIcon(file: File) {
+    const form = new FormData();
+    form.append('file', file);
+    const payload = await api<{ url: string | null }>('/groups/upload-icon', {
+      method: 'POST',
+      body: form,
+    });
+    setGroupForm((current) => ({ ...current, iconUrl: payload.url }));
+  }
+
+  async function saveGroupSettings() {
+    setGroupSaveBusy(true);
+    setFeedback(null);
+    try {
+      await api(`/groups/${groupId}`, {
+        method: 'PATCH',
+        body: {
+          name: groupForm.name.trim(),
+          description: groupForm.description.trim(),
+          privacy: groupForm.privacy,
+          iconUrl: groupForm.iconUrl,
+        },
+      });
+      await Promise.all([loadGroup(), loadAuditLogs()]);
+      setFeedback('Grupo actualizado.');
+      setSettingsOpen(false);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'No se pudo guardar el grupo.');
+    } finally {
+      setGroupSaveBusy(false);
+    }
+  }
+
   function renderMemberPopup() {
     if (!selectedMemberId || (!canAssignRoles && !canModerateMembers)) return null;
 
@@ -295,9 +374,15 @@ export default function GroupPage() {
         <div className="absolute inset-x-0 bottom-4 flex justify-center px-3">
           <div className="w-full max-w-[220px] rounded-[18px] border border-white/10 bg-[#111827]/97 p-2 shadow-[0_20px_40px_rgba(0,0,0,.34)] backdrop-blur-[18px]">
             <div className="mb-2 flex items-center gap-2 px-1">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-[#111925] text-[10px] font-black text-white/88">
-                {selectedMember?.avatarUrl ? <img src={selectedMember.avatarUrl} alt={selectedMember.displayName} className="h-full w-full object-cover" /> : selectedMember?.displayName?.slice(0, 2).toUpperCase()}
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedMember?.id) router.push(`/app?profileUserId=${encodeURIComponent(selectedMember.id)}`);
+                }}
+                className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-[#111925] text-[10px] font-black text-white/88"
+              >
+                {selectedMember?.avatarUrl ? <img src={resolveMediaUrl(selectedMember.avatarUrl)} alt={selectedMember.displayName} className="h-full w-full object-cover" /> : selectedMember?.displayName?.slice(0, 2).toUpperCase()}
+              </button>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[10px] font-bold uppercase tracking-[0.08em] text-white/82">{selectedMember?.displayName ?? 'Usuario'}</div>
               </div>
@@ -358,6 +443,16 @@ export default function GroupPage() {
             <div className="truncate text-sm font-semibold text-white/92">{currentGroup.name}</div>
             <div className="text-[11px] uppercase tracking-[0.12em] text-white/42">Grupo</div>
           </div>
+          {canOpenSettings ? (
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className="flex h-11 w-11 items-center justify-center rounded-[16px] border border-white/10 bg-white/[0.04] text-white/82 shadow-[0_10px_24px_rgba(0,0,0,.24)]"
+              aria-label="Ajustes del grupo"
+            >
+              <DotsMiniIcon />
+            </button>
+          ) : null}
         </div>
 
         <section className="overflow-hidden rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(27,33,50,.96),rgba(10,14,24,.98))] shadow-[0_24px_60px_rgba(0,0,0,.42)] backdrop-blur-[18px]">
@@ -407,13 +502,15 @@ export default function GroupPage() {
                                   <div className={`relative mx-auto h-[68px] w-[68px] rounded-full p-[3px] ${pageIndex === 0 && index < 2 ? 'bg-[linear-gradient(135deg,#7df7ff,#57b3ff)] shadow-[0_0_18px_rgba(113,247,255,.32)]' : 'bg-[linear-gradient(135deg,rgba(255,255,255,.28),rgba(255,255,255,.08))]'}`}>
                                     <button
                                       type="button"
-                                      onClick={() => {
+                                      onClick={() => router.push(`/app?profileUserId=${encodeURIComponent(member.id)}`)}
+                                      onContextMenu={(event) => {
                                         if ((!canAssignRoles && !canModerateMembers) || member.id === user?.id) return;
+                                        event.preventDefault();
                                         setSelectedMemberId((current) => (current === member.id ? null : member.id));
                                       }}
                                       className="relative h-full w-full overflow-hidden rounded-full border border-white/12 bg-[#111925]"
                                     >
-                                      {member.avatarUrl ? <img src={member.avatarUrl} alt={member.displayName} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-base font-black text-white/88">{member.displayName.slice(0, 2).toUpperCase()}</div>}
+                                        {member.avatarUrl ? <img src={resolveMediaUrl(member.avatarUrl)} alt={member.displayName} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-base font-black text-white/88">{member.displayName.slice(0, 2).toUpperCase()}</div>}
                                       <div className={`absolute bottom-0.5 right-0.5 flex h-5 w-5 items-center justify-center rounded-full border shadow-[0_0_12px_rgba(113,247,255,.22)] ${member.micMuted ? 'border-rose-300/45 bg-[#3a1520] text-rose-200' : 'border-emerald-300/45 bg-[#133326] text-emerald-200'}`}>
                                         <ParticipantMicIcon muted={member.micMuted} />
                                       </div>
@@ -500,6 +597,99 @@ export default function GroupPage() {
         </section>
       </div>
       {renderMemberPopup()}
+      {settingsOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 px-3 pb-3 pt-12 backdrop-blur-[2px]">
+          <button type="button" className="absolute inset-0" aria-label="Cerrar ajustes" onClick={() => setSettingsOpen(false)} />
+          <div className="relative w-full max-w-[430px] overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,23,35,.98),rgba(8,11,20,.99))] shadow-[0_28px_60px_rgba(0,0,0,.42)]">
+            <div className="max-h-[82vh] overflow-y-auto px-4 pb-5 pt-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-white/92">Ajustes del grupo</div>
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-white/42">Admin y CoA</div>
+                </div>
+                <button type="button" onClick={() => setSettingsOpen(false)} className="text-xs font-semibold text-white/60">Cerrar</button>
+              </div>
+
+              <div className="mt-4 rounded-[22px] border border-white/8 bg-white/[0.03] p-3">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => iconInputRef.current?.click()}
+                    className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-[18px] border border-white/10 bg-[#111925]"
+                  >
+                    {groupForm.iconUrl ? <img src={resolveMediaUrl(groupForm.iconUrl)} alt={groupForm.name} className="h-full w-full object-cover" /> : <span className="text-lg font-black text-white/82">{groupForm.name.slice(0, 2).toUpperCase()}</span>}
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-semibold uppercase tracking-[0.1em] text-white/55">Portada</div>
+                    <button type="button" onClick={() => iconInputRef.current?.click()} className="mt-1 rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-cyan-100">
+                      Cambiar foto
+                    </button>
+                  </div>
+                  <input
+                    ref={iconInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void uploadGroupIcon(file);
+                      event.target.value = '';
+                    }}
+                  />
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  <label className="block">
+                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/48">Nombre</div>
+                    <input value={groupForm.name} onChange={(event) => setGroupForm((current) => ({ ...current, name: event.target.value.slice(0, 60) }))} className="w-full rounded-[16px] border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white" />
+                  </label>
+                  <label className="block">
+                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/48">Descripción</div>
+                    <textarea value={groupForm.description} onChange={(event) => setGroupForm((current) => ({ ...current, description: event.target.value.slice(0, 280) }))} rows={3} className="w-full rounded-[16px] border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white" />
+                  </label>
+                  <label className="block">
+                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/48">Privacidad</div>
+                    <select value={groupForm.privacy} onChange={(event) => setGroupForm((current) => ({ ...current, privacy: event.target.value as GroupDetail['privacy'] }))} className="w-full rounded-[16px] border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white">
+                      <option value="PUBLIC_INVITE">Publico con invitación</option>
+                      <option value="PRIVATE">Privado</option>
+                      <option value="SECRET">Secreto</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="mt-4 flex justify-end">
+                  <button type="button" disabled={groupSaveBusy} onClick={() => void saveGroupSettings()} className="rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-fuchsia-100 disabled:opacity-50">
+                    {groupSaveBusy ? 'Guardando...' : 'Guardar cambios'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-[22px] border border-white/8 bg-white/[0.03] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-white/92">Auditoría</div>
+                    <div className="text-[11px] text-white/48">Altas, expulsiones, CoA y cambios del grupo</div>
+                  </div>
+                  <button type="button" onClick={() => void loadAuditLogs()} className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/58">Recargar</button>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {auditLoading ? <div className="rounded-[16px] border border-white/8 bg-white/[0.03] px-3 py-3 text-xs text-white/52">Cargando auditoría...</div> : null}
+                  {!auditLoading && auditLogs.length === 0 ? <div className="rounded-[16px] border border-white/8 bg-white/[0.03] px-3 py-3 text-xs text-white/52">Aún no hay registros.</div> : null}
+                  {!auditLoading ? auditLogs.map((entry) => (
+                    <div key={entry.id} className="rounded-[16px] border border-white/8 bg-white/[0.03] px-3 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-xs font-semibold text-white/90">{formatAuditAction(entry)}</div>
+                        <div className="text-[10px] uppercase tracking-[0.08em] text-white/36">{formatTime(entry.createdAt)}</div>
+                      </div>
+                      <div className="mt-1 text-[11px] text-white/58">{formatAuditMeta(entry)}</div>
+                    </div>
+                  )) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -551,6 +741,16 @@ function BackMiniIcon() {
   );
 }
 
+function DotsMiniIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
+      <circle cx="5" cy="12" r="1.7" />
+      <circle cx="12" cy="12" r="1.7" />
+      <circle cx="19" cy="12" r="1.7" />
+    </svg>
+  );
+}
+
 function VoicePowerIcon({ enabled }: { enabled: boolean }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
@@ -584,6 +784,51 @@ function VoiceJoinIcon({ joined, pending }: { joined: boolean; pending: boolean 
       <path d="M3 12h17" strokeLinecap="round" />
     </svg>
   );
+}
+
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat('es-DO', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
+function formatAuditAction(entry: GroupAuditLog) {
+  const actor = entry.actor?.displayName ?? 'Sistema';
+  const target = entry.target?.displayName ?? 'usuario';
+
+  switch (entry.action) {
+    case 'GROUP_UPDATED':
+      return `${actor} editó el grupo`;
+    case 'MEMBER_JOINED':
+      return `${target} entró al grupo`;
+    case 'MEMBER_KICK':
+      return `${actor} expulsó a ${target}`;
+    case 'MEMBER_BAN':
+    case 'MEMBER_PERMABAN':
+      return `${actor} expulsó a ${target}`;
+    case 'MEMBER_UNBAN':
+      return `${actor} rehabilitó a ${target}`;
+    case 'MEMBER_ROLE_CHANGED':
+      return `${actor} cambió el rol de ${target}`;
+    default:
+      return entry.action;
+  }
+}
+
+function formatAuditMeta(entry: GroupAuditLog) {
+  if (entry.action === 'MEMBER_ROLE_CHANGED' && typeof entry.metadata.role === 'string') {
+    return entry.metadata.role === 'GROUP_MODERATOR' ? 'Nuevo rol: CoA' : 'Nuevo rol: miembro';
+  }
+  if (typeof entry.metadata.reason === 'string' && entry.metadata.reason) {
+    return `Motivo: ${entry.metadata.reason}`;
+  }
+  if (entry.action === 'GROUP_UPDATED') {
+    return 'Se guardaron cambios de nombre, descripción, foto o privacidad.';
+  }
+  return 'Acción registrada correctamente.';
 }
 
 function emit<T = any>(socket: any, event: string, payload: unknown): Promise<T> {

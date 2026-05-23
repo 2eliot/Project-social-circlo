@@ -57,18 +57,37 @@ export class GroupsController {
     if (!file) {
       return { url: null };
     }
-    const origin = `${req.protocol}://${req.get('host')}`;
-    return { url: `${origin}/uploads/groups/${file.filename}` };
+      return { url: `/uploads/groups/${file.filename}` };
+  }
+
+  @Post('upload-banner')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: 'uploads/groups',
+        filename: (_req, file, cb) => cb(null, `${randomUUID()}${extname(file.originalname) || '.png'}`),
+      }),
+      fileFilter: (_req, file, cb) => {
+        cb(null, file.mimetype.startsWith('image/'));
+      },
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
+  uploadBanner(@Req() req: Request, @UploadedFile() file?: Express.Multer.File) {
+    if (!file) {
+      return { url: null };
+    }
+      return { url: `/uploads/groups/${file.filename}` };
   }
 
   @Patch(':groupId')
   @UseGuards(CbacGuard, RbacGuard)
-  @GroupRoles('GROUP_ADMIN')
+  @GroupRoles('GROUP_ADMIN', 'GROUP_MODERATOR')
   @Roles('SUPER_ADMIN', 'GLOBAL_MODERATOR', 'USER')
   update(
     @CurrentUser() user: AuthUser,
     @Param('groupId', ParseUUIDPipe) groupId: string,
-    @Body() body: { name?: string; description?: string; iconUrl?: string | null; privacy?: GroupPrivacy },
+    @Body() body: { name?: string; description?: string; iconUrl?: string | null; bannerUrl?: string | null; privacy?: GroupPrivacy },
   ) {
     return this.service.update(user.id, groupId, body);
   }
@@ -76,6 +95,14 @@ export class GroupsController {
   @Get(':groupId')
   get(@CurrentUser() user: AuthUser, @Param('groupId', ParseUUIDPipe) groupId: string) {
     return this.service.get(user.id, groupId);
+  }
+
+  @Get(':groupId/audit-logs')
+  @UseGuards(CbacGuard, RbacGuard)
+  @GroupRoles('GROUP_ADMIN', 'GROUP_MODERATOR')
+  @Roles('SUPER_ADMIN', 'GLOBAL_MODERATOR', 'USER')
+  auditLogs(@CurrentUser() user: AuthUser, @Param('groupId', ParseUUIDPipe) groupId: string) {
+    return this.service.listAuditLogs(user, groupId);
   }
 
   @Post(':groupId/members/:memberUserId/moderate')

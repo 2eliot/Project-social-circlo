@@ -5,6 +5,37 @@ import { PrismaService } from '../../infrastructure/database/prisma.module';
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private buildProfilePath(displayName: string) {
+    return `/app/profile/${encodeURIComponent(displayName)}`;
+  }
+
+  private normalizeHandle(raw: string) {
+    return raw.trim().replace(/^@+/, '').trim();
+  }
+
+  private buildBadges(user: { globalRole: 'SUPER_ADMIN' | 'GLOBAL_MODERATOR' | 'USER'; isVerifiedModerator: boolean }) {
+    const badges: string[] = [];
+    if (user.globalRole === 'SUPER_ADMIN') badges.push('Admin');
+    if (user.globalRole === 'GLOBAL_MODERATOR' || user.isVerifiedModerator) badges.push('Moderador');
+    return badges;
+  }
+
+  private mapRelationshipUser(user: {
+    id: string;
+    displayName: string;
+    avatarUrl: string | null;
+    globalRole: 'SUPER_ADMIN' | 'GLOBAL_MODERATOR' | 'USER';
+    isVerifiedModerator: boolean;
+  }) {
+    return {
+      id: user.id,
+      displayName: user.displayName,
+      profilePath: this.buildProfilePath(user.displayName),
+      avatarUrl: user.avatarUrl,
+      badges: this.buildBadges(user),
+    };
+  }
+
   private async getBlockedIds(userId: string) {
     const rows = await this.prisma.userBlock.findMany({
       where: {
@@ -88,6 +119,7 @@ export class UsersService {
       return {
         id: u.id,
         displayName: 'Anonymous',
+        profilePath: this.buildProfilePath('Anonymous'),
         avatarUrl: null,
         isAnonymousProfile: true,
         isVerifiedModerator: u.isVerifiedModerator,
@@ -99,17 +131,94 @@ export class UsersService {
         followsYou: Boolean(followsYou),
         hasBlocked: Boolean(hasBlocked),
         blockedYou: Boolean(blockedYou),
+        badges: this.buildBadges(u),
       };
     }
     return {
       ...u,
+      profilePath: this.buildProfilePath(u.displayName),
       followersCount: u._count.followsReceived,
       followingCount: u._count.followsAuthored,
       isFollowing: Boolean(isFollowing),
       followsYou: Boolean(followsYou),
       hasBlocked: Boolean(hasBlocked),
       blockedYou: Boolean(blockedYou),
+      badges: this.buildBadges(u),
     };
+  }
+
+  async getPublicProfileByHandle(viewerId: string, handle: string) {
+    const normalizedHandle = this.normalizeHandle(handle);
+    if (!normalizedHandle) throw new NotFoundException();
+    const user = await this.prisma.user.findFirst({
+      where: {
+        displayName: { equals: normalizedHandle, mode: 'insensitive' },
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException();
+    return this.getPublicProfile(viewerId, user.id);
+  }
+
+  async listFollowers(viewerId: string, userId: string) {
+    await this.assertVisibleToViewer(viewerId, userId);
+    const rows = await this.prisma.userFollow.findMany({
+      where: {
+        followingId: userId,
+        follower: {
+          deletedAt: null,
+          isBanned: false,
+          isAnonymousProfile: false,
+        },
+      },
+      select: {
+        follower: {
+          select: {
+            id: true,
+            displayName: true,
+            avatarUrl: true,
+            globalRole: true,
+            isVerifiedModerator: true,
+          },
+        },
+      },
+    });
+
+    return rows
+      .map((row) => row.follower)
+      .sort((left, right) => left.displayName.localeCompare(right.displayName))
+      .map((candidate) => this.mapRelationshipUser(candidate));
+  }
+
+  async listFollowing(viewerId: string, userId: string) {
+    await this.assertVisibleToViewer(viewerId, userId);
+    const rows = await this.prisma.userFollow.findMany({
+      where: {
+        followerId: userId,
+        following: {
+          deletedAt: null,
+          isBanned: false,
+          isAnonymousProfile: false,
+        },
+      },
+      select: {
+        following: {
+          select: {
+            id: true,
+            displayName: true,
+            avatarUrl: true,
+            globalRole: true,
+            isVerifiedModerator: true,
+          },
+        },
+      },
+    });
+
+    return rows
+      .map((row) => row.following)
+      .sort((left, right) => left.displayName.localeCompare(right.displayName))
+      .map((candidate) => this.mapRelationshipUser(candidate));
   }
 
   async updateMe(userId: string, patch: { displayName?: string; avatarUrl?: string; isAnonymousProfile?: boolean }) {
@@ -142,6 +251,8 @@ export class UsersService {
         id: true,
         displayName: true,
         avatarUrl: true,
+        globalRole: true,
+        isVerifiedModerator: true,
         _count: { select: { followsReceived: true } },
       },
       orderBy: { displayName: 'asc' },
@@ -151,8 +262,10 @@ export class UsersService {
       users.map(async (candidate) => ({
         id: candidate.id,
         displayName: candidate.displayName,
+        profilePath: this.buildProfilePath(candidate.displayName),
         avatarUrl: candidate.avatarUrl,
         followersCount: candidate._count.followsReceived,
+        badges: this.buildBadges(candidate),
         isFollowing: Boolean(
           await this.prisma.userFollow.findUnique({
             where: { followerId_followingId: { followerId: meId, followingId: candidate.id } },

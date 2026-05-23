@@ -63,10 +63,10 @@ docker compose --env-file .env.vps -f docker-compose.vps.yml up -d --build
 ```
 
 Default exposed ports in the VPS compose file:
-- `3000` -> frontend
+- `3001` -> frontend
 - `4000` -> backend
 
-If you later place Nginx or Caddy in front of the stack, point the public site to port `3000` and keep the backend private or proxy `/api` and Socket.IO traffic to port `4000`.
+If you later place Nginx or Caddy in front of the stack, point the public site to port `3001` and keep the backend private or proxy `/api` and Socket.IO traffic to port `4000`.
 
 ## Render deployment
 

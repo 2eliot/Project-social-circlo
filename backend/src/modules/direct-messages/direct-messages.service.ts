@@ -293,6 +293,12 @@ export class DirectMessagesService {
     return this.getConversation(userId, conversationId);
   }
 
+  async removeConversation(userId: string, conversationId: string) {
+    await this.assertParticipant(userId, conversationId);
+    await this.prisma.directConversation.delete({ where: { id: conversationId } });
+    return { ok: true };
+  }
+
   async removeMessage(userId: string, conversationId: string, messageId: string) {
     const conv = await this.assertParticipant(userId, conversationId);
     const peerId = conv.userAId === userId ? conv.userBId : conv.userAId;

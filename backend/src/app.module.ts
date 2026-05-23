@@ -17,6 +17,7 @@ import { BlocksModule } from './modules/blocks/blocks.module';
 import { DirectMessagesModule } from './modules/direct-messages/direct-messages.module';
 import { ModerationModule } from './modules/moderation/moderation.module';
 import { PostsModule } from './modules/posts/posts.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 import { RealtimeModule } from './realtime/realtime.module';
 
@@ -40,6 +41,7 @@ import { RealtimeModule } from './realtime/realtime.module';
     DirectMessagesModule,
     ModerationModule,
     PostsModule,
+    NotificationsModule,
     RealtimeModule,
   ],
 })

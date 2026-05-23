@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/database/prisma.module';
 import { RealtimeEventsService } from '../../realtime/realtime-events.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const POST_CONTENT_MAX_LENGTH = 120;
 const POST_COMMENT_MAX_LENGTH = 80;
@@ -31,6 +32,8 @@ type FeedPostRow = {
   createdAt: Date;
   authorDisplayName: string;
   authorAvatarUrl: string | null;
+  authorGlobalRole: 'SUPER_ADMIN' | 'GLOBAL_MODERATOR' | 'USER';
+  authorIsVerifiedModerator: boolean;
 };
 
 @Injectable()
@@ -38,6 +41,7 @@ export class PostsService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtimeEvents: RealtimeEventsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async onModuleInit() {
@@ -85,7 +89,9 @@ export class PostsService implements OnModuleInit {
           p.comments,
           p.created_at AS "createdAt",
           u.display_name AS "authorDisplayName",
-          u.avatar_url AS "authorAvatarUrl"
+          u.avatar_url AS "authorAvatarUrl",
+          u.global_role AS "authorGlobalRole",
+          u.is_verified_moderator AS "authorIsVerifiedModerator"
         FROM feed_posts p
         INNER JOIN users u ON u.id = p.author_id
         WHERE p.deleted_at IS NULL
@@ -125,13 +131,15 @@ export class PostsService implements OnModuleInit {
     const inserted = rows[0];
     const author = await this.prisma.user.findUnique({
       where: { id: authorId },
-      select: { displayName: true, avatarUrl: true },
+      select: { displayName: true, avatarUrl: true, globalRole: true, isVerifiedModerator: true },
     });
 
     const post = this.serialize({
       ...inserted,
       authorDisplayName: author?.displayName ?? 'Usuario',
       authorAvatarUrl: author?.avatarUrl ?? null,
+      authorGlobalRole: author?.globalRole ?? 'USER',
+      authorIsVerifiedModerator: author?.isVerifiedModerator ?? false,
     }, authorId);
 
     this.realtimeEvents.emitFeedPostCreated(post);
@@ -139,7 +147,7 @@ export class PostsService implements OnModuleInit {
   }
 
   async toggleLike(postId: string, userId: string) {
-    const post = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRawUnsafe<FeedPostRow[]>(
         `
           SELECT
@@ -151,7 +159,9 @@ export class PostsService implements OnModuleInit {
             p.comments,
             p.created_at AS "createdAt",
             u.display_name AS "authorDisplayName",
-            u.avatar_url AS "authorAvatarUrl"
+            u.avatar_url AS "authorAvatarUrl",
+            u.global_role AS "authorGlobalRole",
+            u.is_verified_moderator AS "authorIsVerifiedModerator"
           FROM feed_posts p
           INNER JOIN users u ON u.id = p.author_id
           WHERE p.id = $1::uuid AND p.deleted_at IS NULL
@@ -167,6 +177,7 @@ export class PostsService implements OnModuleInit {
 
       const nextLikes = this.normalizeLikeUserIds(row.likeUserIds);
       const existingIndex = nextLikes.indexOf(userId);
+      const likedNow = existingIndex < 0;
       if (existingIndex >= 0) {
         nextLikes.splice(existingIndex, 1);
       } else {
@@ -179,11 +190,31 @@ export class PostsService implements OnModuleInit {
         JSON.stringify(nextLikes),
       );
 
-      return this.serialize({ ...row, likeUserIds: nextLikes }, userId);
+      return {
+        post: this.serialize({ ...row, likeUserIds: nextLikes }, userId),
+        notify: likedNow,
+        ownerUserId: row.authorId,
+      };
     });
 
-    this.realtimeEvents.emitFeedPostUpdated(post);
-    return post;
+    this.realtimeEvents.emitFeedPostUpdated(result.post);
+
+    if (result.notify && result.ownerUserId !== userId) {
+      const actor = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { displayName: true },
+      });
+      await this.notifications.createInteraction({
+        userId: result.ownerUserId,
+        actorUserId: userId,
+        kind: 'POST_LIKED',
+        postId,
+        title: 'Nuevo like',
+        body: `${actor?.displayName ?? 'Alguien'} le dio like a tu publicación.`,
+      });
+    }
+
+    return result.post;
   }
 
   async addComment(postId: string, userId: string, rawBody: string) {
@@ -212,7 +243,9 @@ export class PostsService implements OnModuleInit {
             p.comments,
             p.created_at AS "createdAt",
             u.display_name AS "authorDisplayName",
-            u.avatar_url AS "authorAvatarUrl"
+            u.avatar_url AS "authorAvatarUrl",
+            u.global_role AS "authorGlobalRole",
+            u.is_verified_moderator AS "authorIsVerifiedModerator"
           FROM feed_posts p
           INNER JOIN users u ON u.id = p.author_id
           WHERE p.id = $1::uuid AND p.deleted_at IS NULL
@@ -245,6 +278,18 @@ export class PostsService implements OnModuleInit {
     });
 
     this.realtimeEvents.emitFeedPostUpdated(post);
+
+    if (post.authorId !== userId) {
+      await this.notifications.createInteraction({
+        userId: post.authorId,
+        actorUserId: userId,
+        kind: 'POST_COMMENTED',
+        postId,
+        title: 'Nuevo comentario',
+        body: `${author?.displayName ?? 'Alguien'} comentó tu publicación.`,
+      });
+    }
+
     return post;
   }
 
@@ -375,6 +420,8 @@ export class PostsService implements OnModuleInit {
         id: row.authorId,
         displayName: row.authorDisplayName,
         avatarUrl: row.authorAvatarUrl,
+        globalRole: row.authorGlobalRole,
+        isVerifiedModerator: row.authorIsVerifiedModerator,
       },
     };
   }

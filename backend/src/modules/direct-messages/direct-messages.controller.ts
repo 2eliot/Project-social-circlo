@@ -45,12 +45,11 @@ export class DirectMessagesController {
     if (!file) {
       return { attachment: null };
     }
-    const origin = `${req.protocol}://${req.get('host')}`;
-    const kind = file.mimetype.startsWith('audio/') ? 'audio' : 'image';
+    const kind = file.mimetype.startsWith('audio/') ? 'voice' : 'image';
     return {
       attachment: {
         kind,
-        url: `${origin}/uploads/dm/${file.filename}`,
+          url: `/uploads/dm/${file.filename}`,
         mimeType: file.mimetype,
         fileName: file.originalname,
         size: file.size,
@@ -66,6 +65,11 @@ export class DirectMessagesController {
   @Post(':conversationId/reject')
   reject(@CurrentUser() user: AuthUser, @Param('conversationId', ParseUUIDPipe) cid: string) {
     return this.service.rejectConversation(user.id, cid);
+  }
+
+  @Delete(':conversationId')
+  removeConversation(@CurrentUser() user: AuthUser, @Param('conversationId', ParseUUIDPipe) cid: string) {
+    return this.service.removeConversation(user.id, cid);
   }
 
   @Get(':conversationId/messages')

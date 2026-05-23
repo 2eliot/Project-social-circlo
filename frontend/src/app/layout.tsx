@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { DevServiceWorkerCleanup } from './DevServiceWorkerCleanup';
+import { AuthSessionSync } from './AuthSessionSync';
 
 export const metadata: Metadata = {
   title: 'Appchat',
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es">
       <body>
         <DevServiceWorkerCleanup />
+        <AuthSessionSync />
         {children}
       </body>
     </html>

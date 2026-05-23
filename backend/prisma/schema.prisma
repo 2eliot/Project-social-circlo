@@ -175,6 +175,7 @@ model Group {
   slug        String       @unique @db.VarChar(80)
   description String?
   iconUrl     String?      @map("icon_url")
+  bannerUrl   String?      @map("banner_url")
   privacy     GroupPrivacy @default(PRIVATE)
   isDeleted   Boolean      @default(false) @map("is_deleted")
   createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz

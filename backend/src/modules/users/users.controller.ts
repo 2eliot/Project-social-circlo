@@ -18,6 +18,21 @@ export class UsersController {
     return this.service.search(user.id, q ?? '');
   }
 
+  @Get('handle/:handle')
+  getByHandle(@CurrentUser() user: AuthUser, @Param('handle') handle: string) {
+    return this.service.getPublicProfileByHandle(user.id, handle);
+  }
+
+  @Get(':id/followers')
+  followers(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.service.listFollowers(user.id, id);
+  }
+
+  @Get(':id/following')
+  following(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.service.listFollowing(user.id, id);
+  }
+
   @Get(':id')
   get(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.service.getPublicProfile(user.id, id);
@@ -59,8 +74,7 @@ export class UsersController {
     if (!file) {
       return { url: null };
     }
-    const origin = `${req.protocol}://${req.get('host')}`;
-    return { url: `${origin}/uploads/avatars/${file.filename}` };
+      return { url: `/uploads/avatars/${file.filename}` };
   }
 
   @Patch('me')

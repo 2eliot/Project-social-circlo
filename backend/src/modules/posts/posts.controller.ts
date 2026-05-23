@@ -35,11 +35,10 @@ export class PostsController {
     if (!file) {
       return { attachment: null };
     }
-    const origin = `${req.protocol}://${req.get('host')}`;
     return {
       attachment: {
         kind: file.mimetype.startsWith('audio/') ? 'voice' : 'image',
-        url: `${origin}/uploads/posts/${file.filename}`,
+          url: `/uploads/posts/${file.filename}`,
         mimeType: file.mimetype,
         fileName: file.originalname,
         size: file.size,

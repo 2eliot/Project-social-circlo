@@ -5,14 +5,20 @@
  *  - Transparent retry on 401: hits /auth/refresh once before failing.
  */
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+const API = process.env.NEXT_PUBLIC_API_URL ?? '/api/v1';
+const ACCESS_TOKEN_STORAGE_KEY = 'appchat.accessToken';
 
-let accessToken: string | null = null;
+let accessToken: string | null =
+  typeof window === 'undefined' ? null : window.sessionStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
 let refreshing: Promise<boolean> | null = null;
 const listeners = new Set<(t: string | null) => void>();
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) window.sessionStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
+    else window.sessionStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+  }
   listeners.forEach((l) => l(token));
 }
 export function getAccessToken() {

@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ApiError, api } from '@/lib/api-client';
+import { normalizeMediaUrl, resolveMediaUrl } from '@/lib/media-url';
 import { getSocket } from '@/lib/socket-client';
 import { useAuth } from '@/store/auth.store';
 
@@ -67,6 +68,15 @@ type UserSearchResult = {
   displayName: string;
   avatarUrl?: string | null;
   followersCount: number;
+  badges?: string[];
+};
+
+type ProfileRelationshipUser = {
+  id: string;
+  displayName: string;
+  profilePath?: string;
+  avatarUrl?: string | null;
+  badges?: string[];
 };
 
 type UserProfile = {
@@ -74,6 +84,7 @@ type UserProfile = {
   displayName: string;
   avatarUrl?: string | null;
   globalRole: string;
+  badges?: string[];
   followsYou: boolean;
   isFollowing: boolean;
   followersCount: number;
@@ -87,6 +98,7 @@ type Group = {
   description?: string | null;
   privacy?: GroupPrivacy;
   iconUrl?: string | null;
+  bannerUrl?: string | null;
   ownerId: string;
   owner?: { id: string; displayName: string; avatarUrl?: string | null };
   memberCount?: number;
@@ -115,7 +127,7 @@ type FeedPost = {
   likedByMe: boolean;
   likeCount: number;
   comments: FeedComment[];
-  author: { id: string; displayName: string; avatarUrl?: string | null };
+  author: { id: string; displayName: string; avatarUrl?: string | null; globalRole?: string; isVerifiedModerator?: boolean; badges?: string[] };
 };
 
 type FeedComment = {
@@ -136,6 +148,31 @@ type LiveDmNotice = {
   preview: string;
 };
 
+type NotificationItem = {
+  id: string;
+  kind: 'POST_LIKED' | 'POST_COMMENTED';
+  title: string;
+  body: string;
+  postId: string | null;
+  isRead: boolean;
+  createdAt: string;
+  actor: {
+    id: string | null;
+    displayName: string;
+    avatarUrl?: string | null;
+    globalRole: 'SUPER_ADMIN' | 'GLOBAL_MODERATOR' | 'USER';
+    isVerifiedModerator: boolean;
+  } | null;
+};
+
+type LiveInteractionNotice = {
+  id: string;
+  title: string;
+  body: string;
+  actorDisplayName: string;
+  actorAvatarUrl?: string | null;
+};
+
 const POST_CONTENT_MAX_LENGTH = 120;
 
 function UserAvatar({
@@ -143,11 +180,13 @@ function UserAvatar({
   avatarUrl,
   size = 56,
   className = '',
+  onClick,
 }: {
   displayName?: string | null;
   avatarUrl?: string | null;
   size?: number;
   className?: string;
+  onClick?: (event: React.MouseEvent<HTMLDivElement>) => void;
 }) {
   const initials = (displayName ?? '?').slice(0, 2).toUpperCase();
 
@@ -155,6 +194,17 @@ function UserAvatar({
     <div
       className={`shrink-0 overflow-hidden flex items-center justify-center bg-[#101521] border border-white/10 text-white/90 ${className}`.trim()}
       style={{ width: size, height: size, borderRadius: Math.round(size * 0.34), fontSize: Math.max(14, Math.round(size * 0.32)) }}
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (!onClick) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick(event as unknown as React.MouseEvent<HTMLDivElement>);
+        }
+      }}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      title={onClick ? `Abrir perfil de ${displayName ?? 'usuario'}` : undefined}
     >
       {avatarUrl ? (
         <img src={resolveAttachmentUrl(avatarUrl)} alt={displayName ?? 'Avatar'} className="h-full w-full object-cover" />
@@ -165,7 +215,30 @@ function UserAvatar({
   );
 }
 
+function getBadgeLabels(input?: { globalRole?: string | null; isVerifiedModerator?: boolean | null; badges?: string[] | null }) {
+  if (input?.badges?.length) return input.badges;
+  const badges: string[] = [];
+  if (input?.globalRole === 'SUPER_ADMIN') badges.push('Admin');
+  if (input?.globalRole === 'GLOBAL_MODERATOR' || input?.isVerifiedModerator) badges.push('Moderador');
+  return badges;
+}
+
+function BadgeRow({ badges }: { badges?: string[] | null }) {
+  if (!badges?.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {badges.map((badge) => (
+        <span key={badge} className="rounded-full border border-[#f4d58d]/20 bg-[#f4d58d]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#ffe7ad]">
+          {badge}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export default function AppHome() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const user = useAuth((state) => state.user);
   const [tab, setTab] = useState<Tab>('feed');
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -173,6 +246,7 @@ export default function AppHome() {
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [pendingChatsCount, setPendingChatsCount] = useState(0);
   const [liveDmNotice, setLiveDmNotice] = useState<LiveDmNotice | null>(null);
+  const [liveInteractionNotice, setLiveInteractionNotice] = useState<LiveInteractionNotice | null>(null);
 
   async function refreshPendingChatsCount() {
     try {
@@ -186,6 +260,18 @@ export default function AppHome() {
   useEffect(() => {
     void refreshPendingChatsCount();
   }, []);
+
+  useEffect(() => {
+    const nextProfileUserId = searchParams.get('profileUserId');
+    if (nextProfileUserId) {
+      setProfileUserId(nextProfileUserId);
+      setTab('profile');
+      return;
+    }
+    if (tab === 'profile' && !nextProfileUserId) {
+      setProfileUserId(user?.id ?? null);
+    }
+  }, [searchParams, tab, user?.id]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -215,9 +301,22 @@ export default function AppHome() {
       });
     };
 
+    const onNotification = (payload: NotificationItem) => {
+      if (!payload?.id) return;
+      setLiveInteractionNotice({
+        id: payload.id,
+        title: payload.title,
+        body: payload.body,
+        actorDisplayName: payload.actor?.displayName ?? 'Actividad',
+        actorAvatarUrl: payload.actor?.avatarUrl ?? null,
+      });
+    };
+
     socket.on('dm_message_new', onDmMessage);
+    socket.on('notification_new', onNotification);
     return () => {
       socket.off('dm_message_new', onDmMessage);
+      socket.off('notification_new', onNotification);
     };
   }, [user?.id]);
 
@@ -226,6 +325,12 @@ export default function AppHome() {
     const timer = window.setTimeout(() => setLiveDmNotice(null), 4200);
     return () => window.clearTimeout(timer);
   }, [liveDmNotice]);
+
+  useEffect(() => {
+    if (!liveInteractionNotice) return;
+    const timer = window.setTimeout(() => setLiveInteractionNotice(null), 4200);
+    return () => window.clearTimeout(timer);
+  }, [liveInteractionNotice]);
 
   function handleOpenProfile(userId: string) {
     setProfileUserId(userId);
@@ -273,8 +378,26 @@ export default function AppHome() {
         </button>
       ) : null}
 
+      {liveInteractionNotice ? (
+        <button
+          type="button"
+          className="mx-auto mt-3 flex w-[min(392px,calc(100%-42px))] items-center gap-3 rounded-[22px] border border-[#ffe08c]/16 bg-[rgba(28,24,18,.88)] px-3 py-3 text-left shadow-[0_16px_32px_rgba(0,0,0,.3)] backdrop-blur-[18px]"
+          onClick={() => {
+            setTab('feed');
+            setLiveInteractionNotice(null);
+          }}
+        >
+          <UserAvatar displayName={liveInteractionNotice.actorDisplayName} avatarUrl={liveInteractionNotice.actorAvatarUrl} size={42} className="rounded-[14px]" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[12px] font-semibold text-[#ffe9b6]">{liveInteractionNotice.title}</div>
+            <div className="truncate text-[12px] text-white/72">{liveInteractionNotice.body}</div>
+          </div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#ffe09a]">Feed</div>
+        </button>
+      ) : null}
+
       <main className="app-content">
-        {tab === 'feed' ? <FeedTab /> : null}
+        {tab === 'feed' ? <FeedTab onOpenProfile={handleOpenProfile} /> : null}
         {tab === 'chats' ? (
           <ChatsTab
             selectedConversationId={selectedConversationId}
@@ -285,7 +408,7 @@ export default function AppHome() {
           />
         ) : null}
         {tab === 'groups' ? <GroupsTab /> : null}
-        {tab === 'profile' ? <ProfileTab viewedUserId={profileUserId} onOpenChats={() => setTab('chats')} onOpenConversation={handleOpenConversation} onRelationshipChanged={() => void refreshPendingChatsCount()} /> : null}
+        {tab === 'profile' ? <ProfileTab viewedUserId={profileUserId} onOpenChats={() => setTab('chats')} onOpenConversation={handleOpenConversation} onRelationshipChanged={() => void refreshPendingChatsCount()} onOpenProfile={handleOpenProfile} /> : null}
       </main>
 
       <BottomNav tab={tab} setTab={handleSelectTab} pendingChatsCount={pendingChatsCount} />
@@ -302,7 +425,28 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
   const [groupResults, setGroupResults] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const canSearch = currentTab === 'feed' || currentTab === 'groups';
+
+  async function loadNotifications() {
+    try {
+      const rows = await api<NotificationItem[]>('/notifications?limit=20');
+      setNotifications(rows);
+    } catch {
+      setNotifications([]);
+    }
+  }
+
+  async function loadUnreadCount() {
+    try {
+      const payload = await api<{ count: number }>('/notifications/unread-count');
+      setUnreadNotifications(payload.count);
+    } catch {
+      setUnreadNotifications(0);
+    }
+  }
 
   useEffect(() => {
     if (canSearch) return;
@@ -313,6 +457,23 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
     setLoading(false);
     setError(null);
   }, [canSearch]);
+
+  useEffect(() => {
+    void loadUnreadCount();
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const socket = getSocket('/social');
+    const onNotification = (payload: NotificationItem) => {
+      setUnreadNotifications((current) => current + (payload.isRead ? 0 : 1));
+      setNotifications((current) => [payload, ...current.filter((row) => row.id !== payload.id)].slice(0, 20));
+    };
+    socket.on('notification_new', onNotification);
+    return () => {
+      socket.off('notification_new', onNotification);
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     if (!open || !canSearch) return;
@@ -368,6 +529,30 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
     router.push(`/app/groups/${groupId}`);
   }
 
+  async function toggleNotifications() {
+    const next = !notificationsOpen;
+    setNotificationsOpen(next);
+    if (next) {
+      await loadNotifications();
+    }
+  }
+
+  async function markNotificationRead(notificationId: string) {
+    setNotifications((current) => current.map((item) => (item.id === notificationId ? { ...item, isRead: true } : item)));
+    setUnreadNotifications((current) => Math.max(0, current - 1));
+    try {
+      await api(`/notifications/${notificationId}/read`, { method: 'POST' });
+    } catch {}
+  }
+
+  async function markAllNotificationsRead() {
+    setNotifications((current) => current.map((item) => ({ ...item, isRead: true })));
+    setUnreadNotifications(0);
+    try {
+      await api('/notifications/read-all', { method: 'POST' });
+    } catch {}
+  }
+
   return (
     <header className="app-topbar" style={{ position: 'relative' }}>
       <button
@@ -397,6 +582,13 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
         </div>
       ) : canSearch ? (
         <div className="flex gap-2 ml-auto">
+          <button className="icon-btn relative" aria-label="Notificaciones" onClick={() => void toggleNotifications()}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20">
+              <path d="M12 4a4 4 0 00-4 4v2.4c0 .72-.2 1.42-.58 2.03L6 15h12l-1.42-2.57a4.04 4.04 0 01-.58-2.03V8a4 4 0 00-4-4z" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M10 18a2 2 0 004 0" strokeLinecap="round" />
+            </svg>
+            {unreadNotifications > 0 ? <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-[#ff8a5b] px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{Math.min(99, unreadNotifications)}</span> : null}
+          </button>
           <button className="icon-btn" aria-label="Buscar" onClick={() => setOpen(true)}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20">
               <circle cx="11" cy="11" r="7" />
@@ -407,6 +599,47 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
       ) : (
         <div className="ml-auto h-11 w-11" />
       )}
+
+      {notificationsOpen ? (
+        <div className="absolute right-3 top-full mt-2 z-50 w-[min(390px,calc(100vw-24px))] rounded-2xl border border-white/10 bg-[#101725]/95 p-2 shadow-2xl backdrop-blur">
+          <div className="flex items-center justify-between px-2 py-2">
+            <div className="text-sm font-semibold text-white/90">Notificaciones</div>
+            <button className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/55 hover:text-white" onClick={() => void markAllNotificationsRead()}>
+              Marcar todo
+            </button>
+          </div>
+          {notifications.length === 0 ? <div className="px-3 py-6 text-sm text-white/55">Todavía no tienes notificaciones.</div> : null}
+          {notifications.map((notification) => (
+            <button
+              key={notification.id}
+              className={`flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left hover:bg-white/5 ${notification.isRead ? 'opacity-75' : ''}`}
+              onClick={() => void markNotificationRead(notification.id)}
+            >
+              <UserAvatar
+                displayName={notification.actor?.displayName ?? 'Actividad'}
+                avatarUrl={notification.actor?.avatarUrl}
+                size={38}
+                className="rounded-[12px]"
+                onClick={notification.actor?.id ? (event) => {
+                  event.stopPropagation();
+                  onOpenProfile(notification.actor!.id!);
+                } : undefined}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <div className="truncate text-sm font-semibold text-white/90">{notification.title}</div>
+                  {!notification.isRead ? <span className="h-2.5 w-2.5 rounded-full bg-[#ff8a5b]" /> : null}
+                </div>
+                <div className="mt-1 text-xs text-white/62">{notification.body}</div>
+                <div className="mt-2 flex items-center gap-2">
+                  <BadgeRow badges={getBadgeLabels(notification.actor ?? undefined)} />
+                  <div className="text-[11px] text-white/38">{formatShortTime(notification.createdAt)}</div>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {open && canSearch ? (
         <div className="absolute left-3 right-3 top-full mt-2 z-50 rounded-2xl border border-white/10 bg-[#101725]/95 backdrop-blur shadow-2xl overflow-hidden">
@@ -449,6 +682,7 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
                   <div className="flex-1">
                     <div className="font-medium">@{userResult.displayName}</div>
                     <div className="text-xs opacity-60">{userResult.followersCount} seguidores · Ver perfil</div>
+                    <div className="mt-1"><BadgeRow badges={userResult.badges} /></div>
                   </div>
                 </button>
               ))
@@ -459,7 +693,7 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
   );
 }
 
-function FeedTab() {
+function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void }) {
   const user = useAuth((state) => state.user);
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [composer, setComposer] = useState('');
@@ -478,7 +712,7 @@ function FeedTab() {
   const remainingChars = POST_CONTENT_MAX_LENGTH - composer.length;
 
   async function loadPosts() {
-    setLoading(true);
+    setLoading((current) => (posts.length === 0 ? true : current));
     setError(null);
     try {
       const rows = await api<FeedPost[]>('/posts');
@@ -546,6 +780,7 @@ function FeedTab() {
 
   async function publishPost() {
     if (!composer.trim() && pendingAttachments.length === 0) return;
+    if (publishing) return;
     setPublishing(true);
     setError(null);
     try {
@@ -636,8 +871,20 @@ function FeedTab() {
       {posts.map((post) => (
         <article key={post.id} className="glass-card relative">
           <div className="author-row">
-            <UserAvatar displayName={post.author.displayName} avatarUrl={post.author.avatarUrl} size={38} className="rounded-[14px]" />
-            <span className="font-medium truncate">{post.author.displayName}</span>
+            <UserAvatar
+              displayName={post.author.displayName}
+              avatarUrl={post.author.avatarUrl}
+              size={38}
+              className="rounded-[14px]"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpenProfile(post.author.id);
+              }}
+            />
+            <div className="min-w-0">
+              <div className="font-medium truncate">{post.author.displayName}</div>
+              <BadgeRow badges={getBadgeLabels(post.author)} />
+            </div>
             <div className="ml-auto flex items-center gap-1.5">
               <span className="opacity-50 shrink-0">· {formatShortTime(post.createdAt)}</span>
               <button type="button" className="icon-btn !h-8 !w-8 !rounded-[10px]" aria-label="Opciones de la publicación" onClick={() => setPostActionMenuId((current) => current === post.id ? null : post.id)}>
@@ -1054,21 +1301,40 @@ function ChatsTab({
   }
 
   async function sendMessage() {
-    if (!activeConversation || (!composer.trim() && pendingAttachments.length === 0)) return;
+    if (!activeConversation || (!composer.trim() && pendingAttachments.length === 0) || !user) return;
     setSending(true);
     setError(null);
+    const tempContent = composer;
+    const tempAttachments = [...pendingAttachments];
+    const tempReplyingTo = replyingTo;
+    const tempId = `temp-${Date.now()}-${Math.random()}`;
+    const optimisticMessage: DMMessage = {
+      id: tempId,
+      conversationId: activeConversation.id,
+      authorId: user.id,
+      content: tempContent,
+      createdAt: new Date().toISOString(),
+      author: { id: user.id, displayName: user.displayName ?? user.email, avatarUrl: user.avatarUrl },
+      attachments: tempAttachments,
+      parent: tempReplyingTo,
+    };
+    setMessages((current) => [...current, optimisticMessage]);
+    setComposer('');
+    setPendingAttachments([]);
+    setReplyingTo(null);
+    setMessageActionMenu(null);
     try {
-      await api(`/dm/${activeConversation.id}/messages`, {
+      const sent = await api<DMMessage>(`/dm/${activeConversation.id}/messages`, {
         method: 'POST',
-        body: { content: composer, attachments: pendingAttachments, parentId: replyingTo?.id },
+        body: { content: tempContent, attachments: tempAttachments, parentId: tempReplyingTo?.id },
       });
-      setComposer('');
-      setPendingAttachments([]);
-      setReplyingTo(null);
-      setMessageActionMenu(null);
+      setMessages((current) => current.map((msg) => (msg.id === tempId ? sent : msg)));
       onConversationChanged();
-      await refreshAll(activeConversation.id);
     } catch (err) {
+      setMessages((current) => current.filter((msg) => msg.id !== tempId));
+      setComposer(tempContent);
+      setPendingAttachments(tempAttachments);
+      setReplyingTo(tempReplyingTo);
       if (err instanceof ApiError && err.status === 403) {
         setError('No puedes enviar más mensajes hasta que acepten tu solicitud.');
       } else {
@@ -1085,10 +1351,29 @@ function ChatsTab({
     try {
       setMessageActionMenu(null);
       await api(`/dm/${activeConversation.id}/messages/${messageId}`, { method: 'DELETE' });
+      setMessages((current) => current.filter((msg) => msg.id !== messageId));
       onConversationChanged();
-      await refreshAll(activeConversation.id);
     } catch {
       setError('No se pudo eliminar el mensaje.');
+    }
+  }
+
+  async function deleteConversation() {
+    if (!activeConversation) return;
+    if (!window.confirm(`Eliminar toda la conversación con ${activeConversation.peer.displayName}?`)) return;
+    setActing(true);
+    setError(null);
+    try {
+      await api(`/dm/${activeConversation.id}`, { method: 'DELETE' });
+      setMessageActionMenu(null);
+      setReplyingTo(null);
+      onConversationChanged();
+      onSelectConversation(null);
+      await loadConversations();
+    } catch {
+      setError('No se pudo eliminar la conversación.');
+    } finally {
+      setActing(false);
     }
   }
 
@@ -1212,7 +1497,16 @@ function ChatsTab({
               dms.map((d) => (
                 <div key={d.id} className="glass-card">
                   <button className="w-full text-left flex items-center gap-3" onClick={() => onSelectConversation(d.id)}>
-                    <UserAvatar displayName={d.peer?.displayName} avatarUrl={d.peer?.avatarUrl} size={46} className="rounded-[16px]" />
+                    <UserAvatar
+                      displayName={d.peer?.displayName}
+                      avatarUrl={d.peer?.avatarUrl}
+                      size={46}
+                      className="rounded-[16px]"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpenProfile(d.peer.id);
+                      }}
+                    />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-3">
                         <div className="font-medium truncate">{d.peer?.displayName ?? 'Anónimo'}</div>
@@ -1269,6 +1563,14 @@ function ChatsTab({
                           : 'Esperando aceptación'}
                   </div>
                 </div>
+              </button>
+              <button className="icon-btn shrink-0 ml-auto" disabled={acting} onClick={() => void deleteConversation()} aria-label="Eliminar conversación">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
+                  <path d="M4 7h16" strokeLinecap="round" />
+                  <path d="M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M7 7l.6 11a1 1 0 001 .94h6.8a1 1 0 001-.94L17 7" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M10 11v4M14 11v4" strokeLinecap="round" />
+                </svg>
               </button>
             </div>
 
@@ -1351,7 +1653,7 @@ function ChatsTab({
                                 openMessageActionMenu(message, e.currentTarget);
                               }}
                               className={bubbleClassName}
-                              style={{ transform: `translateX(${mine ? 0 : offset}px)`, transition: swipingMessageId === message.id ? 'none' : 'transform 120ms ease-out' }}
+                              style={{ transform: `translateX(${offset}px)`, transition: swipingMessageId === message.id ? 'none' : 'transform 120ms ease-out' }}
                             >
                               {message.parent ? (
                                 <div className={mine ? 'rounded-2xl bg-black/15 border border-white/10 px-3 py-2 mb-2' : 'rounded-2xl bg-white/5 border border-white/10 px-3 py-2 mb-2'}>
@@ -1656,6 +1958,7 @@ function UserProfileSheet({
                 <UserAvatar displayName={profile.displayName} avatarUrl={profile.avatarUrl} size={68} className="rounded-[24px]" />
                 <div className="flex-1 min-w-0">
                   <div className="text-xl font-semibold truncate">@{profile.displayName}</div>
+                  <div className="mt-2"><BadgeRow badges={profile.badges} /></div>
                   <div className="text-sm opacity-65 mt-1">
                     {profile.followsYou ? 'Te sigue' : 'Perfil público'} · {profile.globalRole}
                   </div>
@@ -1834,10 +2137,7 @@ function VoiceNote({ attachment, src }: { attachment: DMAttachment; src: string 
 }
 
 function resolveAttachmentUrl(url: string) {
-  if (/^https?:\/\//i.test(url)) return url;
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
-  const origin = apiBase.replace(/\/api\/v1\/?$/, '');
-  return `${origin}${url.startsWith('/') ? '' : '/'}${url}`;
+  return resolveMediaUrl(url);
 }
 
 function getSupportedVoiceMimeType() {
@@ -1895,7 +2195,7 @@ async function uploadDmAttachment(file: File) {
     method: 'POST',
     body: formData,
   });
-  return result.attachment;
+  return result.attachment ? { ...result.attachment, url: normalizeMediaUrl(result.attachment.url) ?? result.attachment.url } : null;
 }
 
 async function uploadPostAttachment(file: File) {
@@ -1905,7 +2205,7 @@ async function uploadPostAttachment(file: File) {
     method: 'POST',
     body: formData,
   });
-  return result.attachment;
+  return result.attachment ? { ...result.attachment, url: normalizeMediaUrl(result.attachment.url) ?? result.attachment.url } : null;
 }
 
 /* -------------------- Grupos -------------------- */
@@ -1918,6 +2218,7 @@ function GroupsTab() {
   const [name, setName] = useState('');
   const [privacy, setPrivacy] = useState<GroupPrivacy>('PRIVATE');
   const [iconUrl, setIconUrl] = useState<string | null>(null);
+  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [joiningId, setJoiningId] = useState<string | null>(null);
@@ -1925,6 +2226,7 @@ function GroupsTab() {
   const [editName, setEditName] = useState('');
   const [editPrivacy, setEditPrivacy] = useState<GroupPrivacy>('PRIVATE');
   const [editIconUrl, setEditIconUrl] = useState<string | null>(null);
+  const [editBannerUrl, setEditBannerUrl] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
@@ -1950,13 +2252,14 @@ function GroupsTab() {
       const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
       const g = await api<Group>('/groups', {
         method: 'POST',
-        body: { name, slug, privacy, iconUrl },
+        body: { name, slug, privacy, iconUrl, bannerUrl },
       });
       setMine((groups) => [g, ...groups]);
       setPublicGroups((groups) => groups.filter((group) => group.id !== g.id));
       setName('');
       setPrivacy('PRIVATE');
       setIconUrl(null);
+      setBannerUrl(null);
       setCreateComposerOpen(false);
     } finally {
       setCreating(false);
@@ -2008,11 +2311,47 @@ function GroupsTab() {
     }
   }
 
+  async function onCreateBannerChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setBannerUrl(null);
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      e.target.value = '';
+      return;
+    }
+    setUploading(true);
+    try {
+      setBannerUrl(await uploadGroupBanner(file));
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  }
+
+  async function onEditBannerChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      e.target.value = '';
+      return;
+    }
+    setUploading(true);
+    try {
+      setEditBannerUrl(await uploadGroupBanner(file));
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  }
+
   function beginEdit(group: Group) {
     setEditingGroupId(group.id);
     setEditName(group.name);
     setEditPrivacy(group.privacy ?? 'PRIVATE');
     setEditIconUrl(group.iconUrl ?? null);
+    setEditBannerUrl(group.bannerUrl ?? null);
   }
 
   function cancelEdit() {
@@ -2020,6 +2359,7 @@ function GroupsTab() {
     setEditName('');
     setEditPrivacy('PRIVATE');
     setEditIconUrl(null);
+    setEditBannerUrl(null);
   }
 
   async function saveEdit(e: React.FormEvent) {
@@ -2029,7 +2369,7 @@ function GroupsTab() {
     try {
       const updated = await api<Group>(`/groups/${editingGroupId}`, {
         method: 'PATCH',
-        body: { name: editName, privacy: editPrivacy, iconUrl: editIconUrl },
+        body: { name: editName, privacy: editPrivacy, iconUrl: editIconUrl, bannerUrl: editBannerUrl },
       });
       setMine((groups) => groups.map((group) => (group.id === updated.id ? updated : group)));
       cancelEdit();
@@ -2346,7 +2686,17 @@ async function uploadGroupIcon(file: File) {
     method: 'POST',
     body: formData,
   });
-  return result.url;
+  return normalizeMediaUrl(result.url);
+}
+
+async function uploadGroupBanner(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const result = await api<{ url: string | null }>('/groups/upload-banner', {
+    method: 'POST',
+    body: formData,
+  });
+  return normalizeMediaUrl(result.url);
 }
 
 async function uploadUserAvatar(file: File) {
@@ -2356,7 +2706,7 @@ async function uploadUserAvatar(file: File) {
     method: 'POST',
     body: formData,
   });
-  return result.url;
+  return normalizeMediaUrl(result.url);
 }
 
 /* -------------------- Perfil -------------------- */
@@ -2365,11 +2715,13 @@ function ProfileTab({
   onOpenChats,
   onOpenConversation,
   onRelationshipChanged,
+  onOpenProfile,
 }: {
   viewedUserId?: string | null;
   onOpenChats: () => void;
   onOpenConversation: (conversationId: string) => void;
   onRelationshipChanged: () => void;
+  onOpenProfile: (userId: string) => void;
 }) {
   const router = useRouter();
   const { user, logout, updateUser } = useAuth();
@@ -2385,6 +2737,12 @@ function ProfileTab({
   const [error, setError] = useState<string | null>(null);
   const [profileImagePopupUrl, setProfileImagePopupUrl] = useState<string | null>(null);
   const [profilePostMenuId, setProfilePostMenuId] = useState<string | null>(null);
+  const [relationshipModal, setRelationshipModal] = useState<{
+    mode: 'followers' | 'following';
+    items: ProfileRelationshipUser[];
+    loading: boolean;
+  } | null>(null);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const targetUserId = viewedUserId ?? user?.id ?? null;
   const isOwnProfile = !!user?.id && targetUserId === user.id;
@@ -2541,157 +2899,225 @@ function ProfileTab({
     }
   }
 
+  async function openRelationshipModal(mode: 'followers' | 'following') {
+    if (!targetUserId) return;
+    setRelationshipModal({ mode, items: [], loading: true });
+    try {
+      const items = await api<ProfileRelationshipUser[]>(`/users/${targetUserId}/${mode}`);
+      setRelationshipModal({ mode, items, loading: false });
+    } catch {
+      setRelationshipModal({ mode, items: [], loading: false });
+      setError(`No se pudo cargar la lista de ${mode === 'followers' ? 'seguidores' : 'seguidos'}.`);
+    }
+  }
+
   const displayName = profile?.displayName ?? user?.displayName ?? user?.email?.split('@')[0] ?? 'Usuario';
-  const avatarUrl = profile?.avatarUrl ?? user?.avatarUrl ?? null;
+  const avatarUrl = isOwnProfile ? profile?.avatarUrl ?? user?.avatarUrl ?? null : profile?.avatarUrl ?? null;
   const invitationUsage = invite ? `${invite.usesCount}/${invite.maxUses}` : '--';
-  const groupsCount = isOwnProfile ? myGroups.length : 0;
+  const ownedGroups = isOwnProfile ? myGroups.filter((group) => group.ownerId === user?.id) : [];
+  const groupsCount = ownedGroups.length;
   const roleLabel = (isOwnProfile ? user?.globalRole : profile?.globalRole) ?? 'USER';
   const emailLabel = isOwnProfile ? user?.email ?? 'sin-correo@app.chat' : `${profile?.followersCount ?? 0} seguidores`;
   const profileState = isOwnProfile ? 'Perfil activo y sincronizado' : profile?.followsYou ? 'Este usuario tambien te sigue' : 'Perfil publico y disponible';
-  const showMyGroups = isOwnProfile && myGroups.length > 0;
-  const showPublicGroups = isOwnProfile && publicGroups.length > 0;
+  const showMyGroups = isOwnProfile && ownedGroups.length > 0;
+  const followersCount = profile?.followersCount ?? 0;
+  const followingCount = profile?.followingCount ?? 0;
+  const inviteTitle = isOwnProfile ? 'Invitacion' : 'Estado';
+  const inviteValue = isOwnProfile ? invite?.code ?? '------' : profile?.followsYou ? 'Te sigue' : 'Publico';
+  const inviteMeta = isOwnProfile ? invitationUsage : roleLabel;
 
   return (
     <section className="relative overflow-hidden px-[10px] pb-8 pt-1">
-      <div className="pointer-events-none absolute inset-x-[-20%] top-[-120px] h-[220px] rounded-full bg-[#66ffd9]/12 blur-[96px]" />
-      <div className="pointer-events-none absolute right-[-18%] top-[90px] h-[250px] w-[250px] rounded-full bg-[#b026ff]/14 blur-[110px]" />
-      <div className="pointer-events-none absolute inset-x-[10%] bottom-[40px] h-[180px] rounded-full bg-[#6effcf]/8 blur-[98px]" />
+      <div className="pointer-events-none absolute inset-x-[-18%] top-[-110px] h-[200px] rounded-full bg-[#66ffd9]/8 blur-[92px]" />
+      <div className="pointer-events-none absolute right-[-18%] top-[110px] h-[220px] w-[220px] rounded-full bg-[#b026ff]/10 blur-[108px]" />
 
       <div className="relative mx-auto max-w-[344px] pt-1">
-        <div className="relative rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(25,31,43,.46),rgba(15,20,28,.64))] px-3.5 pb-4 pt-3.5 shadow-[0_16px_40px_rgba(0,0,0,.34)] backdrop-blur-[14px]">
-          <div className="pointer-events-none absolute inset-x-[8%] top-2 h-24 rounded-full bg-[#7bffc8]/10 blur-[56px]" />
-          <div className="pointer-events-none absolute inset-x-[30%] top-8 h-20 rounded-full bg-[#b026ff]/10 blur-[48px]" />
+        <div className="relative rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(22,28,38,.86),rgba(14,18,27,.94))] px-3.5 pb-3.5 pt-3.5 shadow-[0_16px_36px_rgba(0,0,0,.34)] backdrop-blur-[14px]">
+          <div className="pointer-events-none absolute inset-x-[14%] top-3 h-20 rounded-full bg-[#7bffc8]/7 blur-[52px]" />
+
+          {isOwnProfile ? (
+            <button
+              type="button"
+              onClick={() => setProfileMenuOpen((current) => !current)}
+              className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.08] backdrop-blur-sm"
+              aria-label="Opciones de perfil"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" className="text-white/72">
+                <circle cx="5" cy="12" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="19" cy="12" r="2" />
+              </svg>
+            </button>
+          ) : null}
+
+          {profileMenuOpen ? (
+            <div className="absolute right-3 top-12 z-20 w-[200px] overflow-hidden rounded-[20px] border border-white/12 bg-[#1a1f2e] shadow-[0_16px_40px_rgba(0,0,0,.5)] backdrop-blur-[16px]">
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileMenuOpen(false);
+                  logout().then(() => router.replace('/login'));
+                }}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left text-[13px] font-medium text-white/88 hover:bg-white/5"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" className="text-white/64">
+                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                cerrar sesión
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileMenuOpen(false);
+                  avatarInputRef.current?.click();
+                }}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left text-[13px] font-medium text-white/88 hover:bg-white/5"
+                disabled={uploadingAvatar}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" className="text-white/64">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <path d="M21 15l-5-5L5 21" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                {uploadingAvatar ? 'Subiendo...' : 'cambiar foto'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileMenuOpen(false);
+                  setError('Esta función estará disponible pronto.');
+                }}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left text-[13px] font-medium text-white/88 hover:bg-white/5"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" className="text-white/64">
+                  <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                editar biografía
+              </button>
+            </div>
+          ) : null}
 
           <div className="relative flex flex-col items-center text-center">
-            <div className="relative">
-              <div className="absolute inset-[-8px] rounded-full border border-[#7ff9dc]/55 shadow-[0_0_24px_rgba(0,255,204,.24)]" />
-              <div className="absolute inset-[-14px] rounded-full border border-[#cf75ff]/35" />
-              <div className="absolute inset-[-22px] rounded-full bg-[radial-gradient(circle,rgba(176,38,255,.14),transparent_62%)] blur-2xl" />
-              <UserAvatar displayName={displayName} avatarUrl={avatarUrl} size={106} className="rounded-full border border-white/15 bg-[#182122] shadow-[0_14px_34px_rgba(0,0,0,.34)]" />
+            <div className="relative shrink-0">
+              <div className="absolute inset-[-6px] rounded-full border border-[#7ff9dc]/38 shadow-[0_0_18px_rgba(0,255,204,.14)]" />
+              <UserAvatar displayName={displayName} avatarUrl={avatarUrl} size={110} className="rounded-full border-2 border-white/15 bg-[#182122] shadow-[0_12px_28px_rgba(0,0,0,.28)]" />
             </div>
 
-            <div className="mt-3 text-[18px] font-bold leading-none text-white drop-shadow-[0_0_12px_rgba(0,0,0,.45)]">@{displayName}</div>
-            <div className="mt-1 text-[11px] text-white/78">{emailLabel}</div>
-            <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#befff1]">{roleLabel}</div>
+            <div className="mt-3 w-full">
+              <div className="text-[22px] font-bold leading-none text-white">@{displayName}</div>
+              <div className="mt-1.5 text-[12px] text-white/56">{emailLabel}</div>
+              <div className="mt-2 inline-block rounded-full border border-[#8fffe7]/25 bg-[#8fffe7]/6 px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.12em] text-[#befff1]">
+                {roleLabel}
+              </div>
+            </div>
+
             <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={onAvatarPicked} />
           </div>
 
-          <div className={`relative mt-4 grid ${isOwnProfile ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
-            {isOwnProfile ? (
-              <>
-                <button
-                  type="button"
-                  className="h-9 rounded-full border border-[#62f5d7]/55 bg-[#62f5d7]/5 px-2 text-[10px] font-bold uppercase tracking-[0.04em] text-[#8fffe7] shadow-[0_0_16px_rgba(0,255,204,.16)]"
-                  onClick={() => avatarInputRef.current?.click()}
-                  disabled={uploadingAvatar}
-                >
-                  {uploadingAvatar ? 'Subiendo...' : 'Subir foto'}
-                </button>
-                <button
-                  type="button"
-                  className="h-9 rounded-full border border-[#d06cff]/55 bg-[#d06cff]/5 px-2 text-[10px] font-bold uppercase tracking-[0.04em] text-[#efc7ff] shadow-[0_0_16px_rgba(176,38,255,.16)]"
-                  onClick={onOpenChats}
-                >
-                  Chats
-                </button>
-                <button
-                  type="button"
-                  className="h-9 rounded-full border border-[#ff74ae]/45 bg-[#ff74ae]/5 px-2 text-[10px] font-bold uppercase tracking-[0.04em] text-[#ffd3e7] shadow-[0_0_16px_rgba(255,116,174,.14)]"
-                  onClick={() => logout().then(() => router.replace('/login'))}
-                >
-                  Cerrar sesion
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="h-9 rounded-full border border-[#62f5d7]/55 bg-[#62f5d7]/5 px-2 text-[10px] font-bold uppercase tracking-[0.04em] text-[#8fffe7] shadow-[0_0_16px_rgba(0,255,204,.16)]"
-                  onClick={() => void toggleFollow()}
-                  disabled={busy}
-                >
-                  {busy ? 'Procesando...' : profile?.isFollowing ? 'Siguiendo' : 'Seguir'}
-                </button>
-                <button
-                  type="button"
-                  className="h-9 rounded-full border border-[#d06cff]/55 bg-[#d06cff]/5 px-2 text-[10px] font-bold uppercase tracking-[0.04em] text-[#efc7ff] shadow-[0_0_16px_rgba(176,38,255,.16)]"
-                  onClick={() => void startConversation()}
-                  disabled={busy}
-                >
-                  Chat
-                </button>
-              </>
-            )}
+          {!isOwnProfile ? (
+            <div className="relative mt-4 grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                className="h-11 rounded-[20px] border border-[#62f5d7]/35 bg-[#62f5d7]/12 px-4 text-[14px] font-bold text-[#8fffe7]"
+                onClick={() => void toggleFollow()}
+                disabled={busy}
+              >
+                {busy ? 'Procesando...' : profile?.isFollowing ? 'Dejar de seguir' : 'Seguir'}
+              </button>
+              <button
+                type="button"
+                className="h-11 rounded-[20px] border border-white/10 bg-white/[0.06] px-4 text-[14px] font-medium text-white/84"
+                onClick={() => void startConversation()}
+                disabled={busy}
+              >
+                Chat
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mt-3 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,34,.84),rgba(12,16,24,.94))] px-4 py-4 shadow-[0_14px_34px_rgba(0,0,0,.28)] backdrop-blur-[14px]">
+          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/48">Conexiones</div>
+          <button
+            type="button"
+            onClick={() => void openRelationshipModal('followers')}
+            className="mt-2 text-left"
+          >
+            <div className="text-[20px] font-semibold text-white">{followersCount} Seguidores <span className="text-white/34">•</span> {followingCount} Seguidos</div>
+          </button>
+        </div>
+
+        <div className="mt-2.5 grid grid-cols-[auto_minmax(0,1fr)] gap-2.5">
+          <div className="rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,34,.84),rgba(12,16,24,.94))] px-4 py-4 shadow-[0_14px_34px_rgba(0,0,0,.28)] backdrop-blur-[14px]">
+            <div className="text-center">
+              <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-white/48">{inviteTitle}</div>
+              <div className="mt-2 font-mono text-[20px] font-bold uppercase tracking-[0.08em] text-[#c7fff2]">{inviteValue}</div>
+              <div className="mt-1.5 text-[11px] text-white/54">{inviteMeta}</div>
+            </div>
+          </div>
+
+          <div className="rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,34,.84),rgba(12,16,24,.94))] px-4 py-4 shadow-[0_14px_34px_rgba(0,0,0,.28)] backdrop-blur-[14px]">
+            <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-white/48">Reputación</div>
+            <div className="mt-2 text-[14px] font-medium leading-snug text-white/88">{profileState}</div>
           </div>
         </div>
 
-        <div className="mt-3 grid grid-cols-[110px_minmax(0,1fr)] gap-2.5">
-          <div className="row-span-2 overflow-hidden rounded-[18px] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03))] shadow-[0_10px_24px_rgba(0,0,0,.28)] backdrop-blur-[12px]">
-            <div className="relative h-full min-h-[150px] px-3 py-3">
-              <div className="absolute left-1/2 top-[42%] h-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-[28px] bg-[radial-gradient(circle_at_30%_30%,rgba(132,255,222,.9),rgba(176,38,255,.56)_42%,rgba(255,255,255,.08)_68%,transparent_72%)] blur-[12px]" />
-              <div className="absolute left-[18px] top-[26px] h-16 w-16 rounded-full bg-[#72ffd5]/12 blur-2xl" />
-              <div className="absolute bottom-[26px] right-[14px] h-12 w-12 rounded-full bg-[#c364ff]/16 blur-2xl" />
-              <div className="relative mt-[88px] text-center">
-                <div className="text-[9px] font-bold uppercase tracking-[0.05em] text-white/62">{isOwnProfile ? 'Invitacion' : 'Perfil'}</div>
-                <div className="mt-1 font-mono text-[14px] font-bold uppercase tracking-[0.08em] text-[#c7fff2]">{isOwnProfile ? invite?.code ?? '------' : profile?.followsYou ? 'TE SIGUE' : 'PUBLICO'}</div>
-                <div className="mt-1 text-[9px] text-white/68">{isOwnProfile ? invitationUsage : roleLabel}</div>
+        {relationshipModal ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 p-3 backdrop-blur-sm" onClick={() => setRelationshipModal(null)}>
+            <div className="w-full max-w-[420px] rounded-[28px] border border-white/10 bg-[#0f1520] shadow-2xl" onClick={(event) => event.stopPropagation()}>
+              <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-white/38">Lista</div>
+                  <div className="text-sm font-semibold text-white/90">{relationshipModal.mode === 'followers' ? 'Seguidores' : 'Seguidos'}</div>
+                </div>
+                <button type="button" className="icon-btn" onClick={() => setRelationshipModal(null)} aria-label="Cerrar lista">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
+                    <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="max-h-[60vh] overflow-y-auto px-3 py-3">
+                {relationshipModal.loading ? <div className="px-2 py-6 text-sm text-white/62">Cargando...</div> : null}
+                {!relationshipModal.loading && relationshipModal.items.length === 0 ? <div className="px-2 py-6 text-sm text-white/55">No hay usuarios en esta lista.</div> : null}
+                {!relationshipModal.loading
+                  ? relationshipModal.items.map((person) => (
+                      <button
+                        key={`${relationshipModal.mode}-${person.id}`}
+                        type="button"
+                        onClick={() => {
+                          setRelationshipModal(null);
+                          onOpenProfile(person.id);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-[18px] px-2 py-2 text-left hover:bg-white/5"
+                      >
+                        <UserAvatar displayName={person.displayName} avatarUrl={person.avatarUrl} size={42} className="rounded-[14px]" />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-semibold text-white/88">@{person.displayName}</div>
+                          <div className="mt-1"><BadgeRow badges={person.badges} /></div>
+                        </div>
+                      </button>
+                    ))
+                  : null}
               </div>
             </div>
           </div>
-
-          <div className="rounded-[18px] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03))] px-3 py-3 shadow-[0_10px_24px_rgba(0,0,0,.28)] backdrop-blur-[12px]">
-            <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-white/78">Reputacion</div>
-            <div className="mt-1 text-[12px] font-medium text-white">{profileState}</div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2.5">
-            <div className="rounded-[16px] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03))] px-3 py-2.5 shadow-[0_10px_24px_rgba(0,0,0,.28)] backdrop-blur-[12px]">
-              <div className="text-[10px] font-bold uppercase tracking-[0.04em] text-white/62">Seguidores</div>
-              <div className="mt-1.5 text-[17px] font-bold text-white">{profile?.followersCount ?? '--'}</div>
-            </div>
-            <div className="rounded-[16px] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03))] px-3 py-2.5 shadow-[0_10px_24px_rgba(0,0,0,.28)] backdrop-blur-[12px]">
-              <div className="text-[10px] font-bold uppercase tracking-[0.04em] text-white/62">Seguidos</div>
-              <div className="mt-1.5 text-[17px] font-bold text-white">{profile?.followingCount ?? '--'}</div>
-            </div>
-          </div>
-        </div>
+        ) : null}
 
         {isOwnProfile ? (
-          <div className="relative mt-2 overflow-hidden rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(17,28,28,.55),rgba(11,20,19,.72))] px-3.5 pb-4 pt-4 shadow-[0_16px_40px_rgba(0,0,0,.34)] backdrop-blur-[14px]">
-          <div className="pointer-events-none absolute inset-x-[8%] bottom-0 h-16 rounded-full bg-[#74ffd6]/10 blur-[48px]" />
-          <div className="pointer-events-none absolute left-6 top-12 h-16 w-16 rounded-full bg-[#7fffe1]/10 blur-3xl" />
-          <div className="pointer-events-none absolute right-8 top-10 h-16 w-16 rounded-full bg-[#c563ff]/10 blur-3xl" />
-
-          <div className="pointer-events-none absolute left-[20%] top-[38%] h-px w-[58%] rotate-[14deg] bg-white/18" />
-          <div className="pointer-events-none absolute left-[18%] top-[54%] h-px w-[62%] -rotate-[12deg] bg-white/14" />
-          <div className="pointer-events-none absolute left-[24%] top-[48%] h-px w-[44%] rotate-[32deg] bg-white/12" />
-          <div className="pointer-events-none absolute left-[40%] top-[44%] h-[38%] w-px bg-white/14" />
-
-          {[['12%','70%'], ['29%','44%'], ['53%','58%'], ['77%','39%'], ['68%','74%']].map(([left, top], index) => (
-            <span
-              key={index}
-              className="pointer-events-none absolute h-3 w-3 rounded-full border border-white/20 bg-[radial-gradient(circle,#d8fff6_0%,#7efed8_45%,#b45dff_100%)] shadow-[0_0_18px_rgba(126,254,216,.38)]"
-              style={{ left, top }}
-            />
-          ))}
-
-          <div className="pointer-events-none absolute right-3 top-6 flex h-[58px] w-[58px] flex-col items-center justify-center rounded-[18px] border border-[#9cf6e3]/35 bg-[rgba(255,255,255,.04)] text-white shadow-[0_0_16px_rgba(126,254,216,.12)]">
-            <span className="text-[22px] font-bold leading-none">{groupsCount}</span>
-            <span className="mt-1 text-[8px] font-bold uppercase tracking-[0.05em] text-white/70">{isOwnProfile ? 'Grupos' : 'Red'}</span>
-          </div>
-
+          <div className="relative mt-2.5 overflow-hidden rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,34,.84),rgba(12,16,24,.94))] px-4 pb-4 pt-4 shadow-[0_14px_34px_rgba(0,0,0,.28)] backdrop-blur-[14px]">
           <div className="relative z-10">
-            <div className="mb-3 pl-0.5 text-[11px] font-bold uppercase tracking-[0.08em] text-white/82">Grupos</div>
+            <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-white/48">Grupos</div>
 
             {showMyGroups ? (
               <div className="mb-3">
-                <div className="mb-1.5 text-[9px] font-bold uppercase tracking-[0.08em] text-[#cafff2]/70">Mis grupos</div>
-                <div className="-mx-1 flex snap-x snap-mandatory gap-2 overflow-x-auto px-1 pb-1">
-                  {myGroups.map((group) => (
+                <div className="mb-2 text-[13px] font-medium text-white/64">Mis grupos ({groupsCount})</div>
+                <div className="-mx-1 flex snap-x snap-mandatory gap-2.5 overflow-x-auto px-1 pb-1">
+                  {ownedGroups.map((group) => (
                     <Link
                       key={group.id}
                       href={`/app/groups/${group.id}`}
-                      className="flex min-w-[112px] snap-start flex-col items-center rounded-[18px] border border-[#99ffe6]/24 bg-[linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.04))] px-3 py-4 text-center shadow-[0_0_20px_rgba(126,254,216,.08)] backdrop-blur-[12px]"
+                      className="flex min-w-[112px] snap-start flex-col items-center rounded-[18px] border border-white/10 bg-white/[0.04] px-3 py-4 text-center backdrop-blur-[12px]"
                     >
                       <div className="mb-2.5 flex h-9 w-9 items-center justify-center overflow-hidden rounded-[12px] border border-white/12 bg-[#161c26] text-[12px] font-bold text-[#d4fff4]">
                         {group.iconUrl ? (
@@ -2705,41 +3131,15 @@ function ProfileTab({
                   ))}
                 </div>
               </div>
-            ) : null}
-
-            {showPublicGroups ? (
-              <div>
-                <div className="mb-1.5 text-[9px] font-bold uppercase tracking-[0.08em] text-[#f1d0ff]/70">Grupos publicos</div>
-                <div className="-mx-1 flex snap-x snap-mandatory gap-2 overflow-x-auto px-1 pb-1">
-                  {publicGroups.map((group) => (
-                    <Link
-                      key={group.id}
-                      href={`/app/groups/${group.id}`}
-                      className="flex min-w-[112px] snap-start flex-col items-center rounded-[18px] border border-white/14 bg-[linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.03))] px-3 py-4 text-center shadow-[0_0_18px_rgba(176,38,255,.06)] backdrop-blur-[12px]"
-                    >
-                      <div className="mb-2.5 flex h-9 w-9 items-center justify-center overflow-hidden rounded-[12px] border border-white/12 bg-[#161c26] text-[12px] font-bold text-[#f0d7ff]">
-                        {group.iconUrl ? (
-                          <img src={group.iconUrl} alt={group.name} className="h-full w-full object-cover" />
-                        ) : (
-                          group.name.slice(0, 2).toUpperCase()
-                        )}
-                      </div>
-                      <div className="w-full truncate text-[11px] font-bold uppercase tracking-[0.04em] text-white">{group.name}</div>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {!showMyGroups && !showPublicGroups ? (
-              <div className="relative mx-auto mt-10 w-[150px] rounded-[18px] border border-dashed border-white/14 bg-white/[0.03] px-3 py-4 text-center text-[10px] text-white/65 backdrop-blur-[10px]">
+            ) : (
+              <div className="relative mx-auto mt-6 w-[160px] rounded-[18px] border border-dashed border-white/14 bg-white/[0.03] px-3 py-4 text-center text-[10px] text-white/65 backdrop-blur-[10px]">
                 Sin grupos todavia
               </div>
-            ) : null}
+            )}
           </div>
         </div>
         ) : (
-          <div className="relative mt-2 overflow-hidden rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(17,28,28,.55),rgba(11,20,19,.72))] px-3.5 py-4 text-center text-[10px] text-white/70 shadow-[0_16px_40px_rgba(0,0,0,.34)] backdrop-blur-[14px]">
+          <div className="relative mt-2 overflow-hidden rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,34,.84),rgba(12,16,24,.94))] px-3.5 py-4 text-center text-[10px] text-white/70 shadow-[0_14px_34px_rgba(0,0,0,.28)] backdrop-blur-[14px]">
             Interactua con este perfil desde los botones superiores.
             </div>
         )}
@@ -2766,7 +3166,16 @@ function ProfileTab({
                 return (
                   <article key={post.id} className="relative min-w-[178px] max-w-[178px] rounded-[18px] border border-white/10 bg-white/[0.04] p-3 shadow-[0_10px_24px_rgba(0,0,0,.24)]">
                     <div className="flex items-center gap-2">
-                      <UserAvatar displayName={post.author.displayName} avatarUrl={post.author.avatarUrl} size={26} className="rounded-[10px]" />
+                      <UserAvatar
+                        displayName={post.author.displayName}
+                        avatarUrl={post.author.avatarUrl}
+                        size={26}
+                        className="rounded-[10px]"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onOpenProfile(post.author.id);
+                        }}
+                      />
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-[10px] font-semibold text-white/88">@{post.author.displayName}</div>
                         <div className="text-[9px] text-white/45">{formatShortTime(post.createdAt)}</div>

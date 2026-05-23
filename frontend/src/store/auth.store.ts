@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { api, setAccessToken } from '@/lib/api-client';
+import { api, getAccessToken, setAccessToken } from '@/lib/api-client';
 
 export interface SessionUser {
   id: string;
@@ -9,6 +9,8 @@ export interface SessionUser {
   displayName: string;
   avatarUrl: string | null;
   globalRole: 'SUPER_ADMIN' | 'GLOBAL_MODERATOR' | 'USER';
+  isVerifiedModerator: boolean;
+  badges: string[];
 }
 
 interface AuthState {
@@ -18,7 +20,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   register: (input: RegisterInput) => Promise<{ invitationCode: string }>;
   logout: () => Promise<void>;
-  hydrate: () => Promise<void>;
+  hydrate: (force?: boolean) => Promise<void>;
   updateUser: (patch: Partial<SessionUser>) => void;
 }
 
@@ -32,13 +34,36 @@ export interface RegisterInput {
 }
 
 let hydratePromise: Promise<void> | null = null;
+const SESSION_USER_STORAGE_KEY = 'appchat.sessionUser';
+
+function persistSessionUser(user: SessionUser | null) {
+  if (typeof window === 'undefined') return;
+  if (user) window.sessionStorage.setItem(SESSION_USER_STORAGE_KEY, JSON.stringify(user));
+  else window.sessionStorage.removeItem(SESSION_USER_STORAGE_KEY);
+}
+
+function readSessionUser(): SessionUser | null {
+  if (typeof window === 'undefined') return null;
+  const raw = window.sessionStorage.getItem(SESSION_USER_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as SessionUser;
+  } catch {
+    window.sessionStorage.removeItem(SESSION_USER_STORAGE_KEY);
+    return null;
+  }
+}
 
 export const useAuth = create<AuthState>((set, get) => ({
   user: null,
   loading: false,
   hydrated: false,
   updateUser(patch) {
-    set((state) => ({ user: state.user ? { ...state.user, ...patch } : state.user }));
+    set((state) => {
+      const user = state.user ? { ...state.user, ...patch } : state.user;
+      persistSessionUser(user);
+      return { user };
+    });
   },
   async login(email, password) {
     set({ loading: true });
@@ -49,6 +74,7 @@ export const useAuth = create<AuthState>((set, get) => ({
         skipAuth: true,
       });
       setAccessToken(res.accessToken);
+      persistSessionUser(res.user);
       set({ user: res.user });
     } finally {
       set({ loading: false });
@@ -62,6 +88,7 @@ export const useAuth = create<AuthState>((set, get) => ({
         { method: 'POST', body: input, skipAuth: true },
       );
       setAccessToken(res.accessToken);
+      persistSessionUser(res.user);
       set({ user: res.user });
       return { invitationCode: (res.user as any).invitationCode ?? '' };
     } finally {
@@ -73,20 +100,31 @@ export const useAuth = create<AuthState>((set, get) => ({
       await api('/auth/logout', { method: 'POST' });
     } catch {}
     setAccessToken(null);
+    persistSessionUser(null);
     set({ user: null });
   },
-  async hydrate() {
-    if (get().hydrated) return;
+  async hydrate(force = false) {
+    if (get().hydrated && !force) return;
     if (hydratePromise) return hydratePromise;
     hydratePromise = (async () => {
+      const storedUser = readSessionUser();
+      const storedToken = getAccessToken();
+      if (storedUser && storedToken) {
+        set({ user: storedUser, hydrated: true });
+        hydratePromise = null;
+        return;
+      }
       try {
         const res = await api<{ user: SessionUser; accessToken: string }>('/auth/refresh', {
           method: 'POST',
           skipAuth: true,
         });
         setAccessToken(res.accessToken);
+        persistSessionUser(res.user);
         set({ user: res.user });
       } catch {
+        setAccessToken(null);
+        persistSessionUser(null);
         set({ user: null });
       } finally {
         set({ hydrated: true });
