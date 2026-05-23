@@ -193,7 +193,9 @@ export default function GroupPage() {
 
   if (!currentGroup) return <p className="p-6 opacity-70">Cargando…</p>;
 
-  async function toggleChannel(channel: Channel, enabled: boolean) {
+  async function toggleChannel(channel: Channel, enabled: boolean) {  function handleOpenProfile(userId: string) {
+    router.push(`/app?profileUserId=${encodeURIComponent(userId)}`);
+  }
     if (!canManageChannels) return;
     setChannelToggleBusy(channel.id);
     setFeedback(null);
@@ -575,6 +577,7 @@ export default function GroupPage() {
                   memberRoles={memberRoles}
                   canManageMembers={canAssignRoles || canModerateMembers}
                   onToggleMemberMenu={(memberId) => setSelectedMemberId((current) => (current === memberId ? null : memberId))}
+                  onOpenProfile={handleOpenProfile}
                 />
               ) : (
                 <div className="relative flex h-full flex-col overflow-hidden bg-[linear-gradient(180deg,rgba(13,18,34,.96),rgba(8,11,20,.98))]">

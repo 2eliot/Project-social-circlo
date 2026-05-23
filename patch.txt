@@ -1,0 +1,130 @@
+*** Begin Patch
+*** Update File: c:\Users\user\Documents\appchat\frontend\src\store\auth.store.ts
+@@
+-  hydrate: () => Promise<void>;
++  hydrate: (force?: boolean) => Promise<void>;
+@@
+-  async hydrate() {
+-    if (get().hydrated) return;
++  async hydrate(force = false) {
++    if (get().hydrated && !force) return;
+     if (hydratePromise) return hydratePromise;
+     hydratePromise = (async () => {
+       const storedUser = readSessionUser();
+*** Update File: c:\Users\user\Documents\appchat\frontend\src\app\layout.tsx
+@@
+ import type { Metadata, Viewport } from 'next';
+ import './globals.css';
+ import { DevServiceWorkerCleanup } from './DevServiceWorkerCleanup';
++import { AuthSessionSync } from './AuthSessionSync';
+@@
+       <body>
+         <DevServiceWorkerCleanup />
++        <AuthSessionSync />
+         {children}
+       </body>
+*** Update File: c:\Users\user\Documents\appchat\backend\src\modules\direct-messages\direct-messages.controller.ts
+@@
+   upload(@Req() req: Request, @UploadedFile() file?: Express.Multer.File) {
+     if (!file) {
+       return { attachment: null };
+     }
+-    const kind = file.mimetype.startsWith('audio/') ? 'audio' : 'image';
++    const kind = file.mimetype.startsWith('audio/') ? 'voice' : 'image';
+     return {
+       attachment: {
+         kind,
+           url: `/uploads/dm/${file.filename}`,
+@@
+   reject(@CurrentUser() user: AuthUser, @Param('conversationId', ParseUUIDPipe) cid: string) {
+     return this.service.rejectConversation(user.id, cid);
+   }
++
++  @Delete(':conversationId')
++  removeConversation(@CurrentUser() user: AuthUser, @Param('conversationId', ParseUUIDPipe) cid: string) {
++    return this.service.removeConversation(user.id, cid);
++  }
+ 
+   @Get(':conversationId/messages')
+   messages(
+*** Update File: c:\Users\user\Documents\appchat\backend\src\modules\direct-messages\direct-messages.service.ts
+@@
+   async rejectConversation(userId: string, conversationId: string) {
+     const conv = await this.assertParticipant(userId, conversationId);
+     const peerId = conv.userAId === userId ? conv.userBId : conv.userAId;
+@@
+ 
+     return this.getConversation(userId, conversationId);
+   }
++
++  async removeConversation(userId: string, conversationId: string) {
++    await this.assertParticipant(userId, conversationId);
++    await this.prisma.directConversation.delete({ where: { id: conversationId } });
++    return { ok: true };
++  }
+ 
+   async removeMessage(userId: string, conversationId: string, messageId: string) {
+     const conv = await this.assertParticipant(userId, conversationId);
+*** Update File: c:\Users\user\Documents\appchat\frontend\src\app\app\page.tsx
+@@
+   async function deleteMessage(messageId: string) {
+     if (!activeConversation) return;
+     setError(null);
+@@
+     } catch {
+       setError('No se pudo eliminar el mensaje.');
+     }
+   }
++
++  async function deleteConversation() {
++    if (!activeConversation) return;
++    if (!window.confirm(`Eliminar toda la conversación con ${activeConversation.peer.displayName}?`)) return;
++    setActing(true);
++    setError(null);
++    try {
++      await api(`/dm/${activeConversation.id}`, { method: 'DELETE' });
++      setMessageActionMenu(null);
++      setReplyingTo(null);
++      onConversationChanged();
++      onSelectConversation(null);
++      await loadConversations();
++    } catch {
++      setError('No se pudo eliminar la conversación.');
++    } finally {
++      setActing(false);
++    }
++  }
+ 
+   function clearLongPressTimer() {
+@@
+             <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5 bg-white/5">
+               <button className="icon-btn shrink-0" onClick={() => onSelectConversation(null)} aria-label="Volver al listado de chats">
+                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
+                   <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                 </svg>
+               </button>
+               <button className="flex items-center gap-3 text-left min-w-0" onClick={() => activeConversation && onOpenProfile(activeConversation.peer.id)}>
+                 <UserAvatar displayName={activeConversation?.peer.displayName} avatarUrl={activeConversation?.peer.avatarUrl} size={44} className="rounded-[16px]" />
+                 <div className="min-w-0">
+                   <div className="font-semibold truncate">{activeConversation?.peer.displayName ?? 'Chat'}</div>
+                   <div className="text-xs opacity-60">
+                     {activeConversation?.status === 'ACCEPTED'
+                       ? 'Conversación activa'
+                       : activeConversation?.pendingForMe
+                         ? 'Solicitud por responder'
+                         : activeConversation?.status === 'REJECTED'
+                           ? 'Solicitud rechazada'
+                           : 'Esperando aceptación'}
+                   </div>
+                 </div>
+               </button>
++              <button className="icon-btn shrink-0 ml-auto" disabled={acting} onClick={() => void deleteConversation()} aria-label="Eliminar conversación">
++                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
++                  <path d="M4 7h16" strokeLinecap="round" />
++                  <path d="M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2" strokeLinecap="round" strokeLinejoin="round" />
++                  <path d="M7 7l.6 11a1 1 0 001 .94h6.8a1 1 0 001-.94L17 7" strokeLinecap="round" strokeLinejoin="round" />
++                  <path d="M10 11v4M14 11v4" strokeLinecap="round" />
++                </svg>
++              </button>
+             </div>
+*** End Patch
