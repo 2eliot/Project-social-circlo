@@ -89,8 +89,22 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
 
   @SubscribeMessage('request_join_voice')
   async requestJoinVoice(@ConnectedSocket() socket: SignalingSocket, @MessageBody() body: { channelId: string }) {
-    // All members can join directly if the channel is enabled; no approval gate.
-    return this.joinVoice(socket, body);
+    const access = await this.getChannelAccess(body.channelId, socket.data.user.id);
+    if (!access.channel.isEnabled && !access.canManage) {
+      throw new WsException('Voice channel disabled');
+    }
+    // Admins / CoA self-join without approval.
+    if (access.canManage) {
+      return this.joinVoice(socket, body);
+    }
+    // Already approved? proceed to join.
+    if (this.getSet(this.approvedVoiceRequests, body.channelId).has(socket.data.user.id)) {
+      return this.joinVoice(socket, body);
+    }
+    // Regular member: register the request and notify managers via voice_state.
+    this.getSet(this.pendingVoiceRequests, body.channelId).add(socket.data.user.id);
+    await this.emitVoiceState(body.channelId);
+    return { ok: true, pending: true };
   }
 
   @SubscribeMessage('approve_voice_request')
@@ -110,6 +124,10 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
     const access = await this.getChannelAccess(body.channelId, socket.data.user.id);
     if (!access.channel.isEnabled && !access.canManage) {
       throw new WsException('Voice channel disabled');
+    }
+    // Regular members must be approved by a manager (admin / CoA) before producing.
+    if (!access.canManage && !this.getSet(this.approvedVoiceRequests, body.channelId).has(socket.data.user.id)) {
+      throw new WsException('Approval required');
     }
 
     // If the socket was a passive listener of another channel, drop it first.

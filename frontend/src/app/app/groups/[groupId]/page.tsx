@@ -196,9 +196,29 @@ export default function GroupPage() {
     };
     socket.on('voice_state_changed', onState);
 
+    // When an admin/CoA approves this user's request, auto-connect as speaker.
+    const onApproved = async (payload: { channelId: string }) => {
+      if (!mounted) return;
+      if (payload.channelId !== voiceChannel.id) return;
+      try {
+        await sfuRef.current?.disconnect().catch(() => undefined);
+        sfuRef.current = null;
+        const sfu = new SfuClient(voiceChannel.id);
+        await sfu.connect();
+        sfuRef.current = sfu;
+        setVoiceJoined(true);
+        setVoiceRequestPending(false);
+        setLocalMicMuted(true);
+      } catch (err) {
+        console.warn('[group] auto-join after approval failed', err);
+      }
+    };
+    socket.on('voice_request_approved', onApproved);
+
     return () => {
       mounted = false;
       socket.off('voice_state_changed', onState);
+      socket.off('voice_request_approved', onApproved);
     };
   }, [localMicMuted, user?.id, voiceChannel?.id, voiceJoined]);
 
@@ -283,6 +303,20 @@ export default function GroupPage() {
       }
 
       // Upgrade from listener (if any) to speaker
+      if (!canManageChannels) {
+        // Regular members must request approval from an admin/CoA before producing.
+        const res = await emit<{ ok: boolean; pending?: boolean; rtpCapabilities?: any }>(
+          getSocket('/sfu'),
+          'request_join_voice',
+          { channelId: voiceChannel.id },
+        );
+        if (res?.pending) {
+          setVoiceRequestPending(true);
+          setFeedback('Solicitud enviada al admin o CoA.');
+          return;
+        }
+        // Already approved → server joined us; fall through to set up the SFU client below.
+      }
       await sfuRef.current?.disconnect().catch(() => undefined);
       sfuRef.current = null;
       const sfu = new SfuClient(voiceChannel.id);
