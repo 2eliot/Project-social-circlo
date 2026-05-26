@@ -4,9 +4,9 @@ import * as mediasoup from 'mediasoup';
 import type { Worker, Router, RtpCodecCapability } from 'mediasoup/node/lib/types';
 
 const MEDIA_CODECS: RtpCodecCapability[] = [
-  { kind: 'audio', mimeType: 'audio/opus', clockRate: 48000, channels: 2 },
-  { kind: 'video', mimeType: 'video/VP8', clockRate: 90000, parameters: { 'x-google-start-bitrate': 1000 } },
-  { kind: 'video', mimeType: 'video/H264', clockRate: 90000,
+  { kind: 'audio', mimeType: 'audio/opus', preferredPayloadType: 100, clockRate: 48000, channels: 2 },
+  { kind: 'video', mimeType: 'video/VP8', preferredPayloadType: 110, clockRate: 90000, parameters: { 'x-google-start-bitrate': 1000 } },
+  { kind: 'video', mimeType: 'video/H264', preferredPayloadType: 120, clockRate: 90000,
     parameters: {
       'packetization-mode': 1,
       'profile-level-id': '42e01f',
