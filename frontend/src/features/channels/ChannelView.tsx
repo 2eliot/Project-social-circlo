@@ -250,7 +250,7 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
                     Responder
                   </div>
                   <div
-                    onPointerDown={(e) => beginSwipe(message, e.clientX, canOpenMemberMenu)}
+                    onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); beginSwipe(message, e.clientX, canOpenMemberMenu); }}
                     onPointerMove={(e) => moveSwipe(e.clientX)}
                     onPointerUp={() => finishSwipe(message)}
                     onPointerCancel={() => finishSwipe(message)}
@@ -267,7 +267,7 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
                       if (message.author?.id) onToggleMemberMenu?.(message.author.id);
                     }}
                     className={`relative max-w-[84%] rounded-[16px] border px-2.5 py-2 shadow-[0_10px_14px_rgba(0,0,0,.16)] ${mine ? 'border-white/10 bg-[rgba(47,51,61,.94)] text-white' : 'border-white/8 bg-[rgba(55,61,72,.92)] text-white/92'}`}
-                    style={{ transform: `translateX(${offset}px)`, transition: swipingMessageId === message.id ? 'none' : 'transform 120ms ease-out' }}
+                    style={{ transform: `translateX(${offset}px)`, transition: swipingMessageId === message.id ? 'none' : 'transform 120ms ease-out', touchAction: 'pan-y' }}
                   >
                     <div className="flex w-full min-w-0 items-start gap-2 text-left">
                     <div

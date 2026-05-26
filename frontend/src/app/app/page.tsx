@@ -266,12 +266,8 @@ export default function AppHome() {
     if (nextProfileUserId) {
       setProfileUserId(nextProfileUserId);
       setTab('profile');
-      return;
     }
-    if (tab === 'profile' && !nextProfileUserId) {
-      setProfileUserId(user?.id ?? null);
-    }
-  }, [searchParams, tab, user?.id]);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -1637,7 +1633,7 @@ function ChatsTab({
                               Responder
                             </div>
                             <div
-                              onPointerDown={(e) => beginSwipe(message, e.clientX, e.currentTarget)}
+                              onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); beginSwipe(message, e.clientX, e.currentTarget); }}
                               onPointerMove={(e) => moveSwipe(e.clientX)}
                               onPointerUp={() => finishSwipe(message)}
                               onPointerCancel={() => finishSwipe(message)}
@@ -1653,7 +1649,7 @@ function ChatsTab({
                                 openMessageActionMenu(message, e.currentTarget);
                               }}
                               className={bubbleClassName}
-                              style={{ transform: `translateX(${offset}px)`, transition: swipingMessageId === message.id ? 'none' : 'transform 120ms ease-out' }}
+                              style={{ transform: `translateX(${offset}px)`, transition: swipingMessageId === message.id ? 'none' : 'transform 120ms ease-out', touchAction: 'pan-y' }}
                             >
                               {message.parent ? (
                                 <div className={mine ? 'rounded-2xl bg-black/15 border border-white/10 px-3 py-2 mb-2' : 'rounded-2xl bg-white/5 border border-white/10 px-3 py-2 mb-2'}>
