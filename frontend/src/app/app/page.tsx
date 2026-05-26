@@ -245,8 +245,14 @@ export default function AppHome() {
   const [conversationRefreshToken, setConversationRefreshToken] = useState(0);
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [pendingChatsCount, setPendingChatsCount] = useState(0);
+  const [unreadDmsCount, setUnreadDmsCount] = useState(0);
   const [liveDmNotice, setLiveDmNotice] = useState<LiveDmNotice | null>(null);
   const [liveInteractionNotice, setLiveInteractionNotice] = useState<LiveInteractionNotice | null>(null);
+  const tabRef = useRef<Tab>('feed');
+  const selectedConvRef = useRef<string | null>(null);
+
+  useEffect(() => { tabRef.current = tab; }, [tab]);
+  useEffect(() => { selectedConvRef.current = selectedConversationId; }, [selectedConversationId]);
 
   async function refreshPendingChatsCount() {
     try {
@@ -283,6 +289,9 @@ export default function AppHome() {
       if (!payload || payload.authorId === user.id) return;
       setConversationRefreshToken((current) => current + 1);
       void refreshPendingChatsCount();
+      if (tabRef.current !== 'chats' || selectedConvRef.current !== payload.conversationId) {
+        setUnreadDmsCount((c) => c + 1);
+      }
       const preview = getConversationPreview({
         content: payload.content ?? '',
         createdAt: new Date().toISOString(),
@@ -335,6 +344,9 @@ export default function AppHome() {
 
   function handleSelectTab(nextTab: Tab) {
     setTab(nextTab);
+    if (nextTab === 'chats') {
+      setUnreadDmsCount(0);
+    }
     if (nextTab === 'profile') {
       setProfileUserId(user?.id ?? null);
     }
@@ -345,6 +357,7 @@ export default function AppHome() {
     setSelectedConversationId(conversationId);
     setConversationRefreshToken((current) => current + 1);
     void refreshPendingChatsCount();
+    setUnreadDmsCount(0);
   }
 
   function handleConversationChanged() {
@@ -407,7 +420,7 @@ export default function AppHome() {
         {tab === 'profile' ? <ProfileTab viewedUserId={profileUserId} onOpenChats={() => setTab('chats')} onOpenConversation={handleOpenConversation} onRelationshipChanged={() => void refreshPendingChatsCount()} onOpenProfile={handleOpenProfile} /> : null}
       </main>
 
-      <BottomNav tab={tab} setTab={handleSelectTab} pendingChatsCount={pendingChatsCount} />
+      <BottomNav tab={tab} setTab={handleSelectTab} pendingChatsCount={pendingChatsCount} unreadDmsCount={unreadDmsCount} />
     </div>
   );
 }
@@ -1120,6 +1133,7 @@ function ChatsTab({
   const [messageActionMenu, setMessageActionMenu] = useState<MessageActionMenuState | null>(null);
   const [swipingMessageId, setSwipingMessageId] = useState<string | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
+  const [peerIsTyping, setPeerIsTyping] = useState(false);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -1129,15 +1143,22 @@ function ChatsTab({
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const suppressLongPressClickRef = useRef(false);
+  const typingTimerRef = useRef<number | null>(null);
+  const lastTypingEmitRef = useRef<number>(0);
 
   async function loadConversations() {
     setLoadingList(true);
     setError(null);
     try {
       const rows = await api<ConversationSummary[]>('/dm');
-      setDms(rows);
+      const sorted = rows.slice().sort((a, b) => {
+        const ta = a.lastMessage?.createdAt ? new Date(a.lastMessage.createdAt).getTime() : new Date(a.createdAt).getTime();
+        const tb = b.lastMessage?.createdAt ? new Date(b.lastMessage.createdAt).getTime() : new Date(b.createdAt).getTime();
+        return tb - ta;
+      });
+      setDms(sorted);
       if (selectedConversationId) {
-        const current = rows.find((row) => row.id === selectedConversationId) ?? null;
+        const current = sorted.find((row) => row.id === selectedConversationId) ?? null;
         setActiveConversation(current);
       }
     } catch {
@@ -1145,6 +1166,21 @@ function ChatsTab({
     } finally {
       setLoadingList(false);
     }
+  }
+
+  function updateLastMessage(msg: DMMessage) {
+    setDms((current) => {
+      const updated = current.map((d) =>
+        d.id === msg.conversationId
+          ? { ...d, lastMessage: { content: msg.content, createdAt: msg.createdAt, authorId: msg.authorId, attachments: msg.attachments } }
+          : d,
+      );
+      return updated.slice().sort((a, b) => {
+        const ta = a.lastMessage?.createdAt ? new Date(a.lastMessage.createdAt).getTime() : new Date(a.createdAt).getTime();
+        const tb = b.lastMessage?.createdAt ? new Date(b.lastMessage.createdAt).getTime() : new Date(b.createdAt).getTime();
+        return tb - ta;
+      });
+    });
   }
 
   async function loadConversation(conversationId: string) {
@@ -1211,6 +1247,31 @@ function ChatsTab({
     }, 250);
     return () => window.clearInterval(timer);
   }, [isRecording, recordingStartedAt]);
+
+  useEffect(() => {
+    if (!activeConversation) return;
+    const socket = getSocket('/social');
+    const peerId = activeConversation.peer.id;
+    const convId = activeConversation.id;
+    const onTyping = (payload: { conversationId: string; userId: string }) => {
+      if (payload?.conversationId !== convId || payload?.userId !== peerId) return;
+      setPeerIsTyping(true);
+      if (typingTimerRef.current !== null) window.clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = window.setTimeout(() => {
+        setPeerIsTyping(false);
+        typingTimerRef.current = null;
+      }, 3500);
+    };
+    socket.on('dm_typing', onTyping);
+    return () => {
+      socket.off('dm_typing', onTyping);
+      if (typingTimerRef.current !== null) {
+        window.clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = null;
+      }
+      setPeerIsTyping(false);
+    };
+  }, [activeConversation?.id, activeConversation?.peer.id]);
 
   async function addAttachment(file: File) {
     setUploadingAttachment(true);
@@ -1325,7 +1386,7 @@ function ChatsTab({
         body: { content: tempContent, attachments: tempAttachments, parentId: tempReplyingTo?.id },
       });
       setMessages((current) => current.map((msg) => (msg.id === tempId ? sent : msg)));
-      onConversationChanged();
+      updateLastMessage(sent);
     } catch (err) {
       setMessages((current) => current.filter((msg) => msg.id !== tempId));
       setComposer(tempContent);
@@ -1697,6 +1758,17 @@ function ChatsTab({
                   )}
                 </div>
 
+                {peerIsTyping ? (
+                  <div className="px-4 py-1.5 flex items-center gap-2 text-xs text-white/45 bg-[#0d131d] border-t border-white/5">
+                    <span className="flex gap-[3px] items-center">
+                      <span className="h-1.5 w-1.5 rounded-full bg-white/40 animate-bounce [animation-delay:0ms]" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-white/40 animate-bounce [animation-delay:150ms]" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-white/40 animate-bounce [animation-delay:300ms]" />
+                    </span>
+                    <span>{activeConversation?.peer.displayName} está escribiendo</span>
+                  </div>
+                ) : null}
+
                 <div className="px-3 py-2 border-t border-white/5 bg-[#0d131d]">
                   {replyingTo ? (
                     <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 mb-2 flex items-start justify-between gap-3">
@@ -1746,7 +1818,16 @@ function ChatsTab({
                     <textarea
                       rows={1}
                       value={composer}
-                      onChange={(e) => setComposer(e.target.value)}
+                      onChange={(e) => {
+                        setComposer(e.target.value);
+                        if (activeConversation && canWrite) {
+                          const now = Date.now();
+                          if (now - lastTypingEmitRef.current > 3000) {
+                            lastTypingEmitRef.current = now;
+                            getSocket('/social').emit('dm_typing', { conversationId: activeConversation.id, peerId: activeConversation.peer.id });
+                          }
+                        }
+                      }}
                       placeholder={
                         activeConversation?.canReply
                           ? 'Escribe un mensaje'
@@ -3239,7 +3320,7 @@ function ProfileTab({
 }
 
 /* -------------------- Bottom nav -------------------- */
-function BottomNav({ tab, setTab, pendingChatsCount }: { tab: Tab; setTab: (t: Tab) => void; pendingChatsCount: number }) {
+function BottomNav({ tab, setTab, pendingChatsCount, unreadDmsCount }: { tab: Tab; setTab: (t: Tab) => void; pendingChatsCount: number; unreadDmsCount: number }) {
   const user = useAuth((state) => state.user);
   const items: { id: Tab; label: string; icon: React.ReactNode }[] = [
     {
@@ -3294,9 +3375,9 @@ function BottomNav({ tab, setTab, pendingChatsCount }: { tab: Tab; setTab: (t: T
         >
           <span className="relative inline-flex">
             {it.icon}
-            {it.id === 'chats' && pendingChatsCount > 0 ? (
+            {it.id === 'chats' && (pendingChatsCount + unreadDmsCount) > 0 ? (
               <span className="absolute -right-2 -top-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff4343] text-white text-[10px] leading-[18px] text-center font-bold">
-                {pendingChatsCount > 9 ? '9+' : pendingChatsCount}
+                {(pendingChatsCount + unreadDmsCount) > 9 ? '9+' : pendingChatsCount + unreadDmsCount}
               </span>
             ) : null}
           </span>

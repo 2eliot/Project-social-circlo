@@ -34,6 +34,10 @@ export class RealtimeEventsService {
     this.socialServer?.to(`user:${userId}`).emit('notification_new', payload);
   }
 
+  emitDmTyping(peerId: string, payload: unknown) {
+    this.socialServer?.to(`user:${peerId}`).emit('dm_typing', payload);
+  }
+
   emitChannelMessage(channelId: string, payload: unknown) {
     this.chatServer?.to(`channel:${channelId}`).emit('message_new', payload);
   }

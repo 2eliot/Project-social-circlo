@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
+import { OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit, SubscribeMessage, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import type { Server, Socket } from 'socket.io';
 import { WsAuthService } from '../ws-auth.service';
 import { RealtimeEventsService } from '../realtime-events.service';
@@ -40,5 +40,12 @@ export class SocialGateway implements OnGatewayInit, OnGatewayConnection, OnGate
 
   async handleDisconnect(_socket: Socket) {
     return;
+  }
+
+  @SubscribeMessage('dm_typing')
+  handleDmTyping(socket: SocialSocket, payload: { conversationId: string; peerId: string }) {
+    const userId = socket.data.user?.id;
+    if (!userId || !payload?.conversationId || !payload?.peerId) return;
+    this.realtimeEvents.emitDmTyping(payload.peerId, { conversationId: payload.conversationId, userId });
   }
 }
