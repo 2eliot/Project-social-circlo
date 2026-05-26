@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ChannelType } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/database/prisma.module';
+import { RealtimeEventsService } from '../../realtime/realtime-events.service';
 
 @Injectable()
 export class ChannelsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly events: RealtimeEventsService) {}
 
   async create(groupId: string, dto: { name: string; type: ChannelType; bitrateKbps?: number }) {
     return this.prisma.channel.create({
@@ -31,6 +32,7 @@ export class ChannelsService {
       data: { isEnabled: enabled },
     });
     if (!c) throw new NotFoundException();
+    this.events.emitChannelUpdated(c.groupId, c);
     return c;
   }
 

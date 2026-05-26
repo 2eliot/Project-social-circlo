@@ -41,4 +41,8 @@ export class RealtimeEventsService {
   emitChannelMessage(channelId: string, payload: unknown) {
     this.chatServer?.to(`channel:${channelId}`).emit('message_new', payload);
   }
+
+  emitChannelUpdated(groupId: string, payload: unknown) {
+    this.chatServer?.to(`group:${groupId}`).emit('channel_updated', payload);
+  }
 }

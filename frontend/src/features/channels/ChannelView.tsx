@@ -58,7 +58,7 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const suppressLongPressClickRef = useRef(false);
-  const previewMessages = messages.slice(-6);
+  const previewMessages = messages;
 
   useEffect(() => {
     let cancelled = false;

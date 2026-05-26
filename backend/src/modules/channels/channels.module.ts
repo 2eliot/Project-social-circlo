@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ChannelsController } from './channels.controller';
 import { ChannelsService } from './channels.service';
+import { RealtimeModule } from '../../realtime/realtime.module';
 
 @Module({
+  imports: [RealtimeModule],
   controllers: [ChannelsController],
   providers: [ChannelsService],
   exports: [ChannelsService],

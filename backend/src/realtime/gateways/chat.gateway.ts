@@ -69,6 +69,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return { ok: true };
   }
 
+  @SubscribeMessage('join_group')
+  async joinGroup(@ConnectedSocket() socket: AuthedSocket, @MessageBody() body: { groupId: string }) {
+    await socket.join(`group:${body.groupId}`);
+    return { ok: true };
+  }
+
+  @SubscribeMessage('leave_group')
+  async leaveGroup(@ConnectedSocket() socket: AuthedSocket, @MessageBody() body: { groupId: string }) {
+    await socket.leave(`group:${body.groupId}`);
+    return { ok: true };
+  }
+
   @SubscribeMessage('send_message')
   async sendMessage(
     @ConnectedSocket() socket: AuthedSocket,

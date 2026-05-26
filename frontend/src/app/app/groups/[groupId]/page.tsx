@@ -98,6 +98,29 @@ export default function GroupPage() {
     void loadGroup();
   }, [groupId]);
 
+  // Subscribe to realtime channel updates (enable/disable) for this group
+  useEffect(() => {
+    if (!groupId) return;
+    const socket = getSocket('/chat');
+    socket.emit('join_group', { groupId });
+
+    const onChannelUpdated = (channel: Channel) => {
+      setGroup((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          channels: current.channels.map((c) => (c.id === channel.id ? { ...c, ...channel } : c)),
+        };
+      });
+    };
+    socket.on('channel_updated', onChannelUpdated);
+
+    return () => {
+      socket.emit('leave_group', { groupId });
+      socket.off('channel_updated', onChannelUpdated);
+    };
+  }, [groupId]);
+
   const currentGroup = group;
   const voiceChannel = currentGroup?.channels.find((channel) => channel.type === 'VOICE' || channel.type === 'VIDEO') ?? null;
   const textChannel = currentGroup?.channels.find((channel) => channel.type === 'TEXT') ?? null;
@@ -187,6 +210,32 @@ export default function GroupPage() {
     };
   }, []);
 
+  // Auto-subscribe in listen-only mode so every group member hears the voice
+  // channel without explicitly joining as a speaker. When the user later clicks
+  // "join", the speaker connection replaces this passive one.
+  useEffect(() => {
+    if (!voiceChannel || !voiceChannel.isEnabled) return;
+    if (voiceJoined) return; // already connected as speaker
+    if (sfuRef.current) return; // already have a connection
+    let cancelled = false;
+    const sfu = new SfuClient(voiceChannel.id);
+    sfu
+      .connectListenOnly()
+      .then(() => {
+        if (cancelled) {
+          void sfu.disconnect();
+          return;
+        }
+        sfuRef.current = sfu;
+      })
+      .catch((err) => {
+        console.warn('[group] listen-only connect failed', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [voiceChannel?.id, voiceChannel?.isEnabled, voiceJoined]);
+
   if (!currentGroup) return <p className="p-6 opacity-70">Cargando…</p>;
 
   function handleOpenProfile(userId: string) {
@@ -203,7 +252,7 @@ export default function GroupPage() {
         method: 'PATCH',
         body: { enabled },
       });
-      await loadGroup();
+      // Realtime channel_updated event will refresh state — no explicit reload
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : 'No se pudo actualizar el canal.');
     } finally {
@@ -218,15 +267,24 @@ export default function GroupPage() {
 
     try {
       if (voiceJoined) {
-        // Leave: disconnect SFU and update presence
+        // Leave speaker mode → reconnect as passive listener
         await sfuRef.current?.disconnect().catch(() => undefined);
         sfuRef.current = null;
         setVoiceJoined(false);
         setLocalMicMuted(true);
+        try {
+          const listener = new SfuClient(voiceChannel.id);
+          await listener.connectListenOnly();
+          sfuRef.current = listener;
+        } catch (err) {
+          console.warn('[group] re-listen failed', err);
+        }
         return;
       }
 
-      // Join: create SfuClient which calls join_voice internally
+      // Upgrade from listener (if any) to speaker
+      await sfuRef.current?.disconnect().catch(() => undefined);
+      sfuRef.current = null;
       const sfu = new SfuClient(voiceChannel.id);
       await sfu.connect();
       sfuRef.current = sfu;

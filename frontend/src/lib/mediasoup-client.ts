@@ -17,26 +17,39 @@ export class SfuClient {
   private audioElements = new Map<string, HTMLAudioElement>();
   private onNewProducerHandler?: (info: ProducerInfo) => void;
   private onProducerClosedHandler?: (payload: { producerId: string }) => void;
+  private listenOnly = false;
 
   constructor(public readonly channelId: string) {}
 
-  /** Join the voice channel, negotiate transports, and consume existing producers. */
+  /** Join the voice channel as a speaker (can publish + consume). */
   async connect() {
+    return this.bootstrap('join_voice', false);
+  }
+
+  /** Subscribe to the voice channel in listen-only mode (consumes, cannot publish). */
+  async connectListenOnly() {
+    return this.bootstrap('listen_voice', true);
+  }
+
+  private async bootstrap(joinEvent: 'join_voice' | 'listen_voice', listenOnly: boolean) {
     const socket = getSocket('/sfu');
-    console.log('[SfuClient] connect() channel=', this.channelId);
+    this.listenOnly = listenOnly;
+    console.log('[SfuClient]', joinEvent, 'channel=', this.channelId);
 
     // Join the channel — server returns RTP capabilities for this router
     const { rtpCapabilities } = await sfuEmit<{ ok: boolean; rtpCapabilities: any }>(
       socket,
-      'join_voice',
+      joinEvent,
       { channelId: this.channelId },
     );
-    console.log('[SfuClient] joined voice, loading device');
-    await this.device.load({ routerRtpCapabilities: rtpCapabilities });
+    console.log('[SfuClient] device load');
+    if (!this.device.loaded) await this.device.load({ routerRtpCapabilities: rtpCapabilities });
 
-    // Create bidirectional transports
-    this.sendTransport = await this.createTransport('send');
+    // Recv transport is always needed; send transport only for speakers.
     this.recvTransport = await this.createTransport('recv');
+    if (!listenOnly) {
+      this.sendTransport = await this.createTransport('send');
+    }
 
     // Listen for new producers from other peers
     this.onNewProducerHandler = ({ producerId, userId, kind }: ProducerInfo) => {
@@ -60,7 +73,7 @@ export class SfuClient {
 
   /** Start publishing mic audio. Safe to call multiple times (no-op if already publishing). */
   async publishMic() {
-    if (!this.sendTransport) throw new Error('SfuClient not connected');
+    if (this.listenOnly || !this.sendTransport) throw new Error('SfuClient is listen-only');
     if (this.audioProducer && !this.audioProducer.closed) return;
     console.log('[SfuClient] publishMic() requesting getUserMedia');
 

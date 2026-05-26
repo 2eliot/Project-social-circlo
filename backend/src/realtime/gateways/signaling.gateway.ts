@@ -19,6 +19,8 @@ interface SignalingSocket extends Socket {
   data: {
     user: SocketUser;
     channelId?: string;
+    /** When true, the socket is only consuming audio (no produce allowed). */
+    voiceListenOnly: boolean;
     micMuted: boolean;
     transports: Map<string, Transport>;
     producers: Map<string, Producer>;
@@ -48,6 +50,7 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
       const user = await this.auth.authenticate(socket);
       (socket as SignalingSocket).data = {
         user,
+        voiceListenOnly: false,
         micMuted: true,
         transports: new Map(),
         producers: new Map(),
@@ -63,7 +66,9 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
     const socket = rawSocket as SignalingSocket;
     const channelId = socket.data?.channelId;
     if (channelId) {
-      socket.to(`voice:${channelId}`).emit('peer_left', { userId: socket.data.user.id });
+      if (!socket.data.voiceListenOnly) {
+        socket.to(`voice:${channelId}`).emit('peer_left', { userId: socket.data.user.id });
+      }
       await this.emitVoiceState(channelId);
     }
 
@@ -107,16 +112,55 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
       throw new WsException('Voice channel disabled');
     }
 
+    // If the socket was a passive listener of another channel, drop it first.
+    if (socket.data.channelId && socket.data.channelId !== body.channelId) {
+      await socket.leave(`voice:${socket.data.channelId}`);
+    }
+
     // Remove any pending/approval state
     this.getSet(this.pendingVoiceRequests, body.channelId).delete(socket.data.user.id);
     this.getSet(this.approvedVoiceRequests, body.channelId).delete(socket.data.user.id);
     socket.data.channelId = body.channelId;
+    socket.data.voiceListenOnly = false;
     socket.data.micMuted = true;
     await socket.join(`voice:${body.channelId}`);
     socket.to(`voice:${body.channelId}`).emit('peer_joined', { userId: socket.data.user.id });
     await this.emitVoiceState(body.channelId);
 
     // Return RTP capabilities so the client can load the mediasoup Device
+    const rtpCapabilities = await this.sfu.rtpCapabilities(body.channelId);
+    return { ok: true, rtpCapabilities };
+  }
+
+  /**
+   * Subscribe to a voice channel in listen-only mode. The socket joins the
+   * room to receive `new_producer` events and may create a recv transport plus
+   * consumers, but cannot produce. Used so that every group member hears the
+   * voice channel without explicitly joining as a speaker.
+   */
+  @SubscribeMessage('listen_voice')
+  async listenVoice(@ConnectedSocket() socket: SignalingSocket, @MessageBody() body: { channelId: string }) {
+    const access = await this.getChannelAccess(body.channelId, socket.data.user.id);
+    if (!access.channel.isEnabled && !access.canManage) {
+      throw new WsException('Voice channel disabled');
+    }
+
+    // Already a speaker in the same channel? Nothing to do (speakers also consume).
+    if (socket.data.channelId === body.channelId && !socket.data.voiceListenOnly) {
+      const rtpCapabilities = await this.sfu.rtpCapabilities(body.channelId);
+      return { ok: true, rtpCapabilities };
+    }
+
+    // If listening another channel, leave it first.
+    if (socket.data.channelId && socket.data.channelId !== body.channelId) {
+      await socket.leave(`voice:${socket.data.channelId}`);
+    }
+
+    socket.data.channelId = body.channelId;
+    socket.data.voiceListenOnly = true;
+    socket.data.micMuted = true;
+    await socket.join(`voice:${body.channelId}`);
+
     const rtpCapabilities = await this.sfu.rtpCapabilities(body.channelId);
     return { ok: true, rtpCapabilities };
   }
@@ -139,7 +183,7 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
   @SubscribeMessage('set_mic_muted')
   async setMicMuted(@ConnectedSocket() socket: SignalingSocket, @MessageBody() body: { muted: boolean; channelId?: string }) {
     const channelId = body.channelId ?? socket.data.channelId;
-    if (!channelId || socket.data.channelId !== channelId) {
+    if (!channelId || socket.data.channelId !== channelId || socket.data.voiceListenOnly) {
       throw new WsException('Not in voice channel');
     }
 
@@ -152,10 +196,14 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
   async leaveVoice(@ConnectedSocket() socket: SignalingSocket, @MessageBody() body?: { channelId?: string }) {
     const channelId = body?.channelId ?? socket.data.channelId;
     if (!channelId) return { ok: true };
+    const wasSpeaker = !socket.data.voiceListenOnly && socket.data.channelId === channelId;
     await socket.leave(`voice:${channelId}`);
-    socket.to(`voice:${channelId}`).emit('peer_left', { userId: socket.data.user.id });
+    if (wasSpeaker) {
+      socket.to(`voice:${channelId}`).emit('peer_left', { userId: socket.data.user.id });
+    }
     if (socket.data.channelId === channelId) {
       socket.data.channelId = undefined;
+      socket.data.voiceListenOnly = false;
       socket.data.micMuted = true;
     }
     await this.emitVoiceState(channelId);
@@ -187,6 +235,8 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
     @MessageBody() body: { transportId: string; kind: 'audio' | 'video'; rtpParameters: any; appData?: Record<string, unknown> },
   ) {
     this.logger.log(`produce: user=${socket.data.user.id} kind=${body.kind} channel=${socket.data.channelId}`);
+    if (socket.data.voiceListenOnly) throw new WsException('Listen-only socket cannot produce');
+    if (!socket.data.channelId) throw new WsException('Not in a voice channel');
     const t = socket.data.transports.get(body.transportId);
     if (!t) throw new WsException('Transport not found');
     const producer = await t.produce({
@@ -294,14 +344,16 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
   }
 
   private async getVoiceParticipantIds(channelId: string) {
-    const sockets = await this.server.in(`voice:${channelId}`).fetchSockets();
-    return Array.from(new Set(sockets.map((item) => (item as unknown as SignalingSocket).data.user.id)));
+    const sockets = (await this.server.in(`voice:${channelId}`).fetchSockets()) as unknown as SignalingSocket[];
+    return Array.from(new Set(sockets.filter((s) => !s.data.voiceListenOnly).map((s) => s.data.user.id)));
   }
 
   private async buildVoiceState(channelId: string) {
     const participantSockets = (await this.server.in(`voice:${channelId}`).fetchSockets()) as unknown as SignalingSocket[];
     const uniqueParticipants = new Map<string, { id: string; micMuted: boolean }>();
     for (const participantSocket of participantSockets) {
+      // Exclude listen-only sockets — they hear but don't participate as speakers.
+      if (participantSocket.data.voiceListenOnly) continue;
       uniqueParticipants.set(participantSocket.data.user.id, {
         id: participantSocket.data.user.id,
         micMuted: participantSocket.data.micMuted,
