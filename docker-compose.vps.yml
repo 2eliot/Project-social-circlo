@@ -55,7 +55,7 @@ services:
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
       SEED_INVITE_CODE: ${SEED_INVITE_CODE}
-    command: sh -c "npx prisma migrate deploy && node dist/src/main.js"
+    command: sh -c "npx prisma db push --accept-data-loss && node dist/src/main.js"
     volumes:
       - uploads:/app/uploads
     ports:
