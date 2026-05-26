@@ -127,11 +127,13 @@ export class SfuClient {
 
       await sfuEmit(socket, 'resume_consumer', { consumerId: consumer.id });
 
-      // Play the remote audio
-      const audio = new Audio();
+      // Play the remote audio — must be in the DOM for autoplay to work in all browsers
+      const audio = document.createElement('audio');
       audio.srcObject = new MediaStream([consumer.track]);
       audio.autoplay = true;
-      audio.play().catch(() => undefined);
+      audio.style.display = 'none';
+      document.body.appendChild(audio);
+      audio.play().catch((err) => console.warn('[SfuClient] autoplay blocked for producer', producerId, err));
       this.audioElements.set(producerId, audio);
 
       consumer.on('transportclose', () => this.cleanupConsumer(producerId));
@@ -149,7 +151,9 @@ export class SfuClient {
 
     const audio = this.audioElements.get(producerId);
     if (audio) {
+      audio.pause();
       audio.srcObject = null;
+      audio.remove();
       this.audioElements.delete(producerId);
     }
   }
