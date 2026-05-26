@@ -135,7 +135,8 @@ export class SfuClient {
       this.audioElements.set(producerId, audio);
 
       consumer.on('transportclose', () => this.cleanupConsumer(producerId));
-      consumer.on('producerclose', () => this.cleanupConsumer(producerId));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (consumer as any).on('producerclose', () => this.cleanupConsumer(producerId));
     } catch (err) {
       console.error('[SfuClient] consume error for', producerId, err);
     }
