@@ -8,6 +8,7 @@ import { api } from '@/lib/api-client';
 import { ChannelView } from '@/features/channels/ChannelView';
 import { resolveMediaUrl } from '@/lib/media-url';
 import { getSocket } from '@/lib/socket-client';
+import { SfuClient } from '@/lib/mediasoup-client';
 import { useAuth } from '@/store/auth.store';
 
 interface Channel { id: string; name: string; type: 'TEXT' | 'VOICE' | 'VIDEO'; isEnabled: boolean; }
@@ -74,6 +75,7 @@ export default function GroupPage() {
   const [groupSaveBusy, setGroupSaveBusy] = useState(false);
   const [groupForm, setGroupForm] = useState({ name: '', description: '', privacy: 'PRIVATE' as GroupDetail['privacy'], iconUrl: null as string | null });
   const iconInputRef = useRef<HTMLInputElement | null>(null);
+  const sfuRef = useRef<SfuClient | null>(null);
 
   async function loadGroup() {
     const nextGroup = await api<GroupDetail>(`/groups/${groupId}`);
@@ -169,27 +171,21 @@ export default function GroupPage() {
     const onState = (state: { channelId: string; participants: VoiceStateUser[]; pendingRequests: VoiceStateUser[] }) => {
       if (state.channelId === voiceChannel.id) applyState(state);
     };
-    const onApproved = async (payload: { channelId: string }) => {
-      if (payload.channelId !== voiceChannel.id) return;
-      try {
-        await emit(socket, 'join_voice', { channelId: voiceChannel.id });
-      } catch (error) {
-        setFeedback(error instanceof Error ? error.message : 'No se pudo unir al chat de voz.');
-      } finally {
-        setVoiceJoinBusy(false);
-        setVoiceRequestPending(false);
-      }
-    };
-
     socket.on('voice_state_changed', onState);
-    socket.on('voice_request_approved', onApproved);
 
     return () => {
       mounted = false;
       socket.off('voice_state_changed', onState);
-      socket.off('voice_request_approved', onApproved);
     };
   }, [localMicMuted, user?.id, voiceChannel?.id, voiceJoined]);
+
+  // Disconnect SFU when leaving the page
+  useEffect(() => {
+    return () => {
+      sfuRef.current?.disconnect().catch(() => undefined);
+      sfuRef.current = null;
+    };
+  }, []);
 
   if (!currentGroup) return <p className="p-6 opacity-70">Cargando…</p>;
 
@@ -217,35 +213,29 @@ export default function GroupPage() {
 
   async function handleVoiceAction() {
     if (!voiceChannel || !user) return;
-    const socket = getSocket('/sfu');
     setVoiceJoinBusy(true);
     setFeedback(null);
 
     try {
       if (voiceJoined) {
-        await emit(socket, 'leave_voice', { channelId: voiceChannel.id });
+        // Leave: disconnect SFU and update presence
+        await sfuRef.current?.disconnect().catch(() => undefined);
+        sfuRef.current = null;
         setVoiceJoined(false);
         setLocalMicMuted(true);
         return;
       }
 
-      if (canManageChannels) {
-        await emit(socket, 'join_voice', { channelId: voiceChannel.id });
-        setVoiceJoined(true);
-        setLocalMicMuted(true);
-        return;
-      }
-
-      const response = await emit<{ status?: string }>(socket, 'request_join_voice', { channelId: voiceChannel.id });
-      if (response?.status === 'pending') {
-        setVoiceRequestPending(true);
-      } else {
-        setVoiceRequestPending(false);
-        setVoiceJoined(true);
-        setLocalMicMuted(true);
-      }
+      // Join: create SfuClient which calls join_voice internally
+      const sfu = new SfuClient(voiceChannel.id);
+      await sfu.connect();
+      sfuRef.current = sfu;
+      setVoiceJoined(true);
+      setVoiceRequestPending(false);
+      setLocalMicMuted(true);
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : 'No se pudo actualizar la solicitud de voz.');
+      sfuRef.current = null;
+      setFeedback(error instanceof Error ? error.message : 'No se pudo conectar al chat de voz.');
     } finally {
       setVoiceJoinBusy(false);
     }
@@ -268,6 +258,11 @@ export default function GroupPage() {
     setLocalMicMuted(muted);
     if (!user) return;
     setVoiceParticipants((current) => current.map((participant) => (participant.id === user.id ? { ...participant, micMuted: muted } : participant)));
+    if (muted) {
+      sfuRef.current?.stopMic().catch(() => undefined);
+    } else if (voiceJoined) {
+      sfuRef.current?.publishMic().catch((err: unknown) => console.error('[Voice] mic error', err));
+    }
   }
 
   function updateMemberState(memberUserId: string, updater: (member: GroupMember) => GroupMember | null) {

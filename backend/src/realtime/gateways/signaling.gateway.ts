@@ -84,24 +84,8 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
 
   @SubscribeMessage('request_join_voice')
   async requestJoinVoice(@ConnectedSocket() socket: SignalingSocket, @MessageBody() body: { channelId: string }) {
-    const access = await this.getChannelAccess(body.channelId, socket.data.user.id);
-
-    if (!access.channel.isEnabled && !access.canManage) {
-      throw new WsException('Voice channel disabled');
-    }
-
-    if (access.canManage) {
-      return this.joinVoice(socket, body);
-    }
-
-    const participants = await this.getVoiceParticipantIds(body.channelId);
-    if (participants.includes(socket.data.user.id)) {
-      return { status: 'joined' };
-    }
-
-    this.getSet(this.pendingVoiceRequests, body.channelId).add(socket.data.user.id);
-    await this.emitVoiceState(body.channelId);
-    return { status: 'pending' };
+    // All members can join directly if the channel is enabled; no approval gate.
+    return this.joinVoice(socket, body);
   }
 
   @SubscribeMessage('approve_voice_request')
@@ -122,10 +106,8 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
     if (!access.channel.isEnabled && !access.canManage) {
       throw new WsException('Voice channel disabled');
     }
-    if (!access.canManage && !this.getSet(this.approvedVoiceRequests, body.channelId).has(socket.data.user.id)) {
-      throw new WsException('Approval required');
-    }
 
+    // Remove any pending/approval state
     this.getSet(this.pendingVoiceRequests, body.channelId).delete(socket.data.user.id);
     this.getSet(this.approvedVoiceRequests, body.channelId).delete(socket.data.user.id);
     socket.data.channelId = body.channelId;
@@ -133,7 +115,25 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
     await socket.join(`voice:${body.channelId}`);
     socket.to(`voice:${body.channelId}`).emit('peer_joined', { userId: socket.data.user.id });
     await this.emitVoiceState(body.channelId);
-    return { ok: true };
+
+    // Return RTP capabilities so the client can load the mediasoup Device
+    const rtpCapabilities = await this.sfu.rtpCapabilities(body.channelId);
+    return { ok: true, rtpCapabilities };
+  }
+
+  @SubscribeMessage('get_producers')
+  async getProducers(@ConnectedSocket() socket: SignalingSocket) {
+    if (!socket.data.channelId) throw new WsException('Not in a channel');
+    const sockets = await this.server.in(`voice:${socket.data.channelId}`).fetchSockets();
+    const producers: Array<{ producerId: string; userId: string; kind: string }> = [];
+    for (const s of sockets) {
+      const ss = s as unknown as SignalingSocket;
+      if (ss.id === socket.id) continue; // skip self
+      for (const [producerId, producer] of (ss.data.producers ?? new Map())) {
+        producers.push({ producerId, userId: ss.data.user.id, kind: producer.kind });
+      }
+    }
+    return producers;
   }
 
   @SubscribeMessage('set_mic_muted')
