@@ -32,7 +32,7 @@ export class MediasoupService implements OnModuleInit, OnModuleDestroy {
       const worker = await mediasoup.createWorker({
         logLevel: 'warn',
         rtcMinPort: 40000,
-        rtcMaxPort: 49999,
+        rtcMaxPort: 40099,
       });
       worker.on('died', () => this.logger.error(`Mediasoup worker ${worker.pid} died`));
       this.workers.push(worker);
