@@ -186,6 +186,7 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
     @ConnectedSocket() socket: SignalingSocket,
     @MessageBody() body: { transportId: string; kind: 'audio' | 'video'; rtpParameters: any; appData?: Record<string, unknown> },
   ) {
+    this.logger.log(`produce: user=${socket.data.user.id} kind=${body.kind} channel=${socket.data.channelId}`);
     const t = socket.data.transports.get(body.transportId);
     if (!t) throw new WsException('Transport not found');
     const producer = await t.produce({
@@ -199,6 +200,7 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
     socket
       .to(`voice:${socket.data.channelId}`)
       .emit('new_producer', { producerId: producer.id, userId: socket.data.user.id, kind: body.kind });
+    this.logger.log(`producer created id=${producer.id} — notified room voice:${socket.data.channelId}`);
 
     producer.on('transportclose', () => producer.close());
     return { id: producer.id };
@@ -209,6 +211,7 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
     @ConnectedSocket() socket: SignalingSocket,
     @MessageBody() body: { transportId: string; producerId: string; rtpCapabilities: any },
   ) {
+    this.logger.log(`consume: user=${socket.data.user.id} producerId=${body.producerId}`);
     if (!socket.data.channelId) throw new WsException('Not in a channel');
     const router = await this.sfu.getOrCreateRouter(socket.data.channelId);
     if (!router.canConsume({ producerId: body.producerId, rtpCapabilities: body.rtpCapabilities })) {

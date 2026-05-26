@@ -23,6 +23,7 @@ export class SfuClient {
   /** Join the voice channel, negotiate transports, and consume existing producers. */
   async connect() {
     const socket = getSocket('/sfu');
+    console.log('[SfuClient] connect() channel=', this.channelId);
 
     // Join the channel — server returns RTP capabilities for this router
     const { rtpCapabilities } = await sfuEmit<{ ok: boolean; rtpCapabilities: any }>(
@@ -30,6 +31,7 @@ export class SfuClient {
       'join_voice',
       { channelId: this.channelId },
     );
+    console.log('[SfuClient] joined voice, loading device');
     await this.device.load({ routerRtpCapabilities: rtpCapabilities });
 
     // Create bidirectional transports
@@ -50,6 +52,7 @@ export class SfuClient {
 
     // Consume all producers already in the channel
     const existing = await sfuEmit<ProducerInfo[]>(socket, 'get_producers', {});
+    console.log('[SfuClient] existing producers:', existing.length, existing);
     for (const { producerId, userId, kind } of existing) {
       if (kind === 'audio') void this.consumeAudio(producerId, userId);
     }
@@ -59,13 +62,16 @@ export class SfuClient {
   async publishMic() {
     if (!this.sendTransport) throw new Error('SfuClient not connected');
     if (this.audioProducer && !this.audioProducer.closed) return;
+    console.log('[SfuClient] publishMic() requesting getUserMedia');
 
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     const track = stream.getAudioTracks()[0];
+    console.log('[SfuClient] got mic track:', track.label, 'enabled=', track.enabled);
     this.audioProducer = await this.sendTransport.produce({
       track,
       codecOptions: { opusStereo: false, opusDtx: true },
     });
+    console.log('[SfuClient] producer created id=', this.audioProducer.id);
     this.audioProducer.on('transportclose', () => { this.audioProducer = undefined; });
   }
 
@@ -101,7 +107,8 @@ export class SfuClient {
   // ─── private helpers ─────────────────────────────────────────────────────────
 
   private async consumeAudio(producerId: string, userId: string) {
-    if (!this.recvTransport || !this.device.loaded) return;
+    console.log('[SfuClient] consumeAudio producerId=', producerId, 'userId=', userId);
+    if (!this.recvTransport || !this.device.loaded) { console.warn('[SfuClient] recvTransport or device not ready'); return; }
     if (this.consumers.has(producerId)) return; // already consuming
 
     const socket = getSocket('/sfu');
@@ -126,6 +133,7 @@ export class SfuClient {
       this.consumers.set(producerId, consumer);
 
       await sfuEmit(socket, 'resume_consumer', { consumerId: consumer.id });
+      console.log('[SfuClient] consumer resumed id=', consumer.id, 'track=', consumer.track.label, 'readyState=', consumer.track.readyState);
 
       // Play the remote audio — must be in the DOM for autoplay to work in all browsers
       const audio = document.createElement('audio');
@@ -133,7 +141,7 @@ export class SfuClient {
       audio.autoplay = true;
       audio.style.display = 'none';
       document.body.appendChild(audio);
-      audio.play().catch((err) => console.warn('[SfuClient] autoplay blocked for producer', producerId, err));
+      audio.play().then(() => console.log('[SfuClient] audio playing for', producerId)).catch((err) => console.warn('[SfuClient] autoplay blocked for producer', producerId, err));
       this.audioElements.set(producerId, audio);
 
       consumer.on('transportclose', () => this.cleanupConsumer(producerId));
