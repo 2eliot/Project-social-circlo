@@ -68,6 +68,25 @@ export class PostsController {
     return this.service.addComment(postId, user.id, body.body ?? '');
   }
 
+  @Post(':postId/comments/:commentId/like')
+  toggleCommentLike(
+    @CurrentUser() user: AuthUser,
+    @Param('postId') postId: string,
+    @Param('commentId') commentId: string,
+  ) {
+    return this.service.toggleCommentLike(postId, commentId, user.id);
+  }
+
+  @Post(':postId/comments/:commentId/replies')
+  addCommentReply(
+    @CurrentUser() user: AuthUser,
+    @Param('postId') postId: string,
+    @Param('commentId') commentId: string,
+    @Body() body: { body?: string },
+  ) {
+    return this.service.addCommentReply(postId, commentId, user.id, body.body ?? '');
+  }
+
   @Post(':postId/report')
   report(
     @CurrentUser() user: AuthUser,

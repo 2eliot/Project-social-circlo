@@ -437,7 +437,7 @@ export default function GroupPage() {
         <div className="mb-3 flex items-center justify-between gap-3 px-1">
           <button
             type="button"
-            onClick={() => router.back()}
+            onClick={() => router.push('/app')}
             className="flex h-11 w-11 items-center justify-center rounded-[16px] border border-white/10 bg-white/[0.04] text-white/82 shadow-[0_10px_24px_rgba(0,0,0,.24)]"
             aria-label="Regresar"
           >

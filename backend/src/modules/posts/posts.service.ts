@@ -14,12 +14,22 @@ type PostAttachment = {
   size?: number;
 };
 
+type StoredFeedReply = {
+  id: string;
+  body: string;
+  authorId: string;
+  authorName: string;
+  createdAt: string;
+};
+
 type StoredFeedComment = {
   id: string;
   body: string;
   authorId: string;
   authorName: string;
   createdAt: string;
+  likeUserIds?: string[];
+  replies?: StoredFeedReply[];
 };
 
 type FeedPostRow = {
@@ -293,6 +303,55 @@ export class PostsService implements OnModuleInit {
     return post;
   }
 
+  async toggleCommentLike(postId: string, commentId: string, userId: string) {
+    const post = await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRawUnsafe<FeedPostRow[]>(
+        `SELECT p.id, p.author_id AS "authorId", p.content, p.attachments, p.like_user_ids AS "likeUserIds", p.comments, p.created_at AS "createdAt", u.display_name AS "authorDisplayName", u.avatar_url AS "authorAvatarUrl", u.global_role AS "authorGlobalRole", u.is_verified_moderator AS "authorIsVerifiedModerator" FROM feed_posts p INNER JOIN users u ON u.id = p.author_id WHERE p.id = $1::uuid AND p.deleted_at IS NULL LIMIT 1`,
+        postId,
+      );
+      const row = rows[0];
+      if (!row) throw new NotFoundException('La publicacion no existe.');
+      const comments = this.normalizeComments(row.comments);
+      const idx = comments.findIndex((c) => c.id === commentId);
+      if (idx < 0) throw new NotFoundException('El comentario no existe.');
+      const comment = comments[idx];
+      const likeUserIds = [...(comment.likeUserIds ?? [])];
+      const existing = likeUserIds.indexOf(userId);
+      if (existing >= 0) likeUserIds.splice(existing, 1);
+      else likeUserIds.push(userId);
+      comments[idx] = { ...comment, likeUserIds };
+      await tx.$executeRawUnsafe(`UPDATE feed_posts SET comments = $2::jsonb WHERE id = $1::uuid`, postId, JSON.stringify(comments));
+      return this.serialize({ ...row, comments }, userId);
+    });
+    this.realtimeEvents.emitFeedPostUpdated(post);
+    return post;
+  }
+
+  async addCommentReply(postId: string, commentId: string, userId: string, rawBody: string) {
+    const body = rawBody.trim();
+    if (!body) throw new BadRequestException('La respuesta no puede estar vacía.');
+    if (body.length > POST_COMMENT_MAX_LENGTH) throw new BadRequestException(`La respuesta no puede superar ${POST_COMMENT_MAX_LENGTH} caracteres.`);
+    const author = await this.prisma.user.findUnique({ where: { id: userId }, select: { displayName: true } });
+    const post = await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRawUnsafe<FeedPostRow[]>(
+        `SELECT p.id, p.author_id AS "authorId", p.content, p.attachments, p.like_user_ids AS "likeUserIds", p.comments, p.created_at AS "createdAt", u.display_name AS "authorDisplayName", u.avatar_url AS "authorAvatarUrl", u.global_role AS "authorGlobalRole", u.is_verified_moderator AS "authorIsVerifiedModerator" FROM feed_posts p INNER JOIN users u ON u.id = p.author_id WHERE p.id = $1::uuid AND p.deleted_at IS NULL LIMIT 1`,
+        postId,
+      );
+      const row = rows[0];
+      if (!row) throw new NotFoundException('La publicacion no existe.');
+      const comments = this.normalizeComments(row.comments);
+      const idx = comments.findIndex((c) => c.id === commentId);
+      if (idx < 0) throw new NotFoundException('El comentario no existe.');
+      const comment = comments[idx];
+      const replies = [...(comment.replies ?? []), { id: crypto.randomUUID(), body, authorId: userId, authorName: author?.displayName ?? 'Usuario', createdAt: new Date().toISOString() }];
+      comments[idx] = { ...comment, replies };
+      await tx.$executeRawUnsafe(`UPDATE feed_posts SET comments = $2::jsonb WHERE id = $1::uuid`, postId, JSON.stringify(comments));
+      return this.serialize({ ...row, comments }, userId);
+    });
+    this.realtimeEvents.emitFeedPostUpdated(post);
+    return post;
+  }
+
   async report(postId: string, actorId: string, rawReason: string) {
     const reason = rawReason.trim();
     if (!reason) {
@@ -399,7 +458,24 @@ export class PostsService implements OnModuleInit {
       const createdAt = typeof item?.createdAt === 'string' ? item.createdAt : new Date().toISOString();
       const id = typeof item?.id === 'string' ? item.id : crypto.randomUUID();
       if (!body || !authorId) return [];
-      return [{ id, body, authorId, authorName, createdAt }];
+      const likeUserIds = Array.isArray(item?.likeUserIds)
+        ? (item.likeUserIds as unknown[]).filter((v): v is string => typeof v === 'string')
+        : [];
+      const replies: StoredFeedReply[] = Array.isArray(item?.replies)
+        ? (item.replies as unknown[]).flatMap((r) => {
+            const rBody = typeof (r as Record<string, unknown>)?.body === 'string' ? (r as Record<string, unknown>).body as string : null;
+            const rAuthorId = typeof (r as Record<string, unknown>)?.authorId === 'string' ? (r as Record<string, unknown>).authorId as string : null;
+            if (!rBody || !rAuthorId) return [];
+            return [{
+              id: typeof (r as Record<string, unknown>)?.id === 'string' ? (r as Record<string, unknown>).id as string : crypto.randomUUID(),
+              body: rBody,
+              authorId: rAuthorId,
+              authorName: typeof (r as Record<string, unknown>)?.authorName === 'string' ? (r as Record<string, unknown>).authorName as string : 'Usuario',
+              createdAt: typeof (r as Record<string, unknown>)?.createdAt === 'string' ? (r as Record<string, unknown>).createdAt as string : new Date().toISOString(),
+            }];
+          })
+        : [];
+      return [{ id, body, authorId, authorName, createdAt, likeUserIds, replies }];
     });
   }
 
@@ -414,7 +490,22 @@ export class PostsService implements OnModuleInit {
       attachments: this.normalizeAttachments(rawAttachments as Array<Record<string, unknown>>),
       likedByMe: likeUserIds.includes(viewerId),
       likeCount: likeUserIds.length,
-      comments,
+      comments: comments.map((c) => ({
+        id: c.id,
+        body: c.body,
+        authorId: c.authorId,
+        authorName: c.authorName,
+        createdAt: c.createdAt,
+        likeCount: c.likeUserIds?.length ?? 0,
+        likedByMe: c.likeUserIds?.includes(viewerId) ?? false,
+        replies: (c.replies ?? []).map((r) => ({
+          id: r.id,
+          body: r.body,
+          authorId: r.authorId,
+          authorName: r.authorName,
+          createdAt: r.createdAt,
+        })),
+      })),
       createdAt: row.createdAt,
       author: {
         id: row.authorId,

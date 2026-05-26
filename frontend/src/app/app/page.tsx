@@ -134,7 +134,17 @@ type FeedComment = {
   id: string;
   body: string;
   authorName: string;
+  authorId?: string;
   createdAt?: string;
+  likeCount?: number;
+  likedByMe?: boolean;
+  replies?: Array<{
+    id: string;
+    body: string;
+    authorId: string;
+    authorName: string;
+    createdAt?: string;
+  }>;
 };
 
 type FeedPostDeletedEvent = {
@@ -716,6 +726,9 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
   const [openCommentPostId, setOpenCommentPostId] = useState<string | null>(null);
   const [postActionMenuId, setPostActionMenuId] = useState<string | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [openReplyCommentId, setOpenReplyCommentId] = useState<string | null>(null);
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [commentLikePending, setCommentLikePending] = useState<Set<string>>(new Set());
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const audioInputRef = useRef<HTMLInputElement | null>(null);
   const remainingChars = POST_CONTENT_MAX_LENGTH - composer.length;
@@ -841,6 +854,35 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
       setCommentDrafts((current) => ({ ...current, [postId]: '' }));
     } catch {
       setError('No se pudo guardar el comentario.');
+    }
+  }
+
+  async function toggleCommentLike(postId: string, commentId: string) {
+    if (commentLikePending.has(commentId)) return;
+    setCommentLikePending((s) => new Set([...s, commentId]));
+    try {
+      const post = await api<FeedPost>(`/posts/${postId}/comments/${commentId}/like`, { method: 'POST' });
+      setPosts((current) => current.map((row) => (row.id === post.id ? post : row)));
+    } catch {
+      setError('No se pudo dar like al comentario.');
+    } finally {
+      setCommentLikePending((s) => { const next = new Set(s); next.delete(commentId); return next; });
+    }
+  }
+
+  async function submitReply(postId: string, commentId: string) {
+    const draft = replyDrafts[commentId]?.trim() ?? '';
+    if (!draft) return;
+    try {
+      const post = await api<FeedPost>(`/posts/${postId}/comments/${commentId}/replies`, {
+        method: 'POST',
+        body: { body: draft },
+      });
+      setPosts((current) => current.map((row) => (row.id === post.id ? post : row)));
+      setReplyDrafts((current) => ({ ...current, [commentId]: '' }));
+      setOpenReplyCommentId(null);
+    } catch {
+      setError('No se pudo enviar la respuesta.');
     }
   }
 
@@ -978,11 +1020,60 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
                 </button>
               </div>
               {post.comments?.length ? (
-                <div className="mt-2 space-y-1">
+                <div className="mt-2 space-y-2">
                   {post.comments.map((comment) => (
-                    <div key={comment.id} className="rounded-[12px] bg-black/10 px-2 py-1.5 text-[10px] leading-[1.3] text-white/70">
-                      <span className="mr-1 font-semibold text-white/82">{comment.authorName}:</span>
-                      <span>{comment.body}</span>
+                    <div key={comment.id} className="rounded-[12px] bg-black/10 px-2 py-1.5 text-[10px] text-white/70">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="leading-[1.3] min-w-0">
+                          <span className="mr-1 font-semibold text-white/82">{comment.authorName}:</span>
+                          <span>{comment.body}</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => void toggleCommentLike(post.id, comment.id)}
+                            disabled={commentLikePending.has(comment.id)}
+                            className={`flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[9px] transition ${comment.likedByMe ? 'border-[#ff7aa2]/30 bg-[#ff7aa2]/10 text-[#ffd3df]' : 'border-white/8 bg-white/5 text-white/45'}`}
+                          >
+                            <LikeTinyIcon filled={comment.likedByMe ?? false} />
+                            {(comment.likeCount ?? 0) > 0 ? <span className="ml-0.5">{comment.likeCount}</span> : null}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setOpenReplyCommentId((c) => (c === comment.id ? null : comment.id))}
+                            className="rounded-full border border-white/8 bg-white/5 px-1.5 py-0.5 text-[9px] text-white/45 transition hover:text-white/70"
+                          >
+                            Responder
+                          </button>
+                        </div>
+                      </div>
+                      {comment.replies?.length ? (
+                        <div className="mt-1.5 space-y-1 border-l border-white/8 pl-3">
+                          {comment.replies.map((reply) => (
+                            <div key={reply.id} className="text-[9px] leading-[1.3] text-white/60">
+                              <span className="mr-1 font-semibold text-white/75">{reply.authorName}:</span>
+                              <span>{reply.body}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {openReplyCommentId === comment.id ? (
+                        <div className="mt-1.5 flex items-center gap-1.5">
+                          <input
+                            value={replyDrafts[comment.id] ?? ''}
+                            onChange={(e) => setReplyDrafts((current) => ({ ...current, [comment.id]: e.target.value.slice(0, 80) }))}
+                            placeholder="Responder..."
+                            className="h-7 flex-1 rounded-[10px] border border-white/8 bg-white/[0.04] px-2 py-0 text-[10px]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void submitReply(post.id, comment.id)}
+                            className="h-7 shrink-0 rounded-[10px] border border-white/8 bg-white/5 px-2 text-[9px] font-semibold text-white/70"
+                          >
+                            OK
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -3198,7 +3289,7 @@ function ProfileTab({
                     >
                       <div className="mb-2.5 flex h-9 w-9 items-center justify-center overflow-hidden rounded-[12px] border border-white/12 bg-[#161c26] text-[12px] font-bold text-[#d4fff4]">
                         {group.iconUrl ? (
-                          <img src={group.iconUrl} alt={group.name} className="h-full w-full object-cover" />
+                          <img src={resolveAttachmentUrl(group.iconUrl)} alt={group.name} className="h-full w-full object-cover" />
                         ) : (
                           group.name.slice(0, 2).toUpperCase()
                         )}
