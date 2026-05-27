@@ -133,7 +133,7 @@ export default function GroupPage() {
     currentMembership?.role === 'GROUP_MODERATOR';
   const showVoicePanel = Boolean(voiceChannel?.isEnabled);
   const showTextPanel = Boolean(textChannel && (textChannel.isEnabled || canManageChannels));
-  const textPanelHeightClass = showVoicePanel ? 'h-[520px]' : 'h-[calc(100vh-8rem)] min-h-[620px] max-h-[820px]';
+  const textPanelHeightClass = showVoicePanel ? 'h-[520px]' : 'h-[min(calc(100svh-112px),780px)]';
   const voiceHeroMembers = voiceParticipants
     .map((participant) => ({
       id: participant.id,
