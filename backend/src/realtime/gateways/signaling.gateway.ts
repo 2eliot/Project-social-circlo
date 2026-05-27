@@ -72,11 +72,31 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
       await this.emitVoiceState(channelId);
     }
 
+    // Free mediasoup resources held by this socket (transports release the
+    // UDP ports from the announced range; without this we exhaust 40000-40099).
+    this.closeSocketResources(socket);
+
     for (const [watchedChannelId, pending] of this.pendingVoiceRequests.entries()) {
       if (pending.delete(socket.data?.user?.id)) {
         await this.emitVoiceState(watchedChannelId);
       }
     }
+  }
+
+  private closeSocketResources(socket: SignalingSocket) {
+    if (!socket.data) return;
+    for (const consumer of socket.data.consumers.values()) {
+      try { consumer.close(); } catch { /* ignore */ }
+    }
+    socket.data.consumers.clear();
+    for (const producer of socket.data.producers.values()) {
+      try { producer.close(); } catch { /* ignore */ }
+    }
+    socket.data.producers.clear();
+    for (const transport of socket.data.transports.values()) {
+      try { transport.close(); } catch { /* ignore */ }
+    }
+    socket.data.transports.clear();
   }
 
   @SubscribeMessage('watch_voice_state')
@@ -219,6 +239,8 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
     if (wasSpeaker) {
       socket.to(`voice:${channelId}`).emit('peer_left', { userId: socket.data.user.id });
     }
+    // Release transports/producers/consumers so we don't leak UDP ports.
+    this.closeSocketResources(socket);
     if (socket.data.channelId === channelId) {
       socket.data.channelId = undefined;
       socket.data.voiceListenOnly = false;
