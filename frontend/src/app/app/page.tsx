@@ -3219,13 +3219,23 @@ function ProfileTab({
 
         <div className="mt-3 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,34,.84),rgba(12,16,24,.94))] px-4 py-4 shadow-[0_14px_34px_rgba(0,0,0,.28)] backdrop-blur-[14px]">
           <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/48">Conexiones</div>
-          <button
-            type="button"
-            onClick={() => void openRelationshipModal('followers')}
-            className="mt-2 text-left"
-          >
-            <div className="text-[20px] font-semibold text-white">{followersCount} Seguidores <span className="text-white/34">•</span> {followingCount} Seguidos</div>
-          </button>
+          <div className="mt-2 flex items-center gap-2 text-[20px] font-semibold text-white">
+            <button
+              type="button"
+              onClick={() => void openRelationshipModal('followers')}
+              className="hover:underline focus:outline-none"
+            >
+              {followersCount} Seguidores
+            </button>
+            <span className="text-white/34">•</span>
+            <button
+              type="button"
+              onClick={() => void openRelationshipModal('following')}
+              className="hover:underline focus:outline-none"
+            >
+              {followingCount} Seguidos
+            </button>
+          </div>
         </div>
 
         <div className="mt-2.5 grid grid-cols-[auto_minmax(0,1fr)] gap-2.5">
