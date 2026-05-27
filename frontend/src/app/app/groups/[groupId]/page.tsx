@@ -133,8 +133,18 @@ export default function GroupPage() {
     currentMembership?.role === 'GROUP_MODERATOR';
   const showVoicePanel = Boolean(voiceChannel?.isEnabled);
   const showTextPanel = Boolean(textChannel && (textChannel.isEnabled || canManageChannels));
-  const textPanelHeightClass = showVoicePanel ? 'h-[360px]' : 'h-[calc(100vh-10.5rem)] min-h-[560px] max-h-[760px]';
-  const voiceParticipantPages = chunkItems(voiceParticipants, 8);
+  const textPanelHeightClass = showVoicePanel ? 'h-[520px]' : 'h-[calc(100vh-8rem)] min-h-[620px] max-h-[820px]';
+  const voiceHeroMembers = voiceParticipants
+    .map((participant) => ({
+      id: participant.id,
+      displayName: participant.displayName,
+      avatarUrl: participant.avatarUrl ?? null,
+      micMuted: participant.micMuted,
+      isSpeaker: true,
+      isSelf: participant.id === user?.id,
+    }))
+    .sort((left, right) => Number(right.isSelf) - Number(left.isSelf))
+    .slice(0, 8);
   const memberRoles = Object.fromEntries((currentGroup?.members ?? []).map((member) => [member.userId, member.role]));
   const selectedMember =
     currentGroup?.members.find((member) => member.userId === selectedMemberId)?.user ??
@@ -260,6 +270,14 @@ export default function GroupPage() {
 
   function handleOpenProfile(userId: string) {
     router.push(`/app?profileUserId=${encodeURIComponent(userId)}`);
+  }
+
+  function handleBack() {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.push('/app?tab=groups');
   }
 
   async function toggleChannel(channel: Channel, enabled: boolean) {
@@ -519,171 +537,159 @@ export default function GroupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(96,249,255,.14),transparent_25%),radial-gradient(circle_at_bottom,rgba(230,90,255,.16),transparent_32%),#070b12] pb-8 text-white">
-      <div className="mx-auto w-full max-w-[430px] px-3 pt-3">
-        <div className="mb-3 flex items-center justify-between gap-3 px-1">
-          <button
-            type="button"
-            onClick={() => router.push('/app')}
-            className="flex h-11 w-11 items-center justify-center rounded-[16px] border border-white/10 bg-white/[0.04] text-white/82 shadow-[0_10px_24px_rgba(0,0,0,.24)]"
-            aria-label="Regresar"
-          >
-            <BackMiniIcon />
-          </button>
-          <div className="min-w-0 text-right">
-            <div className="truncate text-sm font-semibold text-white/92">{currentGroup.name}</div>
-            <div className="text-[11px] uppercase tracking-[0.12em] text-white/42">Grupo</div>
-          </div>
-          {canOpenSettings ? (
-            <button
-              type="button"
-              onClick={() => setSettingsOpen(true)}
-              className="flex h-11 w-11 items-center justify-center rounded-[16px] border border-white/10 bg-white/[0.04] text-white/82 shadow-[0_10px_24px_rgba(0,0,0,.24)]"
-              aria-label="Ajustes del grupo"
-            >
-              <DotsMiniIcon />
-            </button>
-          ) : null}
-        </div>
-
-        <section className="overflow-hidden rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(27,33,50,.96),rgba(10,14,24,.98))] shadow-[0_24px_60px_rgba(0,0,0,.42)] backdrop-blur-[18px]">
-          {showVoicePanel ? (
-            <>
-              <div className="px-4 pb-5 pt-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="text-[11px] font-black uppercase tracking-[0.08em] text-[#7befff] [text-shadow:0_0_18px_rgba(123,239,255,.35)]">Escritorio de voz y turno</div>
-                  <button
-                    type="button"
-                    disabled={voiceJoinBusy || !voiceChannel?.isEnabled}
-                    onClick={() => void handleVoiceAction()}
-                    className={`inline-flex min-w-[130px] items-center justify-center gap-2 rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition disabled:opacity-50 ${voiceJoined ? 'border-emerald-300/25 bg-emerald-500/10 text-emerald-100 shadow-[0_0_18px_rgba(16,185,129,.18)]' : voiceRequestPending ? 'border-amber-300/25 bg-amber-500/10 text-amber-100' : 'border-cyan-300/30 bg-cyan-400/10 text-cyan-100 shadow-[0_0_18px_rgba(74,241,255,.18)]'}`}
-                  >
-                    <VoiceJoinIcon joined={voiceJoined} pending={voiceRequestPending} />
-                    <span>{voiceJoined ? 'Bajar de voz' : canManageChannels ? 'Subir a voz' : voiceRequestPending ? 'Esperando' : 'Subir a voz'}</span>
-                  </button>
-                </div>
-
-                {canManageChannels && pendingVoiceRequests.length > 0 ? (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {pendingVoiceRequests.map((member) => (
-                      <button
-                        key={member.id}
-                        type="button"
-                        onClick={() => void approveVoiceRequest(member.id)}
-                        disabled={voiceJoinBusy}
-                        className="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-fuchsia-100 disabled:opacity-50"
-                      >
-                        Aceptar a {truncateName(member.displayName)}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-
-                <div className="mt-5">
-                  {voiceParticipants.length === 0 ? (
-                    <div className="rounded-[18px] border border-white/8 bg-white/[0.03] px-4 py-6 text-center text-sm text-white/48">Nadie ha subido al chat de voz todavia.</div>
-                  ) : (
-                    <div className="overflow-x-auto pb-2 [scrollbar-color:rgba(123,239,255,.45)_transparent] [scrollbar-width:thin]">
-                      <div className="flex snap-x snap-mandatory gap-3">
-                        {voiceParticipantPages.map((page, pageIndex) => (
-                          <div key={`voice-page-${pageIndex}`} className="min-w-full snap-start rounded-[24px] border border-white/8 bg-white/[0.02] px-3 py-3">
-                            <div className="grid grid-cols-4 gap-x-2 gap-y-4">
-                              {page.map((member, index) => (
-                                <div key={member.id} className="relative text-center" data-member-menu-root="true">
-                                  <div className={`relative mx-auto h-[68px] w-[68px] rounded-full p-[3px] ${pageIndex === 0 && index < 2 ? 'bg-[linear-gradient(135deg,#7df7ff,#57b3ff)] shadow-[0_0_18px_rgba(113,247,255,.32)]' : 'bg-[linear-gradient(135deg,rgba(255,255,255,.28),rgba(255,255,255,.08))]'}`}>
-                                    <button
-                                      type="button"
-                                      onClick={() => router.push(`/app?profileUserId=${encodeURIComponent(member.id)}`)}
-                                      onContextMenu={(event) => {
-                                        if ((!canAssignRoles && !canModerateMembers) || member.id === user?.id) return;
-                                        event.preventDefault();
-                                        setSelectedMemberId((current) => (current === member.id ? null : member.id));
-                                      }}
-                                      className="relative h-full w-full overflow-hidden rounded-full border border-white/12 bg-[#111925]"
-                                    >
-                                        {member.avatarUrl ? <img src={resolveMediaUrl(member.avatarUrl)} alt={member.displayName} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-base font-black text-white/88">{member.displayName.slice(0, 2).toUpperCase()}</div>}
-                                      <div className={`absolute bottom-0.5 right-0.5 flex h-5 w-5 items-center justify-center rounded-full border shadow-[0_0_12px_rgba(113,247,255,.22)] ${member.micMuted ? 'border-rose-300/45 bg-[#3a1520] text-rose-200' : 'border-emerald-300/45 bg-[#133326] text-emerald-200'}`}>
-                                        <ParticipantMicIcon muted={member.micMuted} />
-                                      </div>
-                                      {pageIndex === 0 && index < 2 ? <div className="absolute inset-y-1 left-[-6px] w-1.5 rounded-full bg-[radial-gradient(circle,rgba(123,239,255,.95),rgba(123,239,255,0))] blur-[2px]" /> : null}
-                                    </button>
-                                  </div>
-                                  <div className="mt-1.5 truncate text-[10px] font-black uppercase tracking-[0.02em] text-white/92">{truncateName(member.displayName)}</div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {voiceParticipants.length > 8 ? <div className="mt-2 text-right text-[9px] font-black uppercase tracking-[0.16em] text-white/34">Desliza a la derecha para ver mas</div> : null}
-                </div>
-
-                <div className="mt-5 grid grid-cols-2 gap-3">
-                  <div className="h-2 rounded-full bg-[linear-gradient(90deg,rgba(74,241,255,.95),rgba(74,241,255,.25))] shadow-[0_0_14px_rgba(74,241,255,.24)]" />
-                  <div className="h-2 rounded-full bg-[linear-gradient(90deg,rgba(243,102,255,.95),rgba(243,102,255,.25))] shadow-[0_0_14px_rgba(243,102,255,.24)]" />
-                </div>
-              </div>
-
-              <div className="h-px bg-[linear-gradient(90deg,rgba(122,241,255,.28),rgba(245,106,255,.4),rgba(122,241,255,.28))]" />
-            </>
-          ) : null}
-
-          <div className="px-4 pb-4 pt-4">
-            {canManageChannels && textChannel && !textChannel.isEnabled ? (
-              <div className="flex justify-end">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(84,245,255,.12),transparent_18%),radial-gradient(circle_at_top_right,rgba(216,84,255,.1),transparent_24%),#070910] pb-10 text-white">
+      <div className="mx-auto w-full max-w-[440px] px-3 pt-4">
+        <section className="relative overflow-hidden rounded-[38px] border border-white/10 bg-[linear-gradient(180deg,#111623,#090c16)] shadow-[0_32px_90px_rgba(0,0,0,.56)]">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_16%,rgba(74,238,255,.12),transparent_16%),radial-gradient(circle_at_85%_22%,rgba(226,88,255,.12),transparent_18%),linear-gradient(180deg,rgba(255,255,255,.03),transparent_24%)]" />
+          <div className="relative px-4 pb-3 pt-4">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleBack}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/78 shadow-[0_8px_18px_rgba(0,0,0,.24)]"
+                aria-label="Regresar"
+              >
+                <BackMiniIcon />
+              </button>
+              <div className="min-w-0 flex-1 truncate text-[13px] font-semibold text-white/72">grupo del programador</div>
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  disabled={channelToggleBusy === textChannel.id}
-                  onClick={() => void toggleChannel(textChannel, true)}
-                  className="rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-fuchsia-100 disabled:opacity-50"
+                  onClick={() => void handleVoiceAction()}
+                  disabled={voiceJoinBusy || !voiceChannel?.isEnabled}
+                  className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-[0_8px_18px_rgba(0,0,0,.22)] transition disabled:opacity-50 ${voiceJoined ? 'border-emerald-300/26 bg-emerald-400/10 text-emerald-100' : voiceRequestPending ? 'border-amber-300/26 bg-amber-400/10 text-amber-100' : 'border-white/10 bg-white/[0.04] text-white/72'}`}
+                  aria-label={voiceJoined ? 'Bajar de voz' : 'Subir a voz'}
                 >
-                  Encender texto
+                  <VoiceJoinIcon joined={voiceJoined} pending={voiceRequestPending} />
                 </button>
+                {canManageChannels ? (
+                  <button
+                    type="button"
+                    disabled={!voiceChannel}
+                    onClick={voiceChannel ? () => void toggleChannel(voiceChannel, !voiceChannel.isEnabled) : undefined}
+                    className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-[0_8px_18px_rgba(0,0,0,.22)] transition disabled:opacity-50 ${voiceChannel?.isEnabled ? 'border-rose-300/26 bg-[radial-gradient(circle,rgba(255,98,144,.32),rgba(255,98,144,.1))] text-rose-100' : 'border-white/10 bg-white/[0.04] text-white/60'}`}
+                    aria-label={voiceChannel?.isEnabled ? 'Apagar voz' : 'Encender voz'}
+                  >
+                    <VoicePowerIcon enabled={voiceChannel?.isEnabled ?? false} />
+                  </button>
+                ) : null}
+                {canOpenSettings ? (
+                  <button
+                    type="button"
+                    onClick={() => setSettingsOpen(true)}
+                    className="flex h-10 w-7 items-center justify-center text-white/62"
+                    aria-label="Ajustes del grupo"
+                  >
+                    <DotsMiniIcon />
+                  </button>
+                ) : null}
               </div>
-            ) : null}
-            {feedback ? <div className="mt-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">{feedback}</div> : null}
+            </div>
+          </div>
 
-            <div className={`${feedback || (canManageChannels && textChannel && !textChannel.isEnabled) ? 'mt-2' : ''} ${textPanelHeightClass}`}>
-              {showTextPanel && textChannel ? (
-                <ChannelView
-                  channel={textChannel}
-                  minimal
-                  showComposer={textChannel.isEnabled}
-                  showVoiceControls
-                  canToggleVoice={canManageChannels && Boolean(voiceChannel)}
-                  voiceEnabled={voiceChannel?.isEnabled ?? true}
-                  voiceBusy={channelToggleBusy === voiceChannel?.id}
-                  onToggleVoice={voiceChannel ? () => void toggleChannel(voiceChannel, !voiceChannel.isEnabled) : undefined}
-                  canJoinVoice={false}
-                  voiceJoined={voiceJoined}
-                  voiceJoinBusy={voiceJoinBusy}
-                  voiceRequestPending={voiceRequestPending}
-                  onVoiceJoinAction={() => void handleVoiceAction()}
-                  voiceChannelId={voiceChannel?.id}
-                  onMicMutedChange={handleMicMutedChange}
-                  memberRoles={memberRoles}
-                  canManageMembers={canAssignRoles || canModerateMembers}
-                  onToggleMemberMenu={(memberId) => setSelectedMemberId((current) => (current === memberId ? null : memberId))}
-                  onOpenProfile={handleOpenProfile}
-                />
-              ) : (
-                <div className="relative flex h-full flex-col overflow-hidden bg-[linear-gradient(180deg,rgba(13,18,34,.96),rgba(8,11,20,.98))]">
-                  <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_22%,rgba(87,241,255,.14),transparent_18%),radial-gradient(circle_at_78%_26%,rgba(233,95,255,.12),transparent_20%)]" />
-                  <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-white/55">
-                    El chat de texto esta apagado. Espera a que un admin o CoA lo encienda.
-                  </div>
-                  <div className="border-t border-white/8 bg-[linear-gradient(180deg,rgba(9,12,23,.92),rgba(11,15,27,.98))] px-3 pb-3 pt-2">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-12 items-center gap-2 rounded-[16px] border border-white/8 bg-white/[0.03] px-3 text-sm text-white/60">
-                        <MicMiniIcon />
-                        <span>{voiceJoined ? 'Ya estas arriba en el chat de voz' : voiceRequestPending ? 'Solicitud enviada al admin o CoA' : 'Usa el boton de arriba para subir a voz'}</span>
+          <div className="relative px-4 pb-5">
+            <div className="overflow-hidden rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,19,32,.94),rgba(9,12,21,.98))] shadow-[inset_0_1px_0_rgba(255,255,255,.04),0_24px_50px_rgba(0,0,0,.34)]">
+              <div className="pointer-events-none absolute inset-x-4 top-20 h-28 rounded-full bg-[radial-gradient(circle,rgba(70,234,255,.12),transparent_62%)] blur-3xl" />
+              <div className="pointer-events-none absolute right-6 top-28 h-28 w-28 rounded-full bg-[radial-gradient(circle,rgba(222,90,255,.12),transparent_62%)] blur-3xl" />
+              <div className="relative px-3 pb-3 pt-2">
+                {showVoicePanel ? (
+                  <>
+                    <div>
+                      {canManageChannels && pendingVoiceRequests.length > 0 ? (
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          {pendingVoiceRequests.map((member) => (
+                            <button
+                              key={member.id}
+                              type="button"
+                              onClick={() => void approveVoiceRequest(member.id)}
+                              disabled={voiceJoinBusy}
+                              className="rounded-full border border-fuchsia-300/18 bg-fuchsia-400/10 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-fuchsia-100 disabled:opacity-50"
+                            >
+                              Subir a {truncateName(member.displayName)}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      <div className="grid grid-cols-4 gap-x-2.5 gap-y-4">
+                        {voiceHeroMembers.length > 0 ? voiceHeroMembers.map((member) => (
+                          <div key={member.id} className="text-center" data-member-menu-root="true">
+                            <div className={`relative mx-auto h-[68px] w-[68px] rounded-full p-[3px] ${member.isSpeaker ? 'bg-[linear-gradient(135deg,rgba(252,126,255,.95),rgba(102,245,255,.82))] shadow-[0_0_24px_rgba(212,98,255,.22)]' : 'bg-[linear-gradient(135deg,rgba(255,255,255,.16),rgba(255,255,255,.04))]'}`}>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenProfile(member.id)}
+                                onContextMenu={(event) => {
+                                  if ((!canAssignRoles && !canModerateMembers) || member.id === user?.id) return;
+                                  event.preventDefault();
+                                  setSelectedMemberId((current) => (current === member.id ? null : member.id));
+                                }}
+                                className="relative h-full w-full overflow-hidden rounded-full border border-white/12 bg-[#101521]"
+                              >
+                                {member.avatarUrl ? <img src={resolveMediaUrl(member.avatarUrl)} alt={member.displayName} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-base font-black text-white/88">{member.displayName.slice(0, 2).toUpperCase()}</div>}
+                                {(member.isSpeaker || member.isSelf) ? (
+                                  <div className={`absolute bottom-0.5 right-0.5 flex h-4.5 w-4.5 items-center justify-center rounded-full border ${member.micMuted ? 'border-rose-300/45 bg-[#3a1520] text-rose-200' : 'border-emerald-300/45 bg-[#133326] text-emerald-200'}`}>
+                                    <ParticipantMicIcon muted={member.micMuted} />
+                                  </div>
+                                ) : null}
+                              </button>
+                            </div>
+                            <div className="mt-1.5 truncate text-[9px] font-black uppercase tracking-[0.04em] text-white/92">{truncateName(member.displayName)}</div>
+                          </div>
+                        )) : (
+                          <div className="col-span-4 rounded-[18px] border border-white/8 bg-white/[0.03] px-4 py-6 text-center text-sm text-white/48">No hay miembros para mostrar.</div>
+                        )}
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-4 px-1">
+                        <div className="h-2 rounded-full bg-[linear-gradient(90deg,rgba(118,241,255,.98),rgba(118,241,255,.2))] shadow-[0_0_16px_rgba(118,241,255,.16)]" />
+                        <div className="h-2 rounded-full bg-[linear-gradient(90deg,rgba(248,107,255,.96),rgba(248,107,255,.2))] shadow-[0_0_16px_rgba(248,107,255,.16)]" />
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+
+              {feedback ? <div className="mx-3 mt-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">{feedback}</div> : null}
+              <div className={`${feedback ? 'mt-2' : ''} ${textPanelHeightClass}`}>
+                {showTextPanel && textChannel ? (
+                  <ChannelView
+                    channel={textChannel}
+                    minimal
+                    showComposer={textChannel.isEnabled}
+                    showVoiceControls
+                    canToggleVoice={false}
+                    voiceEnabled={voiceChannel?.isEnabled ?? true}
+                    voiceBusy={channelToggleBusy === voiceChannel?.id}
+                    onToggleVoice={voiceChannel ? () => void toggleChannel(voiceChannel, !voiceChannel.isEnabled) : undefined}
+                    canJoinVoice={false}
+                    voiceJoined={voiceJoined}
+                    voiceJoinBusy={voiceJoinBusy}
+                    voiceRequestPending={voiceRequestPending}
+                    onVoiceJoinAction={() => void handleVoiceAction()}
+                    voiceChannelId={voiceChannel?.id}
+                    onMicMutedChange={handleMicMutedChange}
+                    memberRoles={memberRoles}
+                    canManageMembers={canAssignRoles || canModerateMembers}
+                    onToggleMemberMenu={(memberId) => setSelectedMemberId((current) => (current === memberId ? null : memberId))}
+                    onOpenProfile={handleOpenProfile}
+                  />
+                ) : (
+                  <div className="relative flex h-full flex-col overflow-hidden bg-[linear-gradient(180deg,rgba(13,18,34,.96),rgba(8,11,20,.98))]">
+                    <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_22%,rgba(87,241,255,.14),transparent_18%),radial-gradient(circle_at_78%_26%,rgba(233,95,255,.12),transparent_20%)]" />
+                    <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-white/55">
+                      El chat de texto está apagado. Espera a que un admin o CoA lo encienda.
+                    </div>
+                    <div className="border-t border-white/8 bg-[linear-gradient(180deg,rgba(9,12,23,.92),rgba(11,15,27,.98))] px-3 pb-3 pt-2">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-12 items-center gap-2 rounded-[16px] border border-white/8 bg-white/[0.03] px-3 text-sm text-white/60">
+                          <MicMiniIcon />
+                          <span>{voiceJoined ? 'Ya estás arriba en el chat de voz' : voiceRequestPending ? 'Solicitud enviada al admin o CoA' : 'Usa el botón superior para subir a voz'}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </section>
@@ -853,27 +859,19 @@ function VoicePowerIcon({ enabled }: { enabled: boolean }) {
   );
 }
 
-function VoiceJoinIcon({ joined, pending }: { joined: boolean; pending: boolean }) {
-  if (pending) {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
-        <path d="M12 8v5l3 2" strokeLinecap="round" strokeLinejoin="round" />
-        <circle cx="12" cy="12" r="8" />
-      </svg>
-    );
-  }
+function VoiceJoinIcon({ joined, pending: _pending }: { joined: boolean; pending: boolean }) {
   if (joined) {
     return (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
-        <path d="m9 6-6 6 6 6" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M21 12H4" strokeLinecap="round" />
+        <path d="m6 10 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M12 4v11" strokeLinecap="round" />
       </svg>
     );
   }
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
-      <path d="m15 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M3 12h17" strokeLinecap="round" />
+      <path d="m6 14 6-6 6 6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 19V8" strokeLinecap="round" />
     </svg>
   );
 }

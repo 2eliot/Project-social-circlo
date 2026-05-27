@@ -282,6 +282,12 @@ export default function AppHome() {
     if (nextProfileUserId) {
       setProfileUserId(nextProfileUserId);
       setTab('profile');
+      return;
+    }
+
+    const nextTab = searchParams.get('tab');
+    if (nextTab === 'feed' || nextTab === 'chats' || nextTab === 'groups' || nextTab === 'profile') {
+      setTab(nextTab);
     }
   }, [searchParams]);
 
@@ -350,6 +356,7 @@ export default function AppHome() {
   function handleOpenProfile(userId: string) {
     setProfileUserId(userId);
     setTab('profile');
+    router.push(`/app?tab=profile&profileUserId=${encodeURIComponent(userId)}`);
   }
 
   function handleSelectTab(nextTab: Tab) {
@@ -359,11 +366,17 @@ export default function AppHome() {
     }
     if (nextTab === 'profile') {
       setProfileUserId(user?.id ?? null);
+      if (user?.id) {
+        router.push(`/app?tab=profile&profileUserId=${encodeURIComponent(user.id)}`);
+        return;
+      }
     }
+    router.push(nextTab === 'feed' ? '/app?tab=feed' : `/app?tab=${nextTab}`);
   }
 
   function handleOpenConversation(conversationId: string) {
     setTab('chats');
+    router.push('/app?tab=chats');
     setSelectedConversationId(conversationId);
     setConversationRefreshToken((current) => current + 1);
     void refreshPendingChatsCount();
