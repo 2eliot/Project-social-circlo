@@ -724,7 +724,7 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
               </div>
             </button>
           ))}
-          <a href="/notifications" className="block text-center text-[11px] text-[#4d26b3] font-semibold pt-2 pb-1 hover:underline">Ver todas →</a>
+          <button type="button" onClick={() => { setNotificationsOpen(false); router.push('/notifications'); }} className="block w-full text-center text-[11px] text-[#4d26b3] font-semibold pt-2 pb-1 hover:underline bg-transparent border-none cursor-pointer">Ver todas →</button>
         </div>
       ) : null}
 
@@ -1154,7 +1154,7 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
             </button>
             {/* ===== NOTIFICACIONES (dropdown pequeño) ===== */}
             {showNotifications && (
-              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, width: 'min(280px,calc(100vw - 32px))', maxHeight: 260, overflowY: 'auto', background: '#0e1126', borderRadius: 16, border: '1px solid rgba(255,255,255,.08)', boxShadow: '0 8px 32px rgba(0,0,0,.5)', padding: 10, zIndex: 100 }}>
+              <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 4, width: 'min(280px,calc(100vw - 32px))', maxHeight: 260, overflowY: 'auto', background: '#0e1126', borderRadius: 16, border: '1px solid rgba(255,255,255,.08)', boxShadow: '0 8px 32px rgba(0,0,0,.5)', padding: 10, zIndex: 100 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                   <span style={{ fontSize: 12, fontWeight: 600, color: '#f0f4ff' }}>Notificaciones</span>
                   <button type="button" onClick={() => { setNotifications((current) => current.map((item) => ({ ...item, isRead: true }))); setUnreadNotifications(0); api('/notifications/read-all', { method: 'POST' }).catch(() => {}); }} style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#727693', background: 'none', border: 'none', cursor: 'pointer' }}>
@@ -1198,7 +1198,7 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
                     </div>
                   </button>
                 ))}
-                <a href="/notifications" style={{ display: 'block', textAlign: 'center', fontSize: 11, color: '#4d26b3', fontWeight: 600, padding: '6px 0 0', textDecoration: 'none' }}>Ver todas →</a>
+                <button type="button" onClick={() => { setShowNotifications(false); window.location.href = '/notifications'; }} style={{ display: 'block', width: '100%', textAlign: 'center', fontSize: 11, color: '#4d26b3', fontWeight: 600, padding: '6px 0 0', background: 'none', border: 'none', cursor: 'pointer' }}>Ver todas →</button>
               </div>
             )}
           </div>
