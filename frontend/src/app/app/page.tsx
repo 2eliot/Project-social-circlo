@@ -141,6 +141,7 @@ type FeedComment = {
   body: string;
   authorName: string;
   authorId?: string;
+  authorAvatarUrl?: string | null;
   createdAt?: string;
   likeCount?: number;
   likedByMe?: boolean;
@@ -149,6 +150,7 @@ type FeedComment = {
     body: string;
     authorId: string;
     authorName: string;
+    authorAvatarUrl?: string | null;
     createdAt?: string;
   }>;
 };
@@ -856,6 +858,7 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const [friends, setFriends] = useState<Array<{ id: string; displayName: string; avatarUrl?: string | null }>>([]);
+  const [topUsers, setTopUsers] = useState<Array<{ id: string; displayName: string; avatarUrl?: string | null; reputationScore: number }>>([]);
   const [interestPeople, setInterestPeople] = useState<Array<{ id: string; displayName: string; avatarUrl?: string | null }>>([]);
   const [activeFilter, setActiveFilter] = useState<'todos' | 'amigos' | 'tendencia'>('todos');
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
@@ -897,6 +900,14 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
         setInterestPeople(mapped.slice(0, 6));
         setActivePeople(mapped.filter((p) => onlineUserIds.has(p.id)));
       })
+      .catch(() => {});
+  }, [user?.id]);
+
+  // Cargar top 5 usuarios por reputación
+  useEffect(() => {
+    if (!user?.id) return;
+    api<Array<{ id: string; displayName: string; avatarUrl?: string | null; reputationScore: number }>>('/users/top')
+      .then((rows) => setTopUsers(rows))
       .catch(() => {});
   }, [user?.id]);
 
@@ -1258,9 +1269,21 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
 
 
 
-      {/* ===== PERSONAS ACTIVAS (solo amigos que sigo, excluyéndome) ===== */}
+      {/* ===== TOP USERS POR REPUTACIÓN (reemplaza stories) ===== */}
       <div className="feed-exact-stories">
-        {friends.filter(p => p.id !== user?.id).slice(0, 8).map((person) => (
+        {topUsers.length === 0 && friends.filter(p => p.id !== user?.id).slice(0, 8).map((person) => (
+          <div key={person.id} className="feed-exact-story" onClick={() => onOpenProfile(person.id)} onKeyDown={(e) => { if (e.key === 'Enter') onOpenProfile(person.id); }} role="button" tabIndex={0}>
+            <div className="feed-exact-story-ring">
+              <img
+                src={person.avatarUrl ? resolveAttachmentUrl(person.avatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(person.displayName)}&background=4d26b3&color=fff&bold=true`}
+                alt={person.displayName}
+              />
+              {onlineUserIds.has(person.id) ? <span className="status-dot" /> : null}
+            </div>
+            <span className="feed-exact-story-name">{person.displayName.split(' ')[0]}</span>
+          </div>
+        ))}
+        {topUsers.map((person) => (
           <div key={person.id} className="feed-exact-story" onClick={() => onOpenProfile(person.id)} onKeyDown={(e) => { if (e.key === 'Enter') onOpenProfile(person.id); }} role="button" tabIndex={0}>
             <div className="feed-exact-story-ring">
               <img
@@ -1434,11 +1457,17 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
                   </button>
                 </div>
                 <div className="feed-exact-avatar-stack">
-                  {post.likeCount > 0 && (
-                    <>
-                      <img src={`https://ui-avatars.com/api/?name=U&background=4d26b3&color=fff&size=18`} alt="" />
-                      <span className="counter">{post.likeCount}</span>
-                    </>
+                  {post.comments && post.comments.length > 0 && post.comments.slice(0, 3).map((c, i) => (
+                    <img
+                      key={c.id}
+                      src={c.authorAvatarUrl ? resolveAttachmentUrl(c.authorAvatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorName)}&background=4d26b3&color=fff&size=18`}
+                      alt={c.authorName}
+                      title={c.authorName}
+                      style={{ marginLeft: i > 0 ? -8 : 0, position: 'relative', zIndex: 3 - i }}
+                    />
+                  ))}
+                  {post.comments && post.comments.length > 3 && (
+                    <span className="counter" style={{ marginLeft: 2 }}>+{post.comments.length - 3}</span>
                   )}
                 </div>
               </div>
@@ -1465,7 +1494,7 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <img
-                                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(comment.authorName)}&background=4d26b3&color=fff&size=20`}
+                                src={comment.authorAvatarUrl ? resolveAttachmentUrl(comment.authorAvatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.authorName)}&background=4d26b3&color=fff&size=20`}
                                 alt={comment.authorName}
                                 style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' }}
                               />
@@ -1487,7 +1516,12 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
                           {(comment.replies?.length ?? 0) > 0 && (
                             <div style={{ marginTop: 6, paddingLeft: 12, borderLeft: '2px solid rgba(77,38,179,.3)', display: 'flex', flexDirection: 'column', gap: 4 }}>
                               {comment.replies?.map((reply) => (
-                                <div key={reply.id} style={{ fontSize: 12, color: '#c8cce0' }}>
+                                <div key={reply.id} style={{ fontSize: 12, color: '#c8cce0', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <img
+                                    src={reply.authorAvatarUrl ? resolveAttachmentUrl(reply.authorAvatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(reply.authorName)}&background=4d26b3&color=fff&size=16`}
+                                    alt={reply.authorName}
+                                    style={{ width: 16, height: 16, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                                  />
                                   <span style={{ fontWeight: 600, color: '#cdbfff' }}>{reply.authorName}: </span>
                                   <span>{reply.body}</span>
                                 </div>

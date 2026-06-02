@@ -250,6 +250,39 @@ export class UsersService {
    * least one non-whitespace character, excludes the caller, banned accounts,
    * and users with anonymous profiles enabled.
    */
+  async topByReputation(meId: string) {
+    const blockedIds = await this.getBlockedIds(meId);
+    const excludeIds = [meId, ...blockedIds];
+    const placeholders = excludeIds.map((_, i) => `$${i + 1}::uuid`).join(', ');
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ id: string; display_name: string; avatar_url: string | null; global_role: string; is_verified_moderator: boolean; score: bigint | number }>
+    >(
+      `SELECT u.id, u.display_name, u.avatar_url, u.global_role, u.is_verified_moderator,
+              COALESCE(SUM(ur.vote_type), 0) AS score
+       FROM users u
+       LEFT JOIN user_reputation ur ON ur.target_id = u.id
+       WHERE u.id NOT IN (${placeholders})
+         AND u.is_banned = false
+         AND u.is_anonymous_profile = false
+         AND u.deleted_at IS NULL
+       GROUP BY u.id, u.display_name, u.avatar_url, u.global_role, u.is_verified_moderator
+       ORDER BY score DESC
+       LIMIT 5`,
+      ...excludeIds,
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      displayName: r.display_name,
+      profilePath: this.buildProfilePath(r.display_name),
+      avatarUrl: r.avatar_url,
+      reputationScore: Number(r.score),
+      badges: this.buildBadges({
+        globalRole: r.global_role as 'SUPER_ADMIN' | 'GLOBAL_MODERATOR' | 'USER',
+        isVerifiedModerator: r.is_verified_moderator,
+      }),
+    }));
+  }
+
   async search(meId: string, rawQuery: string) {
     const q = rawQuery.trim().replace(/^@+/, '').trim();
     if (q.length === 0) return [];

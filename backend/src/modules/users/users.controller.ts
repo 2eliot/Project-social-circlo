@@ -22,6 +22,11 @@ export class UsersController {
     return this.service.search(user.id, q ?? '');
   }
 
+  @Get('top')
+  top(@CurrentUser() user: AuthUser) {
+    return this.service.topByReputation(user.id);
+  }
+
   @Get('handle/:handle')
   getByHandle(@CurrentUser() user: AuthUser, @Param('handle') handle: string) {
     return this.service.getPublicProfileByHandle(user.id, handle);

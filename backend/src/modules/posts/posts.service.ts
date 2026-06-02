@@ -19,6 +19,7 @@ type StoredFeedReply = {
   body: string;
   authorId: string;
   authorName: string;
+  authorAvatarUrl?: string | null;
   createdAt: string;
 };
 
@@ -27,6 +28,7 @@ type StoredFeedComment = {
   body: string;
   authorId: string;
   authorName: string;
+  authorAvatarUrl?: string | null;
   createdAt: string;
   likeUserIds?: string[];
   replies?: StoredFeedReply[];
@@ -238,7 +240,7 @@ export class PostsService implements OnModuleInit {
 
     const author = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { displayName: true },
+      select: { displayName: true, avatarUrl: true },
     });
 
     const post = await this.prisma.$transaction(async (tx) => {
@@ -275,6 +277,7 @@ export class PostsService implements OnModuleInit {
         body,
         authorId: userId,
         authorName: author?.displayName ?? 'Usuario',
+        authorAvatarUrl: author?.avatarUrl ?? null,
         createdAt: new Date().toISOString(),
       });
 
@@ -331,7 +334,7 @@ export class PostsService implements OnModuleInit {
     const body = rawBody.trim();
     if (!body) throw new BadRequestException('La respuesta no puede estar vacía.');
     if (body.length > POST_COMMENT_MAX_LENGTH) throw new BadRequestException(`La respuesta no puede superar ${POST_COMMENT_MAX_LENGTH} caracteres.`);
-    const author = await this.prisma.user.findUnique({ where: { id: userId }, select: { displayName: true } });
+    const author = await this.prisma.user.findUnique({ where: { id: userId }, select: { displayName: true, avatarUrl: true } });
     const post = await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRawUnsafe<FeedPostRow[]>(
         `SELECT p.id, p.author_id AS "authorId", p.content, p.attachments, p.like_user_ids AS "likeUserIds", p.comments, p.created_at AS "createdAt", u.display_name AS "authorDisplayName", u.avatar_url AS "authorAvatarUrl", u.global_role AS "authorGlobalRole", u.is_verified_moderator AS "authorIsVerifiedModerator" FROM feed_posts p INNER JOIN users u ON u.id = p.author_id WHERE p.id = $1::uuid AND p.deleted_at IS NULL LIMIT 1`,
@@ -343,7 +346,7 @@ export class PostsService implements OnModuleInit {
       const idx = comments.findIndex((c) => c.id === commentId);
       if (idx < 0) throw new NotFoundException('El comentario no existe.');
       const comment = comments[idx];
-      const replies = [...(comment.replies ?? []), { id: crypto.randomUUID(), body, authorId: userId, authorName: author?.displayName ?? 'Usuario', createdAt: new Date().toISOString() }];
+      const replies = [...(comment.replies ?? []), { id: crypto.randomUUID(), body, authorId: userId, authorName: author?.displayName ?? 'Usuario', authorAvatarUrl: author?.avatarUrl ?? null, createdAt: new Date().toISOString() }];
       comments[idx] = { ...comment, replies };
       await tx.$executeRawUnsafe(`UPDATE feed_posts SET comments = $2::jsonb WHERE id = $1::uuid`, postId, JSON.stringify(comments));
       return this.serialize({ ...row, comments }, userId);
@@ -471,6 +474,7 @@ export class PostsService implements OnModuleInit {
               body: rBody,
               authorId: rAuthorId,
               authorName: typeof (r as Record<string, unknown>)?.authorName === 'string' ? (r as Record<string, unknown>).authorName as string : 'Usuario',
+              authorAvatarUrl: typeof (r as Record<string, unknown>)?.authorAvatarUrl === 'string' ? (r as Record<string, unknown>).authorAvatarUrl as string : null,
               createdAt: typeof (r as Record<string, unknown>)?.createdAt === 'string' ? (r as Record<string, unknown>).createdAt as string : new Date().toISOString(),
             }];
           })
@@ -495,6 +499,7 @@ export class PostsService implements OnModuleInit {
         body: c.body,
         authorId: c.authorId,
         authorName: c.authorName,
+        authorAvatarUrl: c.authorAvatarUrl ?? null,
         createdAt: c.createdAt,
         likeCount: c.likeUserIds?.length ?? 0,
         likedByMe: c.likeUserIds?.includes(viewerId) ?? false,
@@ -503,6 +508,7 @@ export class PostsService implements OnModuleInit {
           body: r.body,
           authorId: r.authorId,
           authorName: r.authorName,
+          authorAvatarUrl: r.authorAvatarUrl ?? null,
           createdAt: r.createdAt,
         })),
       })),
