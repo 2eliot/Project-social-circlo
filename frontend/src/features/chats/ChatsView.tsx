@@ -254,6 +254,7 @@ export default function ChatsView({
   const [myGroups, setMyGroups] = useState<GroupSummary[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [unreadConversations, setUnreadConversations] = useState<Set<string>>(new Set());
 
   /* ---- Cargar conversaciones ---- */
   async function loadConversations() {
@@ -339,8 +340,14 @@ export default function ChatsView({
   useEffect(() => {
     if (!user?.id) return;
     const socket = getSocket('/social');
-    const onDmMessage = () => {
+    const onDmMessage = (payload: { conversationId: string; authorId: string }) => {
+      if (!payload || payload.authorId === user.id) return;
       void loadConversations();
+      setUnreadConversations((prev) => {
+        const next = new Set(prev);
+        next.add(payload.conversationId);
+        return next;
+      });
     };
     socket.on('dm_message_new', onDmMessage);
     return () => {
@@ -530,7 +537,15 @@ export default function ChatsView({
                 key={dm.id}
                 conversation={dm}
                 online={onlineIds.has(dm.peer.id)}
-                onSelect={() => onSelectConversation(dm.id)}
+                unread={unreadConversations.has(dm.id)}
+                onSelect={() => {
+                  setUnreadConversations((prev) => {
+                    const next = new Set(prev);
+                    next.delete(dm.id);
+                    return next;
+                  });
+                  onSelectConversation(dm.id);
+                }}
                 onOpenProfile={() => onOpenProfile(dm.peer.id)}
               />
             ))}
@@ -595,11 +610,13 @@ function TabButton({
 function ChatCard({
   conversation,
   online = false,
+  unread = false,
   onSelect,
   onOpenProfile,
 }: {
   conversation: ConversationSummary;
   online?: boolean;
+  unread?: boolean;
   onSelect: () => void;
   onOpenProfile: () => void;
 }) {
@@ -610,7 +627,9 @@ function ChatCard({
   return (
     <div
       onClick={onSelect}
-      className="flex cursor-pointer items-center gap-4 rounded-2xl bg-[#0e1126] p-4 transition hover:bg-[#1a1f3a] active:scale-[0.98]"
+      className={`flex cursor-pointer items-center gap-4 rounded-2xl p-4 transition hover:bg-[#1a1f3a] active:scale-[0.98] ${
+        unread ? 'bg-[#1a1040] ring-1 ring-[#3b228e]/50' : 'bg-[#0e1126]'
+      }`}
     >
       {/* Avatar */}
       <button onClick={(e) => { e.stopPropagation(); onOpenProfile(); }} className="shrink-0">
@@ -624,9 +643,14 @@ function ChatCard({
 
       {/* Info central — ocupa el espacio flexible */}
       <div className="min-w-0 flex-1">
-        <span className="truncate text-[15px] font-semibold text-white">
-          {peer.displayName ?? 'Anónimo'}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`truncate text-[15px] font-semibold ${unread ? 'text-white' : 'text-white'}`}>
+            {peer.displayName ?? 'Anónimo'}
+          </span>
+          {unread && (
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#7c5cff] shadow-[0_0_6px_#7c5cff]" />
+          )}
+        </div>
         <div className="mt-0.5 flex items-center gap-2">
           {status === 'PENDING' ? (
             <span className="truncate text-[13px] text-[#f59e0b]">
@@ -637,7 +661,7 @@ function ChatCard({
           ) : status === 'REJECTED' ? (
             <span className="truncate text-[13px] text-red-400">Solicitud rechazada</span>
           ) : (
-            <span className="truncate text-[13px] text-[#727693]">
+            <span className={`truncate text-[13px] ${unread ? 'font-medium text-white/90' : 'text-[#727693]'}`}>
               {preview || 'Conversación activa'}
             </span>
           )}
