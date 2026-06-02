@@ -40,6 +40,15 @@ body {
   background: transparent;
 }
 
+/* Ocultar scrollbar pero mantener funcionalidad */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 input, textarea { background: #1b1f2a; border: 1px solid #2a3142; color: #e5e7eb; padding: .55rem .75rem; border-radius: .55rem; width: 100%; }
 button.primary { background: #7c5cff; color: white; padding: .55rem 1rem; border-radius: .55rem; font-weight: 600; }
 button.primary:disabled { opacity: .5; cursor: not-allowed; }

@@ -5,13 +5,17 @@ import { randomUUID } from 'crypto';
 import { extname } from 'path';
 import type { Request } from 'express';
 import { UsersService } from './users.service';
+import { ReputationService } from './reputation.service';
 import { JwtAuthGuard } from '../../common/guards/auth.guards';
 import { CurrentUser, AuthUser } from '../../common/decorators/auth.decorators';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
 export class UsersController {
-  constructor(private readonly service: UsersService) {}
+  constructor(
+    private readonly service: UsersService,
+    private readonly reputationService: ReputationService,
+  ) {}
 
   @Get('search')
   search(@CurrentUser() user: AuthUser, @Query('q') q?: string) {
@@ -21,6 +25,11 @@ export class UsersController {
   @Get('handle/:handle')
   getByHandle(@CurrentUser() user: AuthUser, @Param('handle') handle: string) {
     return this.service.getPublicProfileByHandle(user.id, handle);
+  }
+
+  @Get('me/online-friends')
+  onlineFriends(@CurrentUser() user: AuthUser) {
+    return this.service.onlineFriends(user.id);
   }
 
   @Get(':id/followers')
@@ -83,5 +92,25 @@ export class UsersController {
     @Body() body: { displayName?: string; avatarUrl?: string; isAnonymousProfile?: boolean },
   ) {
     return this.service.updateMe(user.id, body);
+  }
+
+  @Post(':id/reputation/like')
+  likeUser(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.reputationService.voteOnUser(user.id, id, 1);
+  }
+
+  @Post(':id/reputation/dislike')
+  dislikeUser(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.reputationService.voteOnUser(user.id, id, -1);
+  }
+
+  @Delete(':id/reputation')
+  removeReputation(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.reputationService.removeVote(user.id, id);
+  }
+
+  @Get(':id/reputation')
+  getReputation(@Param('id', ParseUUIDPipe) id: string) {
+    return this.reputationService.getReputation(id);
   }
 }

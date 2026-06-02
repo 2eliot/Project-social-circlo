@@ -1,9 +1,15 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/database/prisma.module';
+import { ReputationService } from './reputation.service';
+import { PresenceService } from '../../infrastructure/redis/redis.module';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly reputationService: ReputationService,
+    private readonly presence: PresenceService,
+  ) {}
 
   private buildProfilePath(displayName: string) {
     return `/app/profile/${encodeURIComponent(displayName)}`;
@@ -88,7 +94,7 @@ export class UsersService {
     });
     if (!u || u.isAnonymousProfile === undefined) throw new NotFoundException();
 
-    const [isFollowing, followsYou, hasBlocked, blockedYou] = await Promise.all([
+    const [isFollowing, followsYou, hasBlocked, blockedYou, reputationData, userVote] = await Promise.all([
       viewerId === userId
         ? Promise.resolve(false)
         : this.prisma.userFollow.findUnique({
@@ -113,6 +119,8 @@ export class UsersService {
             where: { blockerId_blockedId: { blockerId: userId, blockedId: viewerId } },
             select: { blockerId: true },
           }),
+      this.reputationService.getReputation(userId),
+      viewerId === userId ? Promise.resolve(null) : this.reputationService.getUserVoteOnProfile(viewerId, userId),
     ]);
 
     if (u.isAnonymousProfile) {
@@ -132,6 +140,10 @@ export class UsersService {
         hasBlocked: Boolean(hasBlocked),
         blockedYou: Boolean(blockedYou),
         badges: this.buildBadges(u),
+        reputationScore: reputationData.score,
+        reputationLikes: reputationData.likes,
+        reputationDislikes: reputationData.dislikes,
+        userVoteType: userVote,
       };
     }
     return {
@@ -144,6 +156,10 @@ export class UsersService {
       hasBlocked: Boolean(hasBlocked),
       blockedYou: Boolean(blockedYou),
       badges: this.buildBadges(u),
+      reputationScore: reputationData.score,
+      reputationLikes: reputationData.likes,
+      reputationDislikes: reputationData.dislikes,
+      userVoteType: userVote,
     };
   }
 
@@ -309,5 +325,62 @@ export class UsersService {
       },
     });
     return { ok: true };
+  }
+
+  /**
+   * Returns mutual friends (users who follow me AND I follow) that are
+   * currently online according to the PresenceService (Redis).
+   */
+  async onlineFriends(meId: string) {
+    const blockedIds = await this.getBlockedIds(meId);
+
+    // 1. Get my followers
+    const followers = await this.prisma.userFollow.findMany({
+      where: {
+        followingId: meId,
+        follower: {
+          deletedAt: null,
+          isBanned: false,
+          isAnonymousProfile: false,
+          id: { notIn: blockedIds },
+        },
+      },
+      select: {
+        follower: {
+          select: {
+            id: true,
+            displayName: true,
+            avatarUrl: true,
+            globalRole: true,
+            isVerifiedModerator: true,
+          },
+        },
+      },
+    });
+
+    const followerIds = followers.map((r) => r.follower.id);
+
+    // 2. Filter to only those I also follow (mutual)
+    const mutual = await this.prisma.userFollow.findMany({
+      where: {
+        followerId: meId,
+        followingId: { in: followerIds },
+      },
+      select: { followingId: true },
+    });
+
+    const mutualIds = new Set(mutual.map((r) => r.followingId));
+
+    // 3. Check online status via Redis
+    const onlineFriends = await Promise.all(
+      followers
+        .filter((r) => mutualIds.has(r.follower.id))
+        .map(async (r) => ({
+          ...this.mapRelationshipUser(r.follower),
+          online: await this.presence.isOnline(r.follower.id),
+        })),
+    );
+
+    return onlineFriends.filter((f) => f.online);
   }
 }

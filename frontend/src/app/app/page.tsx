@@ -7,6 +7,7 @@ import { ApiError, api } from '@/lib/api-client';
 import { normalizeMediaUrl, resolveMediaUrl } from '@/lib/media-url';
 import { getSocket } from '@/lib/socket-client';
 import { useAuth } from '@/store/auth.store';
+import ChatsView from '@/features/chats/ChatsView';
 
 type Tab = 'feed' | 'chats' | 'groups' | 'profile';
 
@@ -89,6 +90,10 @@ type UserProfile = {
   isFollowing: boolean;
   followersCount: number;
   followingCount: number;
+  reputationScore?: number;
+  reputationLikes?: number;
+  reputationDislikes?: number;
+  userVoteType?: 1 | -1 | null;
 };
 
 type Group = {
@@ -432,13 +437,23 @@ export default function AppHome() {
       <main className="app-content">
         {tab === 'feed' ? <FeedTab onOpenProfile={handleOpenProfile} /> : null}
         {tab === 'chats' ? (
-          <ChatsTab
-            selectedConversationId={selectedConversationId}
-            refreshToken={conversationRefreshToken}
-            onSelectConversation={setSelectedConversationId}
-            onOpenProfile={handleOpenProfile}
-            onConversationChanged={handleConversationChanged}
-          />
+          selectedConversationId ? (
+            <ChatsTab
+              selectedConversationId={selectedConversationId}
+              refreshToken={conversationRefreshToken}
+              onSelectConversation={setSelectedConversationId}
+              onOpenProfile={handleOpenProfile}
+              onConversationChanged={handleConversationChanged}
+            />
+          ) : (
+            <ChatsView
+              selectedConversationId={selectedConversationId}
+              refreshToken={conversationRefreshToken}
+              onSelectConversation={setSelectedConversationId}
+              onOpenProfile={handleOpenProfile}
+              onConversationChanged={handleConversationChanged}
+            />
+          )
         ) : null}
         {tab === 'groups' ? (
           <GroupsTab
@@ -2958,6 +2973,8 @@ function ProfileTab({
   } | null>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [connectionsList, setConnectionsList] = useState<ProfileRelationshipUser[]>([]);
+  const [userVoteOnProfile, setUserVoteOnProfile] = useState<1 | -1 | null>(null);
+  const [votingInProgress, setVotingInProgress] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const targetUserId = viewedUserId ?? user?.id ?? null;
   const isOwnProfile = !!user?.id && targetUserId === user.id;
@@ -2967,6 +2984,7 @@ function ProfileTab({
     setLoading(true);
     setPostsLoading(true);
     setError(null);
+    setUserVoteOnProfile(null);
     const profileRequest = api<UserProfile>(`/users/${targetUserId}`);
     const postsRequest = api<FeedPost[]>(`/posts?authorId=${encodeURIComponent(targetUserId)}&limit=24`);
     const ownDataRequest = isOwnProfile
@@ -2980,6 +2998,7 @@ function ProfileTab({
     Promise.all([profileRequest, ownDataRequest, postsRequest, followersRequest])
       .then(([profileData, [inviteData, groupsData], postsData, followersData]) => {
         setProfile(profileData);
+        setUserVoteOnProfile(profileData.userVoteType ?? null);
         setInvite(inviteData);
         setMyGroups(groupsData.mine);
         setPublicGroups(groupsData.public);
@@ -3125,6 +3144,68 @@ function ProfileTab({
     } catch {
       setRelationshipModal({ mode, items: [], loading: false });
       setError(`No se pudo cargar la lista de ${mode === 'followers' ? 'seguidores' : 'seguidos'}.`);
+    }
+  }
+
+  async function handleVoteOnProfile(voteType: 1 | -1) {
+    if (!profile || isOwnProfile || votingInProgress) return;
+    setVotingInProgress(true);
+    setError(null);
+    try {
+      if (userVoteOnProfile === voteType) {
+        // Remove vote if clicking same button
+        await api(`/users/${profile.id}/reputation`, { method: 'DELETE' });
+        setUserVoteOnProfile(null);
+        setProfile((current) =>
+          current
+            ? {
+                ...current,
+                reputationScore: (current.reputationScore || 0) + (voteType === 1 ? -1 : 1),
+                reputationLikes: voteType === 1 ? (current.reputationLikes || 0) - 1 : current.reputationLikes,
+                reputationDislikes: voteType === -1 ? (current.reputationDislikes || 0) - 1 : current.reputationDislikes,
+              }
+            : current,
+        );
+      } else if (userVoteOnProfile) {
+        // Switch vote
+        const endpoint = voteType === 1 ? 'like' : 'dislike';
+        await api(`/users/${profile.id}/reputation/${endpoint}`, { method: 'POST' });
+        const oldVote = userVoteOnProfile;
+        setUserVoteOnProfile(voteType);
+        setProfile((current) =>
+          current
+            ? {
+                ...current,
+                reputationScore: (current.reputationScore || 0) + (oldVote === 1 ? -1 : 1) + (voteType === 1 ? 1 : -1),
+                reputationLikes: 
+                  oldVote === 1 ? (current.reputationLikes || 0) - 1 : (current.reputationLikes || 0) + (voteType === 1 ? 1 : 0),
+                reputationDislikes:
+                  oldVote === -1 ? (current.reputationDislikes || 0) - 1 : (current.reputationDislikes || 0) + (voteType === -1 ? 1 : 0),
+              }
+            : current,
+        );
+      } else {
+        // Add new vote
+        const endpoint = voteType === 1 ? 'like' : 'dislike';
+        await api(`/users/${profile.id}/reputation/${endpoint}`, { method: 'POST' });
+        setUserVoteOnProfile(voteType);
+        setProfile((current) =>
+          current
+            ? {
+                ...current,
+                reputationScore: (current.reputationScore || 0) + (voteType === 1 ? 1 : -1),
+                reputationLikes: voteType === 1 ? (current.reputationLikes || 0) + 1 : current.reputationLikes,
+                reputationDislikes: voteType === -1 ? (current.reputationDislikes || 0) + 1 : current.reputationDislikes,
+              }
+            : current,
+        );
+      }
+    } catch (err) {
+      setError('No se pudo procesar tu voto.');
+      setVotingInProgress(false);
+      return;
+    } finally {
+      setVotingInProgress(false);
     }
   }
 
@@ -3470,19 +3551,49 @@ function ProfileTab({
                 <div className="flex flex-col gap-0.5 justify-center">
                   <span className="text-[9px] font-extrabold tracking-[0.08em] text-white/30 uppercase leading-none">Reputación</span>
                   <span className="text-[11px] font-bold text-white/80 leading-tight mt-0.5">
-                    Perfil activo y sincronizado
+                    {profile?.reputationScore ?? 0} puntos
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Check verde insignia "Todo en orden" */}
-            <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#10b981]/8 border border-[#10b981]/15 px-2 py-0.5 text-[9px] font-bold text-[#34d399] w-max leading-none">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-2.5 w-2.5 shrink-0">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-              Todo en orden
-            </div>
+            {/* Like/Dislike Buttons */}
+            {!isOwnProfile && (
+              <div className="mt-2 flex items-center gap-1">
+                <button
+                  onClick={() => handleVoteOnProfile(1)}
+                  disabled={votingInProgress}
+                  className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
+                    userVoteOnProfile === 1
+                      ? 'bg-[#10b981]/30 text-[#34d399]'
+                      : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70'
+                  } disabled:opacity-50`}
+                  title="Me gusta"
+                >
+                  👍
+                </button>
+                <button
+                  onClick={() => handleVoteOnProfile(-1)}
+                  disabled={votingInProgress}
+                  className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
+                    userVoteOnProfile === -1
+                      ? 'bg-red-500/30 text-red-400'
+                      : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70'
+                  } disabled:opacity-50`}
+                  title="No me gusta"
+                >
+                  👎
+                </button>
+              </div>
+            )}
+            {isOwnProfile && (
+              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#10b981]/8 border border-[#10b981]/15 px-2 py-0.5 text-[9px] font-bold text-[#34d399] w-max leading-none">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-2.5 w-2.5 shrink-0">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                Perfil propio
+              </div>
+            )}
           </div>
         </div>
 
