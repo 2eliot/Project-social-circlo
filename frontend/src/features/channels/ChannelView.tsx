@@ -99,8 +99,10 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
     };
   }, [channel.id]);
 
+  const initialLoadRef = useRef(true);
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: initialLoadRef.current ? 'auto' : 'smooth' });
+    initialLoadRef.current = false;
   }, [messages.length]);
 
   useEffect(() => {

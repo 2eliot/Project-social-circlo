@@ -94,6 +94,7 @@ type UserProfile = {
   reputationLikes?: number;
   reputationDislikes?: number;
   userVoteType?: 1 | -1 | null;
+  isOnline?: boolean;
 };
 
 type Group = {
@@ -196,35 +197,47 @@ function UserAvatar({
   size = 56,
   className = '',
   onClick,
+  isOnline,
 }: {
   displayName?: string | null;
   avatarUrl?: string | null;
   size?: number;
   className?: string;
   onClick?: (event: React.MouseEvent<HTMLDivElement>) => void;
+  isOnline?: boolean;
 }) {
   const initials = (displayName ?? '?').slice(0, 2).toUpperCase();
 
   return (
-    <div
-      className={`shrink-0 overflow-hidden flex items-center justify-center bg-[#101521] border border-white/10 text-white/90 ${className}`.trim()}
-      style={{ width: size, height: size, borderRadius: Math.round(size * 0.34), fontSize: Math.max(14, Math.round(size * 0.32)) }}
-      onClick={onClick}
-      onKeyDown={(event) => {
-        if (!onClick) return;
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onClick(event as unknown as React.MouseEvent<HTMLDivElement>);
-        }
-      }}
-      role={onClick ? 'button' : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      title={onClick ? `Abrir perfil de ${displayName ?? 'usuario'}` : undefined}
-    >
-      {avatarUrl ? (
-        <img src={resolveAttachmentUrl(avatarUrl)} alt={displayName ?? 'Avatar'} className="h-full w-full object-cover" />
-      ) : (
-        <span className="font-semibold tracking-[0.06em]">{initials}</span>
+    <div className="relative shrink-0">
+      <div
+        className={`shrink-0 overflow-hidden flex items-center justify-center bg-[#101521] border border-white/10 text-white/90 ${className}`.trim()}
+        style={{ width: size, height: size, borderRadius: Math.round(size * 0.34), fontSize: Math.max(14, Math.round(size * 0.32)) }}
+        onClick={onClick}
+        onKeyDown={(event) => {
+          if (!onClick) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onClick(event as unknown as React.MouseEvent<HTMLDivElement>);
+          }
+        }}
+        role={onClick ? 'button' : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        title={onClick ? `Abrir perfil de ${displayName ?? 'usuario'}` : undefined}
+      >
+        {avatarUrl ? (
+          <img src={resolveAttachmentUrl(avatarUrl)} alt={displayName ?? 'Avatar'} className="h-full w-full object-cover" />
+        ) : (
+          <span className="font-semibold tracking-[0.06em]">{initials}</span>
+        )}
+      </div>
+      {isOnline !== undefined && (
+        <span
+          className={`absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[#0f1520] ${
+            isOnline ? 'bg-[#3beb75] shadow-[0_0_6px_rgba(59,235,117,.4)]' : 'bg-[#6b7280]'
+          }`}
+          style={{ width: Math.max(10, Math.round(size * 0.22)), height: Math.max(10, Math.round(size * 0.22)) }}
+        />
       )}
     </div>
   );
@@ -396,7 +409,7 @@ export default function AppHome() {
 
   return (
     <div className="app-shell">
-      {tab === 'feed' || tab === 'groups' ? <TopBar onOpenProfile={handleOpenProfile} currentTab={tab} /> : null}
+      {tab === 'groups' ? <TopBar onOpenProfile={handleOpenProfile} currentTab={tab} /> : null}
 
       {liveDmNotice ? (
         <button
@@ -493,6 +506,7 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [activeFriendsCount, setActiveFriendsCount] = useState(0);
   const canSearch = currentTab === 'feed' || currentTab === 'groups';
 
   async function loadNotifications() {
@@ -537,6 +551,25 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
     socket.on('notification_new', onNotification);
     return () => {
       socket.off('notification_new', onNotification);
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const socket = getSocket('/presence');
+    const onlineIds = new Set<string>();
+    const onPresence = (payload: { userId: string; online: boolean }) => {
+      if (payload.online) {
+        onlineIds.add(payload.userId);
+      } else {
+        onlineIds.delete(payload.userId);
+      }
+      setActiveFriendsCount(onlineIds.size);
+    };
+    socket.on('presence', onPresence);
+    socket.emit('presence:subscribe', { userId: user.id });
+    return () => {
+      socket.off('presence', onPresence);
     };
   }, [user?.id]);
 
@@ -619,54 +652,46 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
   }
 
   return (
-    <header className="app-topbar" style={{ position: 'relative' }}>
-      <button
-        type="button"
-        className="shrink-0"
-        aria-label="Abrir mi perfil"
-        onClick={() => {
-          if (user?.id) onOpenProfile(user.id);
-        }}
-      >
-        <UserAvatar displayName={user?.displayName ?? user?.email} avatarUrl={user?.avatarUrl} size={40} className="rounded-[14px] shadow-[0_0_18px_rgba(124,92,255,.22)]" />
-      </button>
-      {open && canSearch ? (
-        <div className="flex-1 flex items-center gap-2">
-          <input
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={currentTab === 'groups' ? 'Buscar grupos por nombre' : '@nick para iniciar un chat'}
-            className="flex-1 bg-white/5 border border-white/10 rounded-full px-4 py-2 text-sm outline-none focus:border-white/30"
-          />
-          <button className="icon-btn" aria-label="Cerrar buscador" onClick={resetSearch}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20">
-              <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
-            </svg>
+    <header className="app-topbar">
+      <div className="app-topbar-left">
+        <div className="app-topbar-avatar">
+          <button
+            type="button"
+            aria-label="Abrir mi perfil"
+            onClick={() => { if (user?.id) onOpenProfile(user.id); }}
+            className="block w-full h-full"
+          >
+            <img
+              src={user?.avatarUrl ? resolveAttachmentUrl(user.avatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.displayName ?? user?.email ?? 'U')}&background=4d26b3&color=fff&bold=true`}
+              alt={user?.displayName ?? 'Avatar'}
+            />
           </button>
+          <span className="online-dot" />
         </div>
-      ) : canSearch ? (
-        <div className="flex gap-2 ml-auto">
-          <button className="icon-btn relative" aria-label="Notificaciones" onClick={() => void toggleNotifications()}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20">
-              <path d="M12 4a4 4 0 00-4 4v2.4c0 .72-.2 1.42-.58 2.03L6 15h12l-1.42-2.57a4.04 4.04 0 01-.58-2.03V8a4 4 0 00-4-4z" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M10 18a2 2 0 004 0" strokeLinecap="round" />
-            </svg>
-            {unreadNotifications > 0 ? <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-[#ff8a5b] px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{Math.min(99, unreadNotifications)}</span> : null}
-          </button>
-          <button className="icon-btn" aria-label="Buscar" onClick={() => setOpen(true)}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20">
-              <circle cx="11" cy="11" r="7" />
-              <path d="M21 21l-4.3-4.3" strokeLinecap="round" />
-            </svg>
-          </button>
+        <div className="app-topbar-greeting">
+          <div className="greeting-text">{getGreeting()},</div>
+          <div className="greeting-name">@{user?.displayName ?? user?.email?.split('@')[0] ?? 'usuario'} 👋</div>
+          <div className="greeting-active">{activeFriendsCount > 0 ? `${activeFriendsCount} amigos activos ahora` : 'Conectado'}</div>
         </div>
-      ) : (
-        <div className="ml-auto h-11 w-11" />
-      )}
+      </div>
+      <div className="app-topbar-actions">
+        <button className="icon-btn relative" aria-label="Notificaciones" onClick={() => void toggleNotifications()}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
+            <path d="M12 4a4 4 0 00-4 4v2.4c0 .72-.2 1.42-.58 2.03L6 15h12l-1.42-2.57a4.04 4.04 0 01-.58-2.03V8a4 4 0 00-4-4z" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M10 18a2 2 0 004 0" strokeLinecap="round" />
+          </svg>
+          {unreadNotifications > 0 ? <span className="absolute -right-0.5 -top-0.5 min-w-[16px] rounded-full bg-[#4d26b3] px-1 py-0.5 text-[9px] font-bold leading-none text-white">{Math.min(99, unreadNotifications)}</span> : null}
+        </button>
+        <button className="icon-btn" aria-label="Buscar" onClick={() => setOpen(true)}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.3-4.3" strokeLinecap="round" />
+          </svg>
+        </button>
+      </div>
 
       {notificationsOpen ? (
-        <div className="absolute right-3 top-full mt-2 z-50 w-[min(390px,calc(100vw-24px))] rounded-2xl border border-white/10 bg-[#101725]/95 p-2 shadow-2xl backdrop-blur">
+        <div className="absolute right-3 top-full mt-2 z-50 w-[min(390px,calc(100vw-24px))] rounded-2xl border border-white/10 bg-[#0e1126]/95 p-2 shadow-2xl backdrop-blur">
           <div className="flex items-center justify-between px-2 py-2">
             <div className="text-sm font-semibold text-white/90">Notificaciones</div>
             <button className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/55 hover:text-white" onClick={() => void markAllNotificationsRead()}>
@@ -693,7 +718,7 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <div className="truncate text-sm font-semibold text-white/90">{notification.title}</div>
-                  {!notification.isRead ? <span className="h-2.5 w-2.5 rounded-full bg-[#ff8a5b]" /> : null}
+                  {!notification.isRead ? <span className="h-2.5 w-2.5 rounded-full bg-[#4d26b3]" /> : null}
                 </div>
                 <div className="mt-1 text-xs text-white/62">{notification.body}</div>
                 <div className="mt-2 flex items-center gap-2">
@@ -707,7 +732,7 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
       ) : null}
 
       {open && canSearch ? (
-        <div className="absolute left-3 right-3 top-full mt-2 z-50 rounded-2xl border border-white/10 bg-[#101725]/95 backdrop-blur shadow-2xl overflow-hidden">
+        <div className="absolute left-3 right-3 top-full mt-2 z-50 rounded-2xl border border-white/10 bg-[#0e1126]/95 backdrop-blur shadow-2xl overflow-hidden">
           {loading ? <div className="px-4 py-3 text-sm opacity-70">Buscando...</div> : null}
           {!loading && error ? <div className="px-4 py-3 text-sm text-red-400">{error}</div> : null}
           {!loading && !error && (currentTab === 'groups' ? query.trim().length === 0 : query.trim().replace(/^@+/, '').length === 0) ? (
@@ -758,6 +783,50 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
   );
 }
 
+/* ========== NUEVO FEED TAB REDISEÑADO ========== */
+
+function OnlineDot({ online }: { online: boolean }) {
+  return <span className={online ? 'online-dot' : 'offline-dot'} />;
+}
+
+function FriendAvatar({ name, avatarUrl, online, onClick }: { name: string; avatarUrl?: string | null; online: boolean; onClick?: () => void }) {
+  const initials = name.slice(0, 2).toUpperCase();
+  return (
+    <div className="friend-avatar-wrapper" onClick={onClick} onKeyDown={(e) => { if (e.key === 'Enter' && onClick) onClick(); }} role="button" tabIndex={0}>
+      <div className="shrink-0 overflow-hidden flex items-center justify-center bg-[#101521] border border-white/10 text-white/90"
+        style={{ width: 44, height: 44, borderRadius: 14, fontSize: 14 }}>
+        {avatarUrl ? (
+          <img src={resolveAttachmentUrl(avatarUrl)} alt={name} className="h-full w-full object-cover" />
+        ) : (
+          <span className="font-semibold">{initials}</span>
+        )}
+      </div>
+      <OnlineDot online={online} />
+      <div className="friend-name">{name}</div>
+    </div>
+  );
+}
+
+function InterestPerson({ name, avatarUrl, online, onClick }: { name: string; avatarUrl?: string | null; online: boolean; onClick?: () => void }) {
+  const initials = name.slice(0, 2).toUpperCase();
+  return (
+    <div className="interest-person" onClick={onClick} onKeyDown={(e) => { if (e.key === 'Enter' && onClick) onClick(); }} role="button" tabIndex={0}>
+      <div className="avatar-wrapper">
+        <div className="shrink-0 overflow-hidden flex items-center justify-center bg-[#101521] border border-white/10 text-white/90"
+          style={{ width: 52, height: 52, borderRadius: 16, fontSize: 16 }}>
+          {avatarUrl ? (
+            <img src={resolveAttachmentUrl(avatarUrl)} alt={name} className="h-full w-full object-cover" />
+          ) : (
+            <span className="font-semibold">{initials}</span>
+          )}
+        </div>
+        <OnlineDot online={online} />
+      </div>
+      <div className="person-name">{name}</div>
+    </div>
+  );
+}
+
 function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void }) {
   const user = useAuth((state) => state.user);
   const [posts, setPosts] = useState<FeedPost[]>([]);
@@ -779,23 +848,61 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
   const audioInputRef = useRef<HTMLInputElement | null>(null);
   const remainingChars = POST_CONTENT_MAX_LENGTH - composer.length;
 
-  async function loadPosts() {
-    setLoading((current) => (posts.length === 0 ? true : current));
-    setError(null);
+  // --- Nuevo estado para el feed rediseñado ---
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<UserSearchResult[]>([]);
+  const [groupSearchResults, setGroupSearchResults] = useState<Group[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showActivePeople, setShowActivePeople] = useState(false);
+  const [activePeople, setActivePeople] = useState<Array<{ id: string; displayName: string; avatarUrl?: string | null }>>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [friends, setFriends] = useState<Array<{ id: string; displayName: string; avatarUrl?: string | null }>>([]);
+  const [interestPeople, setInterestPeople] = useState<Array<{ id: string; displayName: string; avatarUrl?: string | null }>>([]);
+  const [activeFilter, setActiveFilter] = useState<'todos' | 'amigos' | 'tendencia'>('todos');
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+
+  // Cargar datos iniciales
+  async function loadInitialData() {
     try {
-      const rows = await api<FeedPost[]>('/posts');
-      setPosts(rows);
+      const [postsData, notifsData, unreadData] = await Promise.all([
+        api<FeedPost[]>('/posts'),
+        api<NotificationItem[]>('/notifications?limit=5'),
+        api<{ count: number }>('/notifications/unread-count'),
+      ]);
+      setPosts(postsData);
+      setNotifications(notifsData);
+      setUnreadNotifications(unreadData.count);
     } catch {
-      setError('No se pudieron cargar las publicaciones.');
+      // partial fallback
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    void loadPosts();
+    void loadInitialData();
   }, []);
 
+  // Cargar amigos
+  useEffect(() => {
+    if (!user?.id) return;
+    api<UserSearchResult[]>('/users/search?q=&limit=10')
+      .then((rows) => {
+        const mapped = rows.slice(0, 8).map((r) => ({
+          id: r.id,
+          displayName: r.displayName,
+          avatarUrl: r.avatarUrl,
+        }));
+        setFriends(mapped);
+        setInterestPeople(mapped.slice(0, 6));
+        setActivePeople(mapped.filter((p) => onlineUserIds.has(p.id)));
+      })
+      .catch(() => {});
+  }, [user?.id]);
+
+  // Socket events
   useEffect(() => {
     const socket = getSocket('/social');
     const onFeedPostCreated = (post: FeedPost) => {
@@ -807,15 +914,68 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
     const onFeedPostDeleted = ({ id }: FeedPostDeletedEvent) => {
       setPosts((current) => current.filter((row) => row.id !== id));
     };
+    const onNotification = (payload: NotificationItem) => {
+      if (!payload?.id) return;
+      setUnreadNotifications((c) => c + (payload.isRead ? 0 : 1));
+      setNotifications((current) => [payload, ...current.filter((n) => n.id !== payload.id)].slice(0, 20));
+    };
     socket.on('feed_post_created', onFeedPostCreated);
     socket.on('feed_post_updated', onFeedPostUpdated);
     socket.on('feed_post_deleted', onFeedPostDeleted);
+    socket.on('notification_new', onNotification);
     return () => {
       socket.off('feed_post_created', onFeedPostCreated);
       socket.off('feed_post_updated', onFeedPostUpdated);
       socket.off('feed_post_deleted', onFeedPostDeleted);
+      socket.off('notification_new', onNotification);
     };
   }, []);
+
+  // Presence en tiempo real
+  useEffect(() => {
+    if (!user?.id) return;
+    const socket = getSocket('/presence');
+    const onPresence = (payload: { userId: string; online: boolean }) => {
+      setOnlineUserIds((prev) => {
+        const next = new Set(prev);
+        if (payload.online) {
+          next.add(payload.userId);
+        } else {
+          next.delete(payload.userId);
+        }
+        return next;
+      });
+    };
+    socket.on('presence', onPresence);
+    socket.emit('presence:subscribe', { userId: user.id });
+    return () => {
+      socket.off('presence', onPresence);
+    };
+  }, [user?.id]);
+
+  // Search debounce
+  useEffect(() => {
+    const raw = searchQuery.trim().replace(/^@+/, '');
+    if (!raw) {
+      setSearchResults([]);
+      setGroupSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    const timer = setTimeout(() => {
+      Promise.all([
+        api<UserSearchResult[]>(`/users/search?q=${encodeURIComponent(raw)}`).catch(() => []),
+        api<GroupsResponse>('/groups').catch(() => ({ mine: [], public: [] })),
+      ]).then(([users, groups]) => {
+        setSearchResults(users);
+        setGroupSearchResults([...groups.mine, ...groups.public].filter((g) =>
+          g.name.toLowerCase().includes(raw.toLowerCase())
+        ));
+      }).finally(() => setSearchLoading(false));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   async function addAttachment(file: File) {
     setUploading(true);
@@ -956,178 +1116,410 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
   }
 
   return (
-    <section>
-      <h1 className="section-title">Publicaciones</h1>
-
+    <section className="feed-exact-container">
+      {/* Inputs ocultos para adjuntar archivos */}
       <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
       <input ref={audioInputRef} type="file" accept="audio/*" className="hidden" onChange={onPickAudio} />
 
-      {loading ? <div className="glass-card text-sm opacity-70">Cargando publicaciones...</div> : null}
-      {!loading && posts.length === 0 ? <div className="glass-card text-sm opacity-70">Todavia no hay publicaciones.</div> : null}
-
-      {posts.map((post) => (
-        <article key={post.id} className="glass-card relative">
-          <div className="author-row">
-            <UserAvatar
-              displayName={post.author.displayName}
-              avatarUrl={post.author.avatarUrl}
-              size={38}
-              className="rounded-[14px]"
-              onClick={(event) => {
-                event.stopPropagation();
-                onOpenProfile(post.author.id);
-              }}
-            />
-            <div className="min-w-0">
-              <div className="font-medium truncate">{post.author.displayName}</div>
-              <BadgeRow badges={getBadgeLabels(post.author)} />
-            </div>
-            <div className="ml-auto flex items-center gap-1.5">
-              <span className="opacity-50 shrink-0">· {formatShortTime(post.createdAt)}</span>
-              <button type="button" className="icon-btn !h-8 !w-8 !rounded-[10px]" aria-label="Opciones de la publicación" onClick={() => setPostActionMenuId((current) => current === post.id ? null : post.id)}>
-                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                  <circle cx="5" cy="12" r="1.7" />
-                  <circle cx="12" cy="12" r="1.7" />
-                  <circle cx="19" cy="12" r="1.7" />
-                </svg>
-              </button>
-            </div>
+      {/* ===== HEADER: SALUDO + AVATAR ===== */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 14px', marginBottom: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ position: 'relative', width: 44, height: 44 }}>
+            <button
+              type="button"
+              aria-label="Abrir mi perfil"
+              onClick={() => { if (user?.id) onOpenProfile(user.id); }}
+              style={{ width: '100%', height: '100%', borderRadius: '50%', overflow: 'hidden', border: '2px solid #4d26b3', padding: 0, background: 'none', cursor: 'pointer' }}
+            >
+              <img
+                src={user?.avatarUrl ? resolveAttachmentUrl(user.avatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.displayName ?? user?.email ?? 'U')}&background=4d26b3&color=fff&bold=true`}
+                alt={user?.displayName ?? 'Avatar'}
+                style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
+              />
+            </button>
+            <span style={{ position: 'absolute', bottom: 1, right: 1, width: 10, height: 10, backgroundColor: '#2ecc71', border: '2px solid #060713', borderRadius: '50%' }} />
           </div>
-          {postActionMenuId === post.id ? (
-            <div className="absolute right-4 top-14 z-20 w-48 rounded-2xl border border-white/10 bg-[#151d2a] p-2 shadow-2xl">
-              {post.authorId === user?.id ? (
-                <button className="w-full rounded-xl px-3 py-2 text-left text-sm text-red-300 hover:bg-white/5" onClick={() => void deletePost(post.id)}>
-                  Eliminar publicación
-                </button>
-              ) : (
-                <button className="w-full rounded-xl px-3 py-2 text-left text-sm hover:bg-white/5" onClick={() => void reportPost(post.id, post.author.displayName)}>
-                  Reportar publicación
-                </button>
-              )}
+          <div>
+            <div style={{ fontSize: 13, color: '#727693' }}>{getGreeting()},</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: '#f0f4ff' }}>@{user?.displayName ?? user?.email?.split('@')[0] ?? 'usuario'} 👋</div>
+            <div style={{ fontSize: 11, color: '#4d26b3', fontWeight: 500, marginTop: 1 }}>{friends.filter(f => onlineUserIds.has(f.id)).length} amigos activos</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ position: 'relative' }}>
+            <button type="button" aria-label="Notificaciones" onClick={() => setShowNotifications(!showNotifications)} style={{ background: '#11142a', border: 'none', borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', position: 'relative' }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="#727693" strokeWidth="1.8" width="18" height="18">
+                <path d="M12 4a4 4 0 00-4 4v2.4c0 .72-.2 1.42-.58 2.03L6 15h12l-1.42-2.57a4.04 4.04 0 01-.58-2.03V8a4 4 0 00-4-4z" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M10 18a2 2 0 004 0" strokeLinecap="round" />
+              </svg>
+              {unreadNotifications > 0 ? <span style={{ position: 'absolute', top: -2, right: -2, minWidth: 16, borderRadius: 8, background: '#4d26b3', padding: '1px 4px', fontSize: 9, fontWeight: 700, lineHeight: '14px', color: '#fff' }}>{Math.min(99, unreadNotifications)}</span> : null}
+            </button>
+            {/* ===== NOTIFICACIONES (dropdown) ===== */}
+            {showNotifications && (
+              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, width: 320, maxHeight: 360, overflowY: 'auto', background: '#0e1126', borderRadius: 16, border: '1px solid rgba(255,255,255,.08)', boxShadow: '0 8px 32px rgba(0,0,0,.5)', padding: 12, zIndex: 100 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#f0f4ff' }}>Notificaciones</span>
+                  <button type="button" onClick={() => { setNotifications((current) => current.map((item) => ({ ...item, isRead: true }))); setUnreadNotifications(0); api('/notifications/read-all', { method: 'POST' }).catch(() => {}); }} style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#727693', background: 'none', border: 'none', cursor: 'pointer' }}>
+                    Marcar todo
+                  </button>
+                </div>
+                {notifications.length === 0 ? <div style={{ padding: '8px 0', fontSize: 13, color: '#727693' }}>Todavía no tienes notificaciones.</div> : null}
+                {notifications.slice(0, 5).map((n) => (
+                  <button key={n.id} type="button" onClick={() => {
+                    if (!n.isRead) {
+                      setNotifications((current) => current.map((item) => item.id === n.id ? { ...item, isRead: true } : item));
+                      setUnreadNotifications((current) => Math.max(0, current - 1));
+                      api(`/notifications/${n.id}/read`, { method: 'POST' }).catch(() => {});
+                    }
+                    if (n.postId) {
+                      setShowNotifications(false);
+                      setTimeout(() => {
+                        const el = document.getElementById(`post-${n.postId}`);
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }, 100);
+                    }
+                  }} style={{ display: 'flex', width: '100%', alignItems: 'flex-start', gap: 10, padding: '10px 0', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', opacity: n.isRead ? 0.75 : 1, borderBottom: '1px solid rgba(255,255,255,.04)' }}>
+                    <div style={{ position: 'relative', flexShrink: 0 }}>
+                      <UserAvatar displayName={n.actor?.displayName ?? 'Actividad'} avatarUrl={n.actor?.avatarUrl} size={38} className="rounded-[12px]" />
+                      {n.kind === 'POST_LIKED' ? (
+                        <span style={{ position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: '50%', background: '#ff4d6d', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <svg viewBox="0 0 24 24" width="9" height="9" fill="#fff"><path d="M12 20.4 4.9 13.8A4.8 4.8 0 0 1 12 7.5a4.8 4.8 0 0 1 7.1 6.3L12 20.4Z"/></svg>
+                        </span>
+                      ) : n.kind === 'POST_COMMENTED' ? (
+                        <span style={{ position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: '50%', background: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <svg viewBox="0 0 24 24" width="9" height="9" fill="#fff"><path d="M7 17.2 3.8 20V6.9A2.9 2.9 0 0 1 6.7 4h10.6a2.9 2.9 0 0 1 2.9 2.9v7.4a2.9 2.9 0 0 1-2.9 2.9H7Z"/></svg>
+                        </span>
+                      ) : null}
+                    </div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#f0f4ff' }}>{n.title}</span>
+                        {!n.isRead ? <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4d26b3', flexShrink: 0 }} /> : null}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#727693', marginTop: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{n.body}</div>
+                      <div style={{ fontSize: 10, color: '#4d26b3', marginTop: 4, fontWeight: 600 }}>{n.postId ? 'Ver publicación →' : ''}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div style={{ position: 'relative' }}>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar…"
+              style={{ background: '#11142a', border: 'none', borderRadius: 18, padding: '8px 12px 8px 32px', fontSize: 13, color: '#f0f4ff', outline: 'none', width: 120 }}
+            />
+            <svg viewBox="0 0 24 24" fill="none" stroke="#727693" strokeWidth="1.8" width="14" height="14" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+              <circle cx="11" cy="11" r="7" />
+              <path d="M21 21l-4.3-4.3" strokeLinecap="round" />
+            </svg>
+            {searchQuery.trim() && (
+              <button type="button" onClick={() => setSearchQuery('')} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#727693', cursor: 'pointer', fontSize: 14, padding: '2px 4px' }}>×</button>
+            )}
+            {/* Resultados de búsqueda */}
+            {searchQuery.trim() && (
+              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, width: 260, background: '#11142a', borderRadius: 16, border: '1px solid rgba(255,255,255,.08)', boxShadow: '0 8px 32px rgba(0,0,0,.5)', overflow: 'hidden', zIndex: 100 }}>
+                {searchLoading ? (
+                  <div style={{ padding: 16, textAlign: 'center', color: '#727693', fontSize: 13 }}>Buscando...</div>
+                ) : searchResults.length === 0 && groupSearchResults.length === 0 ? (
+                  <div style={{ padding: 16, textAlign: 'center', color: '#727693', fontSize: 13 }}>Sin resultados</div>
+                ) : (
+                  <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                    {searchResults.length > 0 && (
+                      <div>
+                        <div style={{ padding: '8px 12px 4px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#727693' }}>Usuarios</div>
+                        {searchResults.map((u) => (
+                          <button key={u.id} type="button" onClick={() => { onOpenProfile(u.id); setSearchQuery(''); }} style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                            <img src={u.avatarUrl ? resolveAttachmentUrl(u.avatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(u.displayName)}&background=4d26b3&color=fff&size=24`} alt={u.displayName} style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }} />
+                            <span style={{ fontSize: 13, color: '#f0f4ff' }}>{u.displayName}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {groupSearchResults.length > 0 && (
+                      <div>
+                        <div style={{ padding: '8px 12px 4px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#727693' }}>Grupos</div>
+                        {groupSearchResults.map((g) => (
+                          <button key={g.id} type="button" onClick={() => { setSearchQuery(''); }} style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                            <img src={g.iconUrl ? resolveAttachmentUrl(g.iconUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(g.name)}&background=2a1f5e&color=fff&size=24`} alt={g.name} style={{ width: 28, height: 28, borderRadius: 8, objectFit: 'cover' }} />
+                            <span style={{ fontSize: 13, color: '#f0f4ff' }}>{g.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+
+
+      {/* ===== PERSONAS ACTIVAS (mayor reputación) ===== */}
+      <div className="feed-exact-stories">
+        {friends.slice(0, 8).map((person) => (
+          <div key={person.id} className="feed-exact-story" onClick={() => onOpenProfile(person.id)} onKeyDown={(e) => { if (e.key === 'Enter') onOpenProfile(person.id); }} role="button" tabIndex={0}>
+            <div className="feed-exact-story-ring">
+              <img
+                src={person.avatarUrl ? resolveAttachmentUrl(person.avatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(person.displayName)}&background=4d26b3&color=fff&bold=true`}
+                alt={person.displayName}
+              />
+              {onlineUserIds.has(person.id) ? <span className="status-dot" /> : null}
             </div>
+            <span className="feed-exact-story-name">{person.displayName.split(' ')[0]}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* ===== CREATE POST BOX - UNA SOLA LÍNEA CON ICONOS A LA DERECHA ===== */}
+      <div style={{ background: '#0e1126', borderRadius: 20, padding: '10px 14px', margin: '0 14px', border: '1px solid transparent', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <img
+          src={user?.avatarUrl ? resolveAttachmentUrl(user.avatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.displayName ?? 'U')}&background=4d26b3&color=fff&bold=true`}
+          alt={user?.displayName ?? 'Avatar'}
+          style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+        />
+        <input
+          type="text"
+          value={composer}
+          onChange={(e) => setComposer(e.target.value.slice(0, POST_CONTENT_MAX_LENGTH))}
+          placeholder="¿Qué estás pensando?"
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && composer.trim()) { e.preventDefault(); void publishPost(); } }}
+          style={{ flex: 1, background: 'transparent', border: 'none', fontSize: 14, color: '#f0f4ff', outline: 'none', fontFamily: 'inherit' }}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <button type="button" onClick={() => imageInputRef.current?.click()} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#2ecc71" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <path d="M21 15l-5-5L5 21" />
+            </svg>
+          </button>
+          <button type="button" onClick={() => audioInputRef.current?.click()} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <path d="M9 8h6M12 8v8" />
+            </svg>
+          </button>
+          {composer.trim() || pendingAttachments.length > 0 ? (
+            <>
+              <span style={{ fontSize: 11, color: remainingChars < 20 ? '#ff6b6b' : '#727693', fontWeight: 500, flexShrink: 0 }}>{remainingChars}</span>
+              <button type="button" onClick={() => void publishPost()} disabled={publishing} style={{ background: '#4d26b3', border: 'none', borderRadius: 10, padding: '5px 12px', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: publishing ? 0.5 : 1 }}>
+                {publishing ? '...' : 'Publicar'}
+              </button>
+            </>
           ) : null}
-          {post.content ? <p className="mt-3 text-[15px] leading-snug opacity-95">{post.content}</p> : null}
-          {post.attachments?.length ? (
-            <div className="mt-3 space-y-2">
-              {post.attachments.map((attachment) => (
-                <div key={`${post.id}-${attachment.url}`}>
-                  {attachment.kind === 'image' ? (
-                    <button type="button" className="block w-full" onClick={() => setImagePopupUrl(resolveAttachmentUrl(attachment.url))}>
-                      <img src={resolveAttachmentUrl(attachment.url)} alt={attachment.fileName ?? 'Imagen'} className="w-full rounded-[16px] object-cover max-h-72" />
-                    </button>
-                  ) : (
-                    <div className="rounded-[16px] border border-white/10 bg-white/5 p-3">
-                      <audio controls className="w-full">
-                        <source src={resolveAttachmentUrl(attachment.url)} type={attachment.mimeType ?? 'audio/webm'} />
-                      </audio>
+        </div>
+      </div>
+      {pendingAttachments.length > 0 && (
+        <div style={{ margin: '6px 14px 0', display: 'flex', gap: 6, overflowX: 'auto' }}>
+          {pendingAttachments.map((att, idx) => (
+            <div key={idx} style={{ position: 'relative', flexShrink: 0 }}>
+              {att.kind === 'image' ? (
+                <img src={resolveAttachmentUrl(att.url)} alt="" style={{ height: 50, borderRadius: 8, objectFit: 'cover' }} />
+              ) : null}
+              <button type="button" onClick={() => removePendingAttachment(idx)} style={{ position: 'absolute', top: -3, right: -3, width: 16, height: 16, borderRadius: '50%', background: '#ff4d6d', border: 'none', color: '#fff', fontSize: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {error ? <div style={{ margin: '4px 14px 0', fontSize: 12, color: '#ff6b6b' }}>{error}</div> : null}
+
+      {/* ===== FILTER PILLS ===== */}
+      <div className="feed-exact-pills-row">
+        <div className="feed-exact-pills">
+          <button type="button" className={`feed-exact-pill ${activeFilter === 'todos' ? 'active' : ''}`} onClick={() => setActiveFilter('todos')}>Todos</button>
+          <button type="button" className={`feed-exact-pill ${activeFilter === 'amigos' ? 'active' : ''}`} onClick={() => setActiveFilter('amigos')}>Amigos</button>
+          <button type="button" className={`feed-exact-pill ${activeFilter === 'tendencia' ? 'active' : ''}`} onClick={() => setActiveFilter('tendencia')}>Tendencia</button>
+        </div>
+      </div>
+
+      {/* ===== LISTA DE PUBLICACIONES (POST CARDS) ===== */}
+      {(() => {
+        const friendIds = new Set(friends.map(f => f.id));
+        const filteredPosts = activeFilter === 'todos' ? posts
+          : activeFilter === 'amigos' ? posts.filter(p => friendIds.has(p.authorId))
+          : activeFilter === 'tendencia' ? [...posts].sort((a, b) => b.likeCount - a.likeCount).slice(0, 5)
+          : posts;
+        return loading ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#727693', fontSize: 14 }}>Cargando publicaciones...</div>
+        ) : filteredPosts.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#727693', fontSize: 14 }}>No hay publicaciones en esta categoría.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {filteredPosts.map((post) => (
+            <article key={post.id} id={`post-${post.id}`} className="feed-exact-post-card">
+              {/* Header */}
+              <div className="feed-exact-post-header">
+                <div className="feed-exact-post-user">
+                  <img
+                    src={post.author.avatarUrl ? resolveAttachmentUrl(post.author.avatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(post.author.displayName)}&background=4d26b3&color=fff&bold=true`}
+                    alt={post.author.displayName}
+                    onClick={(e) => { e.stopPropagation(); onOpenProfile(post.author.id); }}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <div className="feed-exact-post-user-meta">
+                    <h4>
+                      {post.author.displayName}
+                      {post.author.id === user?.id ? (
+                        <span className="feed-exact-badge you">Tú</span>
+                      ) : (
+                        <span className="feed-exact-badge">Amigo</span>
+                      )}
+                    </h4>
+                    <p className="post-time">{formatShortTime(post.createdAt)}</p>
+                  </div>
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <button type="button" className="feed-exact-post-options" onClick={(e) => { e.stopPropagation(); setPostActionMenuId((current) => current === post.id ? null : post.id); }} aria-label="Opciones">
+                    ⋯
+                  </button>
+                  {/* Menú de opciones como popup posicionado */}
+                  {postActionMenuId === post.id && (
+                    <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, minWidth: 180, background: '#1a1d35', borderRadius: 14, border: '1px solid rgba(255,255,255,.08)', boxShadow: '0 8px 32px rgba(0,0,0,.5)', padding: 6, zIndex: 50, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {post.authorId === user?.id ? (
+                        <button style={{ background: 'none', border: 'none', color: '#ff6b6b', padding: '10px 14px', borderRadius: 10, fontSize: 13, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }} onClick={() => void deletePost(post.id)}>
+                          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                          Eliminar publicación
+                        </button>
+                      ) : (
+                        <button style={{ background: 'none', border: 'none', color: '#f0f4ff', padding: '10px 14px', borderRadius: 10, fontSize: 13, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }} onClick={() => void reportPost(post.id, post.author.displayName)}>
+                          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                          Reportar publicación
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
-              ))}
-            </div>
-          ) : null}
-
-          <div className="mt-3 flex items-center gap-2 text-[11px] text-white/55">
-            <button
-              type="button"
-              onClick={() => toggleLike(post.id)}
-              className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 transition ${post.likedByMe ? 'border-[#ff7aa2]/35 bg-[#ff7aa2]/10 text-[#ffd3df]' : 'border-white/8 bg-white/5 text-white/58'}`}
-              aria-label="Me gusta"
-            >
-              <LikeTinyIcon filled={post.likedByMe} />
-              <span className="text-[10px] leading-none">{post.likeCount}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => toggleCommentBox(post.id)}
-              className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 transition ${openCommentPostId === post.id ? 'border-[#86e6ff]/30 bg-[#86e6ff]/10 text-[#d6f8ff]' : 'border-white/8 bg-white/5 text-white/58'}`}
-              aria-label="Comentar"
-            >
-              <CommentTinyIcon />
-              <span className="text-[10px] leading-none">{post.comments?.length ?? 0}</span>
-            </button>
-          </div>
-
-          {openCommentPostId === post.id ? (
-            <div className="mt-2 rounded-[16px] border border-white/8 bg-white/[0.04] p-2">
-              <div className="flex items-center gap-2">
-                <input
-                  value={commentDrafts[post.id] ?? ''}
-                  onChange={(e) => setCommentDrafts((current) => ({ ...current, [post.id]: e.target.value.slice(0, 80) }))}
-                  placeholder="Comenta"
-                  className="h-8 rounded-[12px] border border-white/8 bg-white/[0.04] px-3 py-0 text-[11px]"
-                />
-                <button
-                  type="button"
-                  onClick={() => submitComment(post.id)}
-                  className="h-8 shrink-0 rounded-[12px] border border-white/8 bg-white/5 px-2 text-[10px] font-semibold text-white/70"
-                >
-                  Enviar
-                </button>
               </div>
-              {post.comments?.length ? (
-                <div className="mt-2 space-y-2">
-                  {post.comments.map((comment) => (
-                    <div key={comment.id} className="rounded-[12px] bg-black/10 px-2 py-1.5 text-[10px] text-white/70">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="leading-[1.3] min-w-0">
-                          <span className="mr-1 font-semibold text-white/82">{comment.authorName}:</span>
-                          <span>{comment.body}</span>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => void toggleCommentLike(post.id, comment.id)}
-                            disabled={commentLikePending.has(comment.id)}
-                            className={`flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[9px] transition ${comment.likedByMe ? 'border-[#ff7aa2]/30 bg-[#ff7aa2]/10 text-[#ffd3df]' : 'border-white/8 bg-white/5 text-white/45'}`}
-                          >
-                            <LikeTinyIcon filled={comment.likedByMe ?? false} />
-                            {(comment.likeCount ?? 0) > 0 ? <span className="ml-0.5">{comment.likeCount}</span> : null}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setOpenReplyCommentId((c) => (c === comment.id ? null : comment.id))}
-                            className="rounded-full border border-white/8 bg-white/5 px-1.5 py-0.5 text-[9px] text-white/45 transition hover:text-white/70"
-                          >
-                            Responder
-                          </button>
-                        </div>
-                      </div>
-                      {comment.replies?.length ? (
-                        <div className="mt-1.5 space-y-1 border-l border-white/8 pl-3">
-                          {comment.replies.map((reply) => (
-                            <div key={reply.id} className="text-[9px] leading-[1.3] text-white/60">
-                              <span className="mr-1 font-semibold text-white/75">{reply.authorName}:</span>
-                              <span>{reply.body}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                      {openReplyCommentId === comment.id ? (
-                        <div className="mt-1.5 flex items-center gap-1.5">
-                          <input
-                            value={replyDrafts[comment.id] ?? ''}
-                            onChange={(e) => setReplyDrafts((current) => ({ ...current, [comment.id]: e.target.value.slice(0, 80) }))}
-                            placeholder="Responder..."
-                            className="h-7 flex-1 rounded-[10px] border border-white/8 bg-white/[0.04] px-2 py-0 text-[10px]"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => void submitReply(post.id, comment.id)}
-                            className="h-7 shrink-0 rounded-[10px] border border-white/8 bg-white/5 px-2 text-[9px] font-semibold text-white/70"
-                          >
-                            OK
-                          </button>
-                        </div>
-                      ) : null}
+
+              {/* Contenido */}
+              {post.content && <p className="feed-exact-post-content">{post.content}</p>}
+
+              {/* Adjuntos */}
+              {post.attachments?.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {post.attachments.map((att) => (
+                    <div key={`${post.id}-${att.url}`}>
+                      {att.kind === 'image' ? (
+                        <button type="button" style={{ width: '100%', padding: 0, background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setImagePopupUrl(resolveAttachmentUrl(att.url))}>
+                          <img src={resolveAttachmentUrl(att.url)} alt={att.fileName ?? 'Imagen'} style={{ width: '100%', borderRadius: 16, objectFit: 'cover', maxHeight: 180 }} />
+                        </button>
+                      ) : (
+                        <audio controls style={{ width: '100%' }}>
+                          <source src={resolveAttachmentUrl(att.url)} type={att.mimeType ?? 'audio/webm'} />
+                        </audio>
+                      )}
                     </div>
                   ))}
                 </div>
-              ) : null}
-            </div>
-          ) : null}
-        </article>
-      ))}
+              )}
+
+              {/* Actions row */}
+              <div className="feed-exact-post-actions-row">
+                <div className="feed-exact-interaction-buttons">
+                  <button type="button" onClick={() => toggleLike(post.id)} className={`feed-exact-action-btn ${post.likedByMe ? 'liked' : ''}`}>
+                    <svg viewBox="0 0 24 24" fill={post.likedByMe ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 20.4 4.9 13.8A4.8 4.8 0 0 1 12 7.5a4.8 4.8 0 0 1 7.1 6.3L12 20.4Z" />
+                    </svg>
+                    {post.likeCount}
+                  </button>
+                  <button type="button" onClick={() => toggleCommentBox(post.id)} className="feed-exact-action-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M7 17.2 3.8 20V6.9A2.9 2.9 0 0 1 6.7 4h10.6a2.9 2.9 0 0 1 2.9 2.9v7.4a2.9 2.9 0 0 1-2.9 2.9H7Z" />
+                    </svg>
+                    {post.comments?.length ?? 0}
+                  </button>
+                </div>
+                <div className="feed-exact-avatar-stack">
+                  {post.likeCount > 0 && (
+                    <>
+                      <img src={`https://ui-avatars.com/api/?name=U&background=4d26b3&color=fff&size=18`} alt="" />
+                      <span className="counter">{post.likeCount}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Comentarios */}
+              {openCommentPostId === post.id && (
+                <div style={{ borderTop: '1px solid rgba(255,255,255,.06)', paddingTop: 12, marginTop: 4 }}>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                    <input
+                      value={commentDrafts[post.id] ?? ''}
+                      onChange={(e) => setCommentDrafts((current) => ({ ...current, [post.id]: e.target.value.slice(0, 80) }))}
+                      placeholder="Escribe un comentario..."
+                      style={{ flex: 1, background: '#11142a', border: 'none', borderRadius: 12, padding: '8px 12px', fontSize: 13, color: '#f0f4ff', outline: 'none' }}
+                    />
+                    <button type="button" onClick={() => submitComment(post.id)} style={{ background: '#4d26b3', border: 'none', borderRadius: 12, padding: '8px 14px', color: '#fff', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>
+                      Enviar
+                    </button>
+                  </div>
+
+                  {post.comments?.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {post.comments.map((comment) => (
+                        <div key={comment.id} style={{ background: '#11142a', borderRadius: 12, padding: '8px 12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <img
+                                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(comment.authorName)}&background=4d26b3&color=fff&size=20`}
+                                alt={comment.authorName}
+                                style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' }}
+                              />
+                              <span style={{ fontSize: 12, fontWeight: 600, color: '#cdbfff' }}>{comment.authorName}</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button type="button" onClick={() => void toggleCommentLike(post.id, comment.id)} disabled={commentLikePending.has(comment.id)} style={{ background: 'none', border: 'none', color: comment.likedByMe ? '#ff4d6d' : '#727693', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', gap: 3, padding: 0 }}>
+                                <svg viewBox="0 0 24 24" width="12" height="12" fill={comment.likedByMe ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.5"><path d="M12 20.4 4.9 13.8A4.8 4.8 0 0 1 12 7.5a4.8 4.8 0 0 1 7.1 6.3L12 20.4Z" /></svg>
+                                {(comment.likeCount ?? 0) > 0 && <span>{comment.likeCount}</span>}
+                              </button>
+                              <button type="button" onClick={() => setOpenReplyCommentId((c) => (c === comment.id ? null : comment.id))} style={{ background: 'none', border: 'none', color: '#727693', cursor: 'pointer', fontSize: 11, padding: 0 }}>
+                                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>
+                              </button>
+                            </div>
+                          </div>
+                          <div style={{ fontSize: 13, color: '#e2e4f0' }}>{comment.body}</div>
+
+                          {/* Replies */}
+                          {(comment.replies?.length ?? 0) > 0 && (
+                            <div style={{ marginTop: 6, paddingLeft: 12, borderLeft: '2px solid rgba(77,38,179,.3)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {comment.replies?.map((reply) => (
+                                <div key={reply.id} style={{ fontSize: 12, color: '#c8cce0' }}>
+                                  <span style={{ fontWeight: 600, color: '#cdbfff' }}>{reply.authorName}: </span>
+                                  <span>{reply.body}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Reply input */}
+                          {openReplyCommentId === comment.id && (
+                            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                              <input
+                                value={replyDrafts[comment.id] ?? ''}
+                                onChange={(e) => setReplyDrafts((current) => ({ ...current, [comment.id]: e.target.value.slice(0, 80) }))}
+                                placeholder="Responder..."
+                                style={{ flex: 1, background: '#0e1126', border: 'none', borderRadius: 10, padding: '6px 10px', fontSize: 12, color: '#f0f4ff', outline: 'none' }}
+                              />
+                              <button type="button" onClick={() => void submitReply(post.id, comment.id)} style={{ background: '#4d26b3', border: 'none', borderRadius: 10, padding: '6px 12px', color: '#fff', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}>OK</button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+        );
+      })()}
 
       {imagePopupUrl ? (
         <button type="button" className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center" onClick={() => setImagePopupUrl(null)}>
@@ -1135,76 +1527,7 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
         </button>
       ) : null}
 
-      {composerOpen ? (
-        <>
-          <button type="button" className="feed-composer-backdrop" aria-label="Cerrar publicacion" onClick={() => setComposerOpen(false)} />
-          <div className="feed-composer-sheet">
-            <div className="feed-composer-sheet__handle" />
-            <div className="flex items-start gap-3">
-              <UserAvatar displayName={user?.displayName ?? user?.email} avatarUrl={user?.avatarUrl} size={44} className="rounded-[14px]" />
-              <div className="flex-1">
-                <textarea
-                  rows={3}
-                  value={composer}
-                  onChange={(e) => setComposer(e.target.value.slice(0, POST_CONTENT_MAX_LENGTH))}
-                  placeholder={`Comparte algo en ${POST_CONTENT_MAX_LENGTH} caracteres o menos`}
-                  className="min-h-[92px] resize-none rounded-[18px] border border-white/10 bg-white/5 text-sm"
-                />
-                <div className="mt-2 flex items-center justify-end">
-                  <span
-                    className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${remainingChars <= 8 ? 'border-[#ff8a8a]/35 bg-[#ff8a8a]/12 text-[#ffd4d4]' : remainingChars <= 15 ? 'border-[#ffd37a]/30 bg-[#ffd37a]/10 text-[#ffe7b0]' : 'border-white/10 bg-white/5 text-white/60'}`}
-                  >
-                    {composer.length} de {POST_CONTENT_MAX_LENGTH} caracteres
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {pendingAttachments.length > 0 ? (
-              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-                {pendingAttachments.map((attachment, index) => (
-                  <div key={`${attachment.url}-${index}`} className="min-w-[120px] rounded-[18px] border border-white/10 bg-white/5 p-2">
-                    {attachment.kind === 'image' ? (
-                      <button type="button" onClick={() => setImagePopupUrl(resolveAttachmentUrl(attachment.url))} className="block w-full">
-                        <img src={resolveAttachmentUrl(attachment.url)} alt="Adjunto" className="h-20 w-full rounded-[14px] object-cover" />
-                      </button>
-                    ) : (
-                      <audio controls className="w-full h-10">
-                        <source src={resolveAttachmentUrl(attachment.url)} type={attachment.mimeType ?? 'audio/webm'} />
-                      </audio>
-                    )}
-                    <button type="button" className="mt-2 text-[11px] text-white/65" onClick={() => removePendingAttachment(index)}>
-                      Quitar
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
-            <div className="mt-3 flex items-center gap-2">
-              <button type="button" className="icon-btn !w-auto px-4" onClick={() => imageInputRef.current?.click()} disabled={uploading || publishing}>
-                Foto
-              </button>
-              <button type="button" className="icon-btn !w-auto px-4" onClick={() => audioInputRef.current?.click()} disabled={uploading || publishing}>
-                Audio
-              </button>
-              <button type="button" className="primary ml-auto" onClick={() => void publishPost()} disabled={uploading || publishing || (!composer.trim() && pendingAttachments.length === 0)}>
-                {publishing ? 'Publicando...' : uploading ? 'Subiendo...' : 'Publicar'}
-              </button>
-            </div>
-            {error ? <div className="mt-3 text-sm text-red-300">{error}</div> : null}
-          </div>
-        </>
-      ) : null}
-
-      <button
-        type="button"
-        className="feed-compose-fab"
-        onClick={() => setComposerOpen(true)}
-        aria-label="Crear publicacion"
-      >
-        +
-      </button>
+      {/* Composer inline - ya no hay popup */}
     </section>
   );
 }
@@ -1282,6 +1605,8 @@ function ChatsTab({
   const suppressLongPressClickRef = useRef(false);
   const typingTimerRef = useRef<number | null>(null);
   const lastTypingEmitRef = useRef<number>(0);
+  const dmMessagesRef = useRef<HTMLDivElement>(null);
+  const dmInitialLoadRef = useRef(true);
 
   async function loadConversations() {
     setLoadingList(true);
@@ -1409,6 +1734,11 @@ function ChatsTab({
       setPeerIsTyping(false);
     };
   }, [activeConversation?.id, activeConversation?.peer.id]);
+
+  useEffect(() => {
+    dmMessagesRef.current?.scrollTo({ top: dmMessagesRef.current.scrollHeight, behavior: dmInitialLoadRef.current ? 'auto' : 'smooth' });
+    dmInitialLoadRef.current = false;
+  }, [messages.length]);
 
   async function addAttachment(file: File) {
     setUploadingAttachment(true);
@@ -1774,7 +2104,7 @@ function ChatsTab({
               <div className="px-4 py-10 text-sm text-red-400">{error}</div>
             ) : (
               <>
-                <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-[radial-gradient(circle_at_top,#1f2a3a_0%,#111722_45%,#0b0d12_100%)] min-h-0">
+                <div ref={dmMessagesRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-[radial-gradient(circle_at_top,#1f2a3a_0%,#111722_45%,#0b0d12_100%)] min-h-0">
                   {activeConversation?.status === 'PENDING' && activeConversation.pendingForMe ? (
                     <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3 text-sm space-y-3 sticky top-0 z-10 backdrop-blur-sm">
                       <div className="font-semibold text-emerald-200">Solicitud de conversación</div>
@@ -2062,6 +2392,30 @@ function UserProfileSheet({
     void loadProfile();
   }, [userId]);
 
+  // Escuchar estado online/offline en el sheet
+  useEffect(() => {
+    if (!userId) return;
+    const socket = getSocket('/presence');
+    const onPresenceUpdate = (payload: { userId: string; online: boolean }) => {
+      if (payload.userId === userId) {
+        setProfile((current) => (current ? { ...current, isOnline: payload.online } : current));
+      }
+    };
+    const onPresenceList = (list: { userId: string; online: boolean }[]) => {
+      const entry = list.find((p) => p.userId === userId);
+      if (entry) {
+        setProfile((current) => (current ? { ...current, isOnline: entry.online } : current));
+      }
+    };
+    socket.on('presence:update', onPresenceUpdate);
+    socket.on('presence:list', onPresenceList);
+    socket.emit('presence:subscribe', { userIds: [userId] });
+    return () => {
+      socket.off('presence:update', onPresenceUpdate);
+      socket.off('presence:list', onPresenceList);
+    };
+  }, [userId]);
+
   async function toggleFollow() {
     if (!profile) return;
     setBusy(true);
@@ -2169,7 +2523,7 @@ function UserProfileSheet({
           <div className="p-5 space-y-4">
             <div className="rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(124,92,255,.35),rgba(124,92,255,.08)_40%,rgba(11,13,18,.3)_75%)] p-5">
               <div className="flex items-start gap-4">
-                <UserAvatar displayName={profile.displayName} avatarUrl={profile.avatarUrl} size={68} className="rounded-[24px]" />
+                <UserAvatar displayName={profile.displayName} avatarUrl={profile.avatarUrl} size={68} className="rounded-[24px]" isOnline={profile.isOnline} />
                 <div className="flex-1 min-w-0">
                   <div className="text-xl font-semibold truncate">@{profile.displayName}</div>
                   <div className="mt-2"><BadgeRow badges={profile.badges} /></div>
@@ -2204,6 +2558,13 @@ function UserProfileSheet({
       </div>
     </div>
   );
+}
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return 'Buenos días';
+  if (hour >= 12 && hour < 18) return 'Buenas tardes';
+  return 'Buenas noches';
 }
 
 function formatShortTime(value?: string | null) {
@@ -3049,6 +3410,30 @@ function ProfileTab({
     };
   }, [targetUserId]);
 
+  // Escuchar estado online/offline del perfil via presencia
+  useEffect(() => {
+    if (!targetUserId) return;
+    const socket = getSocket('/presence');
+    const onPresenceUpdate = (payload: { userId: string; online: boolean }) => {
+      if (payload.userId === targetUserId) {
+        setProfile((current) => (current ? { ...current, isOnline: payload.online } : current));
+      }
+    };
+    const onPresenceList = (list: { userId: string; online: boolean }[]) => {
+      const entry = list.find((p) => p.userId === targetUserId);
+      if (entry) {
+        setProfile((current) => (current ? { ...current, isOnline: entry.online } : current));
+      }
+    };
+    socket.on('presence:update', onPresenceUpdate);
+    socket.on('presence:list', onPresenceList);
+    socket.emit('presence:subscribe', { userIds: [targetUserId] });
+    return () => {
+      socket.off('presence:update', onPresenceUpdate);
+      socket.off('presence:list', onPresenceList);
+    };
+  }, [targetUserId]);
+
   async function onAvatarPicked(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -3337,8 +3722,8 @@ function ProfileTab({
                     {displayName.slice(0, 2).toUpperCase()}
                   </div>
                 )}
-                {/* Indicador de estado activo verde brillante de la imagen */}
-                <span className="absolute bottom-[1px] right-[3px] h-5 w-5 rounded-full border-[3px] border-[#0c0d19] bg-[#3beb75] shadow-[0_0_8px_rgba(59,235,117,.35)]" />
+                {/* Indicador de estado online/offline dinámico */}
+                <span className={`absolute bottom-[1px] right-[3px] h-5 w-5 rounded-full border-[3px] border-[#0c0d19] ${profile?.isOnline ? 'bg-[#3beb75] shadow-[0_0_8px_rgba(59,235,117,.35)]' : 'bg-[#6b7280]'}`} />
               </div>
             </div>
 
@@ -3501,10 +3886,10 @@ function ProfileTab({
         {/* FILA DE DOS COLUMNAS: INVITACIÓN Y REPUTACIÓN */}
         <div className="grid grid-cols-2 gap-2.5">
           
-          {/* TARJETA 3: INVITACIÓN - Rediseño Horizontal para Título y Valor */}
+          {/* TARJETA 3: INVITACIÓN - Solo visible para el dueño del perfil */}
           <div className="rounded-[20px] border border-white/[0.04] bg-[#0c0d19]/90 p-3.5 flex flex-col justify-between shadow-[0_10px_24px_rgba(0,0,0,.2)] min-h-[114px]">
             <div>
-              {/* Fila de Icono y Columna de Textos - Sin espaciado vertical intermedio */}
+              {/* Fila de Icono y Columna de Textos */}
               <div className="flex items-center gap-2.5">
                 <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#18152c] text-[#7c3aed] shrink-0">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
@@ -3513,29 +3898,36 @@ function ProfileTab({
                   </svg>
                 </div>
                 <div className="flex flex-col gap-0 leading-none justify-center">
-                  <span className="text-[9px] font-extrabold tracking-[0.08em] text-white/30 uppercase leading-none">Invitación</span>
-                  <span className="mt-0.5 font-black text-[15.5px] tracking-wide text-[#a78bfa] leading-none">
-                    {isOwnProfile ? invite?.code ?? 'XNE4JX' : 'XNE4JX'}
-                  </span>
+                  <span className="text-[9px] font-extrabold tracking-[0.08em] text-white/30 uppercase leading-none">{isOwnProfile ? 'Invitación' : 'Estado'}</span>
+                  {isOwnProfile ? (
+                    <span className="mt-0.5 font-black text-[15.5px] tracking-wide text-[#a78bfa] leading-none">
+                      {invite?.code ?? '------'}
+                    </span>
+                  ) : (
+                    <span className="mt-0.5 text-[11px] font-bold text-white/50 leading-none">
+                      {profile?.followsYou ? 'Te sigue' : 'Perfil público'}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="mt-2">
-              <div className="text-[10px] text-white/35 leading-none">
-                {isOwnProfile ? `${invite?.usesCount ?? 0}/${invite?.maxUses ?? 3}` : '0/3'} usos
+            {isOwnProfile && (
+              <div className="mt-2">
+                <div className="text-[10px] text-white/35 leading-none">
+                  {invite?.usesCount ?? 0}/{invite?.maxUses ?? 3} usos
+                </div>
+                {/* Barra de progreso */}
+                <div className="w-full h-[3.5px] bg-white/5 rounded-full overflow-hidden mt-1.5">
+                  <div
+                    className="h-full bg-[#7c3aed] rounded-full transition-all duration-500"
+                    style={{
+                      width: `${Math.min(100, Math.max(0, (((invite?.usesCount ?? 0) / (invite?.maxUses ?? 3)) * 100)))}%`
+                    }}
+                  />
+                </div>
               </div>
-
-              {/* Barra de progreso sutil y super delgada */}
-              <div className="w-full h-[3.5px] bg-white/5 rounded-full overflow-hidden mt-1.5">
-                <div
-                  className="h-full bg-[#7c3aed] rounded-full transition-all duration-500"
-                  style={{
-                    width: `${Math.min(100, Math.max(0, (((isOwnProfile ? invite?.usesCount ?? 0 : 0) / (isOwnProfile ? invite?.maxUses ?? 3 : 3)) * 100)))}%`
-                  }}
-                />
-              </div>
-            </div>
+            )}
           </div>
 
           {/* TARJETA 4: REPUTACIÓN - Rediseño Horizontal para Título y Valor */}
@@ -3865,14 +4257,13 @@ function ProfileTab({
 /* -------------------- Bottom nav -------------------- */
 function BottomNav({ tab, setTab, pendingChatsCount, unreadDmsCount }: { tab: Tab; setTab: (t: Tab) => void; pendingChatsCount: number; unreadDmsCount: number }) {
   const user = useAuth((state) => state.user);
-  const items: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  const items: { id: Tab | 'search'; label: string; icon: React.ReactNode }[] = [
     {
       id: 'feed',
-      label: 'Publicaciones',
+      label: 'Inicio',
       icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-          <rect x="4" y="4" width="16" height="16" rx="3" />
-          <path d="M4 10h16M9 4v16" strokeLinecap="round" />
+        <svg viewBox="0 0 24 24" fill={tab === 'feed' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={tab === 'feed' ? 0 : 1.8}>
+          <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       ),
     },
@@ -3880,53 +4271,57 @@ function BottomNav({ tab, setTab, pendingChatsCount, unreadDmsCount }: { tab: Ta
       id: 'chats',
       label: 'Chats',
       icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-          <path
-            d="M21 12a8 8 0 11-3.6-6.7L21 4l-1.3 3.6A8 8 0 0121 12z"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+        <svg viewBox="0 0 24 24" fill={tab === 'chats' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={tab === 'chats' ? 0 : 1.8}>
+          <path d="M21 12a8 8 0 11-3.6-6.7L21 4l-1.3 3.6A8 8 0 0121 12z" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       ),
     },
     {
       id: 'groups',
-      label: 'Grupos',
+      label: 'Amigos',
       icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-          <circle cx="9" cy="9" r="3.5" />
-          <circle cx="17" cy="10" r="2.5" />
-          <path d="M3 19c0-3 3-5 6-5s6 2 6 5M15 19c0-2 2-4 4-4s2.5 1.5 2.5 3" strokeLinecap="round" />
+        <svg viewBox="0 0 24 24" fill={tab === 'groups' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={tab === 'groups' ? 0 : 1.8}>
+          <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       ),
     },
     {
       id: 'profile',
       label: 'Perfil',
-      icon: <UserAvatar displayName={user?.displayName ?? user?.email} avatarUrl={user?.avatarUrl} size={22} className="rounded-[8px] border-white/10" />,
+      icon: (
+        <svg viewBox="0 0 24 24" fill={tab === 'profile' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={tab === 'profile' ? 0 : 1.8}>
+          <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx="12" cy="7" r="4" />
+        </svg>
+      ),
     },
   ];
 
   return (
     <nav className="bottom-nav">
-      {items.map((it) => (
-        <button
-          key={it.id}
-          aria-label={it.label}
-          className={tab === it.id ? 'active' : ''}
-          onClick={() => setTab(it.id)}
-        >
-          <span className="relative inline-flex">
-            {it.icon}
-            {it.id === 'chats' && (pendingChatsCount + unreadDmsCount) > 0 ? (
-              <span className="absolute -right-2 -top-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff4343] text-white text-[10px] leading-[18px] text-center font-bold">
-                {(pendingChatsCount + unreadDmsCount) > 9 ? '9+' : pendingChatsCount + unreadDmsCount}
-              </span>
-            ) : null}
-          </span>
-          <span className="sr-only">{it.label}</span>
-        </button>
-      ))}
+      {items.map((it) => {
+        return (
+          <button
+            key={it.id}
+            aria-label={it.label}
+            className={tab === it.id ? 'active' : ''}
+            onClick={() => setTab(it.id as Tab)}
+          >
+            <span className="nav-icon">
+              {it.icon}
+              {it.id === 'chats' && (pendingChatsCount + unreadDmsCount) > 0 ? (
+                <span className="absolute -right-2 -top-1 min-w-[16px] h-[16px] px-0.5 rounded-full bg-[#ff4343] text-white text-[8px] leading-[16px] text-center font-bold">
+                  {(pendingChatsCount + unreadDmsCount) > 9 ? '9+' : pendingChatsCount + unreadDmsCount}
+                </span>
+              ) : null}
+              {tab === it.id ? <span className="nav-indicator" /> : null}
+            </span>
+            <span className="nav-label">{it.label}</span>
+          </button>
+        );
+      })}
     </nav>
   );
 }
