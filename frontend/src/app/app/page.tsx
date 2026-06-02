@@ -944,6 +944,7 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
   useEffect(() => {
     if (!user?.id) return;
     const socket = getSocket('/presence');
+
     const onPresence = (payload: { userId: string; online: boolean }) => {
       setOnlineUserIds((prev) => {
         const next = new Set(prev);
@@ -955,12 +956,35 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
         return next;
       });
     };
+
+    const onPresenceInitial = (payload: { onlineIds: string[] }) => {
+      setOnlineUserIds(new Set(payload.onlineIds));
+    };
+
     socket.on('presence', onPresence);
-    socket.emit('presence:subscribe', { userId: user.id });
+    socket.on('presence:initial', onPresenceInitial);
+
+    // Subscribe on connect and re-subscribe on reconnect
+    const onConnect = () => {
+      socket.emit('presence:subscribe', { userId: user.id });
+    };
+    socket.on('connect', onConnect);
+    // Also emit immediately if already connected
+    if (socket.connected) {
+      socket.emit('presence:subscribe', { userId: user.id });
+    }
+
     return () => {
       socket.off('presence', onPresence);
+      socket.off('presence:initial', onPresenceInitial);
+      socket.off('connect', onConnect);
     };
   }, [user?.id]);
+
+  // Actualizar activePeople reactivamente cuando cambien onlineUserIds o friends
+  useEffect(() => {
+    setActivePeople(friends.filter((p) => onlineUserIds.has(p.id)));
+  }, [onlineUserIds, friends]);
 
   // Search debounce
   useEffect(() => {

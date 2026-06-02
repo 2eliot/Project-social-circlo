@@ -51,6 +51,21 @@ export class PresenceService {
   async isOnline(userId: string): Promise<boolean> {
     return (await this.redis.client.scard(this.key(userId))) > 0;
   }
+
+  async getAllOnlineIds(): Promise<string[]> {
+    const keys = await this.redis.client.keys('presence:user:*');
+    if (keys.length === 0) return [];
+    const results = await Promise.allSettled(
+      keys.map(async (k) => {
+        const userId = k.replace('presence:user:', '');
+        const count = await this.redis.client.scard(k);
+        return count > 0 ? userId : null;
+      }),
+    );
+    return results
+      .filter((r) => r.status === 'fulfilled' && r.value !== null)
+      .map((r) => (r as PromiseFulfilledResult<string>).value);
+  }
 }
 
 @Injectable()

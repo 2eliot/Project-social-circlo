@@ -1,4 +1,4 @@
-import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
+import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway, WebSocketServer, SubscribeMessage } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { WsAuthService } from '../ws-auth.service';
 import { PresenceService } from '../../infrastructure/redis/redis.module';
@@ -30,5 +30,14 @@ export class PresenceGateway implements OnGatewayConnection, OnGatewayDisconnect
     await this.presence.markOffline(user.id, socket.id);
     const stillOnline = await this.presence.isOnline(user.id);
     if (!stillOnline) this.server.emit('presence', { userId: user.id, online: false });
+  }
+
+  @SubscribeMessage('presence:subscribe')
+  async handlePresenceSubscribe(socket: Socket) {
+    const user = socket.data?.user;
+    if (!user) return;
+    // Return all currently online user IDs to the connecting client
+    const onlineIds = await this.presence.getAllOnlineIds();
+    socket.emit('presence:initial', { onlineIds });
   }
 }
