@@ -63,6 +63,18 @@ type MessageActionMenuState = {
 
 type SubTab = 'chats' | 'grupos' | 'informacion' | 'solicitudes';
 
+type GroupSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  iconUrl?: string | null;
+  bannerUrl?: string | null;
+  memberCount: number;
+  myRole: string;
+  owner: { id: string; displayName: string; avatarUrl?: string | null };
+};
+
 /* ------------------------------------------------------------------ */
 /*  Avatar con borde y punto verde                                     */
 /* ------------------------------------------------------------------ */
@@ -239,6 +251,9 @@ export default function ChatsView({
     { id: string; displayName: string; avatarUrl?: string | null }[]
   >([]);
   const [onlineCount, setOnlineCount] = useState(0);
+  const [myGroups, setMyGroups] = useState<GroupSummary[]>([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   /* ---- Cargar conversaciones ---- */
   async function loadConversations() {
@@ -276,6 +291,24 @@ export default function ChatsView({
     }
   }
 
+  /* ---- Cargar grupos del usuario ---- */
+  async function loadMyGroups() {
+    setLoadingGroups(true);
+    try {
+      const data = await api<{ mine: GroupSummary[]; public: GroupSummary[] }>('/groups');
+      setMyGroups(data.mine ?? []);
+    } catch {
+      setMyGroups([]);
+    } finally {
+      setLoadingGroups(false);
+    }
+  }
+
+  /* ---- Contar solicitudes pendientes ---- */
+  useEffect(() => {
+    setPendingCount(dms.filter((d) => d.status === 'PENDING' && d.pendingForMe).length);
+  }, [dms]);
+
   useEffect(() => {
     void loadConversations();
   }, [refreshToken]);
@@ -283,6 +316,10 @@ export default function ChatsView({
   useEffect(() => {
     if (user?.id) void loadOnlineFriends();
   }, [user?.id]);
+
+  useEffect(() => {
+    if (user?.id && subTab === 'grupos') void loadMyGroups();
+  }, [user?.id, subTab]);
 
   /* ---- Presencia en tiempo real ---- */
   useEffect(() => {
@@ -460,7 +497,8 @@ export default function ChatsView({
               </svg>
             }
             label="Solicitudes"
-            count={dms.filter((d) => d.status === 'PENDING').length}
+            count={pendingCount}
+            danger={pendingCount > 0}
           />
         </div>
       </section>
@@ -471,15 +509,19 @@ export default function ChatsView({
           <div className="flex items-center justify-center py-16">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#3b228e] border-t-transparent" />
           </div>
+        ) : subTab === 'grupos' ? (
+          <GroupsList
+            groups={myGroups}
+            loading={loadingGroups}
+            onRefresh={() => void loadMyGroups()}
+          />
+        ) : subTab === 'informacion' ? (
+          <AppInfo />
         ) : filteredDms.length === 0 ? (
           <div className="mt-8 text-center text-sm text-[#727693]">
             {subTab === 'solicitudes'
               ? 'No tienes solicitudes pendientes.'
-              : subTab === 'grupos'
-                ? 'Sección de grupos próximamente.'
-                : subTab === 'informacion'
-                  ? 'Aquí aparecerá información oficial.'
-                  : 'Todavía no tienes conversaciones.'}
+              : 'Todavía no tienes conversaciones.'}
           </div>
         ) : (
           <div className="space-y-3">
@@ -509,12 +551,14 @@ function TabButton({
   icon,
   label,
   count,
+  danger,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
   count?: number;
+  danger?: boolean;
 }) {
   return (
     <button
@@ -530,7 +574,11 @@ function TabButton({
       {count !== undefined && count > 0 && (
         <span
           className={`ml-0.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full px-1 text-[8px] font-semibold ${
-            active ? 'bg-white/20 text-white' : 'bg-[#3b228e]/30 text-[#3b228e]'
+            danger
+              ? 'bg-red-500/90 text-white'
+              : active
+                ? 'bg-white/20 text-white'
+                : 'bg-[#3b228e]/30 text-[#3b228e]'
           }`}
         >
           {count > 9 ? '9+' : count}
@@ -608,6 +656,159 @@ function ChatCard({
         >
           Chat
         </button>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  LISTA DE GRUPOS                                                    */
+/* ================================================================== */
+
+function GroupsList({
+  groups,
+  loading,
+  onRefresh,
+}: {
+  groups: GroupSummary[];
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#3b228e] border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (groups.length === 0) {
+    return (
+      <div className="mt-8 text-center text-sm text-[#727693]">
+        <p>No estás en ningún grupo todavía.</p>
+        <button
+          onClick={onRefresh}
+          className="mt-3 rounded-full bg-[#3b228e] px-5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-[#4a2da8]"
+        >
+          Actualizar
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {groups.map((group) => (
+        <div
+          key={group.id}
+          className="flex cursor-pointer items-center gap-4 rounded-2xl bg-[#0e1126] p-4 transition hover:bg-[#1a1f3a] active:scale-[0.98]"
+        >
+          {/* Icono del grupo */}
+          <div className="flex h-[52px] w-[52px] shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#1a1f3a]">
+            {group.iconUrl ? (
+              <img
+                src={resolveMediaUrl(group.iconUrl)}
+                alt={group.name}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <span className="text-lg font-bold text-[#3b228e]">
+                {group.name.slice(0, 2).toUpperCase()}
+              </span>
+            )}
+          </div>
+
+          {/* Info */}
+          <div className="min-w-0 flex-1">
+            <span className="truncate text-[15px] font-semibold text-white">
+              {group.name}
+            </span>
+            <div className="mt-0.5 flex items-center gap-2">
+              <span className="truncate text-[13px] text-[#727693]">
+                {group.memberCount} miembro{group.memberCount !== 1 ? 's' : ''}
+              </span>
+              {group.description && (
+                <>
+                  <span className="text-[#3b228e]">·</span>
+                  <span className="truncate text-[13px] text-[#727693]">
+                    {group.description}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Rol */}
+          <div className="shrink-0">
+            <span className="rounded-full bg-[#3b228e]/20 px-3 py-1 text-[11px] font-medium text-[#3b228e]">
+              {group.myRole === 'GROUP_ADMIN'
+                ? 'Admin'
+                : group.myRole === 'GROUP_MODERATOR'
+                  ? 'Mod'
+                  : 'Miembro'}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  INFORMACIÓN DE LA APP                                              */
+/* ================================================================== */
+
+function AppInfo() {
+  return (
+    <div className="space-y-4">
+      {/* Tarjeta principal */}
+      <div className="rounded-2xl bg-[#0e1126] p-5">
+        <div className="mb-4 flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#3b228e]">
+            <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" width="24" height="24">
+              <path d="M21 12a8 8 0 11-3.6-6.7L21 4l-1.3 3.6A8 8 0 0121 12z" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-white">AppChat</h2>
+            <p className="text-[13px] text-[#727693]">v1.0.0</p>
+          </div>
+        </div>
+        <p className="text-[14px] leading-relaxed text-[#a0a3b5]">
+          AppChat es una plataforma de mensajería y comunicación en tiempo real.
+          Conéctate con tus amigos, crea grupos, comparte imágenes y notas de voz,
+          y disfruta de una experiencia de chat moderna y segura.
+        </p>
+      </div>
+
+      {/* Características */}
+      <div className="rounded-2xl bg-[#0e1126] p-5">
+        <h3 className="mb-3 text-sm font-semibold text-white">Características</h3>
+        <div className="space-y-3">
+          {[
+            { icon: '💬', label: 'Mensajes directos', desc: 'Chat privado con otros usuarios' },
+            { icon: '👥', label: 'Grupos', desc: 'Crea y únete a grupos por intereses' },
+            { icon: '🎤', label: 'Notas de voz', desc: 'Graba y envía mensajes de voz' },
+            { icon: '🖼', label: 'Compartir imágenes', desc: 'Envía fotos y archivos' },
+            { icon: '🔒', label: 'Cifrado', desc: 'Tus conversaciones están protegidas' },
+          ].map((feat) => (
+            <div key={feat.label} className="flex items-start gap-3">
+              <span className="mt-0.5 text-lg">{feat.icon}</span>
+              <div>
+                <span className="text-[14px] font-medium text-white">{feat.label}</span>
+                <p className="text-[12px] text-[#727693]">{feat.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Contacto */}
+      <div className="rounded-2xl bg-[#0e1126] p-5">
+        <h3 className="mb-2 text-sm font-semibold text-white">Contacto</h3>
+        <p className="text-[13px] text-[#727693]">
+          Para soporte o sugerencias, contacta a los administradores.
+        </p>
       </div>
     </div>
   );
