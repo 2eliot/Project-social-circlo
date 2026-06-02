@@ -691,7 +691,7 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
       </div>
 
       {notificationsOpen ? (
-        <div className="absolute right-3 top-full mt-2 z-50 w-[min(390px,calc(100vw-24px))] rounded-2xl border border-white/10 bg-[#0e1126]/95 p-2 shadow-2xl backdrop-blur">
+        <div className="absolute right-3 top-full mt-2 z-50 w-[min(320px,calc(100vw-32px))] max-h-[300px] overflow-y-auto rounded-2xl border border-white/10 bg-[#0e1126]/95 p-2 shadow-2xl backdrop-blur">
           <div className="flex items-center justify-between px-2 py-2">
             <div className="text-sm font-semibold text-white/90">Notificaciones</div>
             <button className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/55 hover:text-white" onClick={() => void markAllNotificationsRead()}>
@@ -699,35 +699,32 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
             </button>
           </div>
           {notifications.length === 0 ? <div className="px-3 py-6 text-sm text-white/55">Todavía no tienes notificaciones.</div> : null}
-          {notifications.map((notification) => (
+          {notifications.slice(0, 5).map((notification) => (
             <button
               key={notification.id}
-              className={`flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left hover:bg-white/5 ${notification.isRead ? 'opacity-75' : ''}`}
+              className={`flex w-full items-start gap-2 rounded-2xl px-2 py-2 text-left hover:bg-white/5 ${notification.isRead ? 'opacity-75' : ''}`}
               onClick={() => void markNotificationRead(notification.id)}
             >
               <UserAvatar
                 displayName={notification.actor?.displayName ?? 'Actividad'}
                 avatarUrl={notification.actor?.avatarUrl}
-                size={38}
-                className="rounded-[12px]"
+                size={32}
+                className="rounded-[10px]"
                 onClick={notification.actor?.id ? (event) => {
                   event.stopPropagation();
                   onOpenProfile(notification.actor!.id!);
                 } : undefined}
               />
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <div className="truncate text-sm font-semibold text-white/90">{notification.title}</div>
-                  {!notification.isRead ? <span className="h-2.5 w-2.5 rounded-full bg-[#4d26b3]" /> : null}
+                  {!notification.isRead ? <span className="h-2 w-2 rounded-full bg-[#4d26b3] shrink-0" /> : null}
                 </div>
-                <div className="mt-1 text-xs text-white/62">{notification.body}</div>
-                <div className="mt-2 flex items-center gap-2">
-                  <BadgeRow badges={getBadgeLabels(notification.actor ?? undefined)} />
-                  <div className="text-[11px] text-white/38">{formatShortTime(notification.createdAt)}</div>
-                </div>
+                <div className="mt-0.5 text-xs text-white/62 line-clamp-1">{notification.body}</div>
               </div>
             </button>
           ))}
+          <a href="/notifications" className="block text-center text-[11px] text-[#4d26b3] font-semibold pt-2 pb-1 hover:underline">Ver todas →</a>
         </div>
       ) : null}
 
@@ -885,12 +882,13 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
     void loadInitialData();
   }, []);
 
-  // Cargar amigos
+  // Cargar amigos (usuarios que sigo)
   useEffect(() => {
     if (!user?.id) return;
-    api<UserSearchResult[]>('/users/search?q=&limit=10')
+    api<Array<{ id: string; displayName: string; avatarUrl?: string | null }>>(`/users/${user.id}/following`)
       .then((rows) => {
-        const mapped = rows.slice(0, 8).map((r) => ({
+        // Filtrar el propio usuario por si acaso
+        const mapped = rows.filter(r => r.id !== user.id).slice(0, 8).map((r) => ({
           id: r.id,
           displayName: r.displayName,
           avatarUrl: r.avatarUrl,
@@ -1154,17 +1152,17 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
               </svg>
               {unreadNotifications > 0 ? <span style={{ position: 'absolute', top: -2, right: -2, minWidth: 16, borderRadius: 8, background: '#4d26b3', padding: '1px 4px', fontSize: 9, fontWeight: 700, lineHeight: '14px', color: '#fff' }}>{Math.min(99, unreadNotifications)}</span> : null}
             </button>
-            {/* ===== NOTIFICACIONES (dropdown) ===== */}
+            {/* ===== NOTIFICACIONES (dropdown pequeño) ===== */}
             {showNotifications && (
-              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, width: 320, maxHeight: 360, overflowY: 'auto', background: '#0e1126', borderRadius: 16, border: '1px solid rgba(255,255,255,.08)', boxShadow: '0 8px 32px rgba(0,0,0,.5)', padding: 12, zIndex: 100 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#f0f4ff' }}>Notificaciones</span>
-                  <button type="button" onClick={() => { setNotifications((current) => current.map((item) => ({ ...item, isRead: true }))); setUnreadNotifications(0); api('/notifications/read-all', { method: 'POST' }).catch(() => {}); }} style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#727693', background: 'none', border: 'none', cursor: 'pointer' }}>
+              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, width: 'min(280px,calc(100vw - 32px))', maxHeight: 260, overflowY: 'auto', background: '#0e1126', borderRadius: 16, border: '1px solid rgba(255,255,255,.08)', boxShadow: '0 8px 32px rgba(0,0,0,.5)', padding: 10, zIndex: 100 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#f0f4ff' }}>Notificaciones</span>
+                  <button type="button" onClick={() => { setNotifications((current) => current.map((item) => ({ ...item, isRead: true }))); setUnreadNotifications(0); api('/notifications/read-all', { method: 'POST' }).catch(() => {}); }} style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#727693', background: 'none', border: 'none', cursor: 'pointer' }}>
                     Marcar todo
                   </button>
                 </div>
-                {notifications.length === 0 ? <div style={{ padding: '8px 0', fontSize: 13, color: '#727693' }}>Todavía no tienes notificaciones.</div> : null}
-                {notifications.slice(0, 5).map((n) => (
+                {notifications.length === 0 ? <div style={{ padding: '6px 0', fontSize: 12, color: '#727693' }}>Todavía no tienes notificaciones.</div> : null}
+                {notifications.slice(0, 3).map((n) => (
                   <button key={n.id} type="button" onClick={() => {
                     if (!n.isRead) {
                       setNotifications((current) => current.map((item) => item.id === n.id ? { ...item, isRead: true } : item));
@@ -1178,29 +1176,29 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
                         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                       }, 100);
                     }
-                  }} style={{ display: 'flex', width: '100%', alignItems: 'flex-start', gap: 10, padding: '10px 0', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', opacity: n.isRead ? 0.75 : 1, borderBottom: '1px solid rgba(255,255,255,.04)' }}>
+                  }} style={{ display: 'flex', width: '100%', alignItems: 'flex-start', gap: 8, padding: '8px 0', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', opacity: n.isRead ? 0.75 : 1, borderBottom: '1px solid rgba(255,255,255,.04)' }}>
                     <div style={{ position: 'relative', flexShrink: 0 }}>
-                      <UserAvatar displayName={n.actor?.displayName ?? 'Actividad'} avatarUrl={n.actor?.avatarUrl} size={38} className="rounded-[12px]" />
+                      <UserAvatar displayName={n.actor?.displayName ?? 'Actividad'} avatarUrl={n.actor?.avatarUrl} size={32} className="rounded-[10px]" />
                       {n.kind === 'POST_LIKED' ? (
-                        <span style={{ position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: '50%', background: '#ff4d6d', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <svg viewBox="0 0 24 24" width="9" height="9" fill="#fff"><path d="M12 20.4 4.9 13.8A4.8 4.8 0 0 1 12 7.5a4.8 4.8 0 0 1 7.1 6.3L12 20.4Z"/></svg>
+                        <span style={{ position: 'absolute', bottom: -2, right: -2, width: 14, height: 14, borderRadius: '50%', background: '#ff4d6d', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <svg viewBox="0 0 24 24" width="8" height="8" fill="#fff"><path d="M12 20.4 4.9 13.8A4.8 4.8 0 0 1 12 7.5a4.8 4.8 0 0 1 7.1 6.3L12 20.4Z"/></svg>
                         </span>
                       ) : n.kind === 'POST_COMMENTED' ? (
-                        <span style={{ position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: '50%', background: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <svg viewBox="0 0 24 24" width="9" height="9" fill="#fff"><path d="M7 17.2 3.8 20V6.9A2.9 2.9 0 0 1 6.7 4h10.6a2.9 2.9 0 0 1 2.9 2.9v7.4a2.9 2.9 0 0 1-2.9 2.9H7Z"/></svg>
+                        <span style={{ position: 'absolute', bottom: -2, right: -2, width: 14, height: 14, borderRadius: '50%', background: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <svg viewBox="0 0 24 24" width="8" height="8" fill="#fff"><path d="M7 17.2 3.8 20V6.9A2.9 2.9 0 0 1 6.7 4h10.6a2.9 2.9 0 0 1 2.9 2.9v7.4a2.9 2.9 0 0 1-2.9 2.9H7Z"/></svg>
                         </span>
                       ) : null}
                     </div>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: '#f0f4ff' }}>{n.title}</span>
-                        {!n.isRead ? <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4d26b3', flexShrink: 0 }} /> : null}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: '#f0f4ff' }}>{n.title}</span>
+                        {!n.isRead ? <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#4d26b3', flexShrink: 0 }} /> : null}
                       </div>
-                      <div style={{ fontSize: 12, color: '#727693', marginTop: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{n.body}</div>
-                      <div style={{ fontSize: 10, color: '#4d26b3', marginTop: 4, fontWeight: 600 }}>{n.postId ? 'Ver publicación →' : ''}</div>
+                      <div style={{ fontSize: 11, color: '#727693', marginTop: 1, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{n.body}</div>
                     </div>
                   </button>
                 ))}
+                <a href="/notifications" style={{ display: 'block', textAlign: 'center', fontSize: 11, color: '#4d26b3', fontWeight: 600, padding: '6px 0 0', textDecoration: 'none' }}>Ver todas →</a>
               </div>
             )}
           </div>
@@ -1260,9 +1258,9 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
 
 
 
-      {/* ===== PERSONAS ACTIVAS (mayor reputación) ===== */}
+      {/* ===== PERSONAS ACTIVAS (solo amigos que sigo, excluyéndome) ===== */}
       <div className="feed-exact-stories">
-        {friends.slice(0, 8).map((person) => (
+        {friends.filter(p => p.id !== user?.id).slice(0, 8).map((person) => (
           <div key={person.id} className="feed-exact-story" onClick={() => onOpenProfile(person.id)} onKeyDown={(e) => { if (e.key === 'Enter') onOpenProfile(person.id); }} role="button" tabIndex={0}>
             <div className="feed-exact-story-ring">
               <img
