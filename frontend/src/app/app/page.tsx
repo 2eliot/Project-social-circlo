@@ -258,6 +258,7 @@ export default function AppHome() {
   const [unreadDmsCount, setUnreadDmsCount] = useState(0);
   const [liveDmNotice, setLiveDmNotice] = useState<LiveDmNotice | null>(null);
   const [liveInteractionNotice, setLiveInteractionNotice] = useState<LiveInteractionNotice | null>(null);
+  const [openGroupCreatorOnTabChange, setOpenGroupCreatorOnTabChange] = useState(false);
   const tabRef = useRef<Tab>('feed');
   const selectedConvRef = useRef<string | null>(null);
 
@@ -439,8 +440,25 @@ export default function AppHome() {
             onConversationChanged={handleConversationChanged}
           />
         ) : null}
-        {tab === 'groups' ? <GroupsTab /> : null}
-        {tab === 'profile' ? <ProfileTab viewedUserId={profileUserId} onOpenChats={() => setTab('chats')} onOpenConversation={handleOpenConversation} onRelationshipChanged={() => void refreshPendingChatsCount()} onOpenProfile={handleOpenProfile} /> : null}
+        {tab === 'groups' ? (
+          <GroupsTab
+            openCreatorOnMount={openGroupCreatorOnTabChange}
+            onCreatorOpened={() => setOpenGroupCreatorOnTabChange(false)}
+          />
+        ) : null}
+        {tab === 'profile' ? (
+          <ProfileTab
+            viewedUserId={profileUserId}
+            onOpenChats={() => setTab('chats')}
+            onOpenConversation={handleOpenConversation}
+            onRelationshipChanged={() => void refreshPendingChatsCount()}
+            onOpenProfile={handleOpenProfile}
+            onOpenGroupCreator={() => {
+              setOpenGroupCreatorOnTabChange(true);
+              setTab('groups');
+            }}
+          />
+        ) : null}
       </main>
 
       <BottomNav tab={tab} setTab={handleSelectTab} pendingChatsCount={pendingChatsCount} unreadDmsCount={unreadDmsCount} />
@@ -2390,7 +2408,13 @@ async function uploadPostAttachment(file: File) {
 }
 
 /* -------------------- Grupos -------------------- */
-function GroupsTab() {
+function GroupsTab({
+  openCreatorOnMount,
+  onCreatorOpened,
+}: {
+  openCreatorOnMount?: boolean;
+  onCreatorOpened?: () => void;
+}) {
   const user = useAuth((state) => state.user);
   const [mine, setMine] = useState<Group[]>([]);
   const [publicGroups, setPublicGroups] = useState<Group[]>([]);
@@ -2409,6 +2433,13 @@ function GroupsTab() {
   const [editIconUrl, setEditIconUrl] = useState<string | null>(null);
   const [editBannerUrl, setEditBannerUrl] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+
+  useEffect(() => {
+    if (openCreatorOnMount) {
+      setCreateComposerOpen(true);
+      if (onCreatorOpened) onCreatorOpened();
+    }
+  }, [openCreatorOnMount, onCreatorOpened]);
 
   useEffect(() => {
     void loadGroups();
@@ -2897,12 +2928,14 @@ function ProfileTab({
   onOpenConversation,
   onRelationshipChanged,
   onOpenProfile,
+  onOpenGroupCreator,
 }: {
   viewedUserId?: string | null;
   onOpenChats: () => void;
   onOpenConversation: (conversationId: string) => void;
   onRelationshipChanged: () => void;
   onOpenProfile: (userId: string) => void;
+  onOpenGroupCreator?: () => void;
 }) {
   const router = useRouter();
   const { user, logout, updateUser } = useAuth();
@@ -3469,10 +3502,10 @@ function ProfileTab({
 
           <div className="mt-2.5">
             <div className="text-[11px] font-bold text-white/60 leading-none">
-              Mis grupos ({groupsCount > 0 ? groupsCount : 1})
+              Mis grupos ({groupsCount})
             </div>
 
-            {/* Lista de grupos con el diseño compacto de la imagen */}
+            {/* Lista de grupos reales del usuario si existen */}
             {showMyGroups ? (
               <div className="flex flex-col gap-1.5 mt-2">
                 {ownedGroups.map((group) => (
@@ -3510,33 +3543,9 @@ function ProfileTab({
                 ))}
               </div>
             ) : (
-              /* Grupo de Ejemplo Snoopy idéntico a la imagen */
-              <div className="flex flex-col gap-1.5 mt-2">
-                <div
-                  className="flex items-center justify-between rounded-[16px] bg-[#060710] p-2.5 border border-white/[0.02]"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <img
-                      src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=100&h=100&q=80"
-                      alt="Snoopy"
-                      className="h-8 w-8 rounded-lg object-cover border border-white/5"
-                      onError={(e) => {
-                        e.currentTarget.src = "/tmp-avatar.svg";
-                      }}
-                    />
-                    <div className="flex flex-col leading-none justify-center">
-                      <span className="text-[12px] font-bold text-white/80 leading-none">Comunidad Kojima</span>
-                      <div className="flex items-center gap-1 text-[9.5px] text-white/35 mt-1 leading-none">
-                        <span className="h-1.5 w-1.5 rounded-full bg-[#3beb75] animate-pulse" />
-                        <span>4 miembros</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-white/20">
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                </div>
+              /* Si el usuario real no tiene grupos, no se renderiza ninguna maqueta genérica sino un discreto texto de vacío */
+              <div className="text-[10px] text-white/25 text-center py-5 bg-[#060710]/40 rounded-xl border border-white/[0.01] mt-2 select-none">
+                Sin grupos todavía
               </div>
             )}
 
@@ -3545,7 +3554,11 @@ function ProfileTab({
               <button
                 type="button"
                 onClick={() => {
-                  setError('Función para crear grupo disponible en la sección de Grupos.');
+                  if (onOpenGroupCreator) {
+                    onOpenGroupCreator();
+                  } else {
+                    setError('Función para crear grupo disponible en la sección de Grupos.');
+                  }
                 }}
                 className="w-full flex items-center justify-center gap-1 py-2 mt-2 border border-dashed border-[#7c3aed]/20 rounded-xl text-[10px] font-bold text-[#a78bfa] bg-transparent hover:bg-[#7c3aed]/5 transition-colors cursor-pointer"
               >
