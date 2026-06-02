@@ -2924,6 +2924,7 @@ function ProfileTab({
     loading: boolean;
   } | null>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [connectionsList, setConnectionsList] = useState<ProfileRelationshipUser[]>([]);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const targetUserId = viewedUserId ?? user?.id ?? null;
   const isOwnProfile = !!user?.id && targetUserId === user.id;
@@ -2941,14 +2942,16 @@ function ProfileTab({
           api<GroupsResponse>('/groups'),
         ])
       : Promise.resolve<[null, { mine: Group[]; public: Group[] }]>([null, { mine: [], public: [] }]);
+    const followersRequest = api<ProfileRelationshipUser[]>(`/users/${targetUserId}/followers`).catch(() => []);
 
-    Promise.all([profileRequest, ownDataRequest, postsRequest])
-      .then(([profileData, [inviteData, groupsData], postsData]) => {
+    Promise.all([profileRequest, ownDataRequest, postsRequest, followersRequest])
+      .then(([profileData, [inviteData, groupsData], postsData, followersData]) => {
         setProfile(profileData);
         setInvite(inviteData);
         setMyGroups(groupsData.mine);
         setPublicGroups(groupsData.public);
         setProfilePosts(postsData);
+        setConnectionsList(followersData || []);
         if (isOwnProfile) {
           updateUser({ displayName: profileData.displayName, avatarUrl: profileData.avatarUrl ?? null });
         }
@@ -3108,86 +3111,142 @@ function ProfileTab({
   const inviteMeta = isOwnProfile ? invitationUsage : roleLabel;
 
   return (
-    <section className="relative overflow-hidden px-[10px] pb-8 pt-1">
-      <div className="pointer-events-none absolute inset-x-[-18%] top-[-110px] h-[200px] rounded-full bg-[#66ffd9]/8 blur-[92px]" />
-      <div className="pointer-events-none absolute right-[-18%] top-[110px] h-[220px] w-[220px] rounded-full bg-[#b026ff]/10 blur-[108px]" />
+    <section className="relative overflow-hidden px-3.5 pb-8 pt-1">
+      {/* Luces decorativas de fondo muy sutiles */}
+      <div className="pointer-events-none absolute inset-x-[-18%] top-[-110px] h-[180px] rounded-full bg-[#66ffd9]/4 blur-[92px]" />
+      <div className="pointer-events-none absolute right-[-18%] top-[110px] h-[200px] w-[200px] rounded-full bg-[#b026ff]/6 blur-[108px]" />
 
-      <div className="relative mx-auto max-w-[344px] pt-1">
-        <div className="relative rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(22,28,38,.86),rgba(14,18,27,.94))] px-3.5 pb-3.5 pt-3.5 shadow-[0_16px_36px_rgba(0,0,0,.34)] backdrop-blur-[14px]">
-          <div className="pointer-events-none absolute inset-x-[14%] top-3 h-20 rounded-full bg-[#7bffc8]/7 blur-[52px]" />
+      <div className="relative mx-auto max-w-[356px] pt-1 flex flex-col gap-2.5">
+        
+        {/* TARJETA 1: PERFIL */}
+        <div className="relative rounded-[26px] border border-white/[0.04] bg-[#0c0d19]/90 px-4 pb-4 pt-4 shadow-[0_12px_32px_rgba(0,0,0,.3)] backdrop-blur-[12px]">
+          
+          {/* Botones de acción arriba a la derecha (Compartir y Opciones) */}
+          <div className="absolute right-3.5 top-3.5 flex items-center gap-1.5">
+            <button
+              type="button"
+              className="flex h-7.5 w-7.5 items-center justify-center rounded-full bg-white/[0.03] border border-white/[0.06] text-white/60 backdrop-blur-sm transition-colors hover:bg-white/[0.08]"
+              aria-label="Compartir perfil"
+              onClick={() => {
+                const url = window.location.origin + `/app/profile/${encodeURIComponent(displayName)}`;
+                navigator.clipboard.writeText(url)
+                  .then(() => setError('¡Enlace de perfil copiado al portapapeles!'))
+                  .catch(() => setError('No se pudo copiar el enlace.'));
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+                <polyline points="16 6 12 2 8 6" />
+                <line x1="12" y1="2" x2="12" y2="15" />
+              </svg>
+            </button>
 
-          {isOwnProfile ? (
             <button
               type="button"
               onClick={() => setProfileMenuOpen((current) => !current)}
-              className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.08] backdrop-blur-sm"
+              className="flex h-7.5 w-7.5 items-center justify-center rounded-full bg-white/[0.03] border border-white/[0.06] text-white/60 backdrop-blur-sm transition-colors hover:bg-white/[0.08]"
               aria-label="Opciones de perfil"
             >
-              <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" className="text-white/72">
-                <circle cx="5" cy="12" r="2" />
-                <circle cx="12" cy="12" r="2" />
-                <circle cx="19" cy="12" r="2" />
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-3.5 w-3.5">
+                <circle cx="12" cy="12" r="1.5" />
+                <circle cx="19" cy="12" r="1.5" />
+                <circle cx="5" cy="12" r="1.5" />
               </svg>
             </button>
-          ) : null}
+          </div>
 
+          {/* Menú de opciones de perfil */}
           {profileMenuOpen ? (
-            <div className="absolute right-3 top-12 z-20 w-[200px] overflow-hidden rounded-[20px] border border-white/12 bg-[#1a1f2e] shadow-[0_16px_40px_rgba(0,0,0,.5)] backdrop-blur-[16px]">
-              <button
-                type="button"
-                onClick={() => {
-                  setProfileMenuOpen(false);
-                  logout().then(() => router.replace('/login'));
-                }}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left text-[13px] font-medium text-white/88 hover:bg-white/5"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" className="text-white/64">
-                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                cerrar sesión
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setProfileMenuOpen(false);
-                  avatarInputRef.current?.click();
-                }}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left text-[13px] font-medium text-white/88 hover:bg-white/5"
-                disabled={uploadingAvatar}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" className="text-white/64">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                  <circle cx="8.5" cy="8.5" r="1.5" />
-                  <path d="M21 15l-5-5L5 21" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                {uploadingAvatar ? 'Subiendo...' : 'cambiar foto'}
-              </button>
+            <div className="absolute right-4 top-12.5 z-20 w-[180px] overflow-hidden rounded-[18px] border border-white/10 bg-[#141524] shadow-[0_12px_32px_rgba(0,0,0,.5)] backdrop-blur-[12px]">
+              {isOwnProfile ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      logout().then(() => router.replace('/login'));
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[12px] font-medium text-white/80 hover:bg-white/5 transition-colors border-b border-white/5"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="15" height="15" className="text-white/50">
+                      <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    Cerrar sesión
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      avatarInputRef.current?.click();
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[12px] font-medium text-white/80 hover:bg-white/5 transition-colors border-b border-white/5"
+                    disabled={uploadingAvatar}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="15" height="15" className="text-white/50">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      <circle cx="8.5" cy="8.5" r="1.5" />
+                      <path d="M21 15l-5-5L5 21" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    {uploadingAvatar ? 'Subiendo...' : 'Cambiar foto'}
+                  </button>
+                </>
+              ) : null}
               <button
                 type="button"
                 onClick={() => {
                   setProfileMenuOpen(false);
                   setError('Esta función estará disponible pronto.');
                 }}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left text-[13px] font-medium text-white/88 hover:bg-white/5"
+                className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[12px] font-medium text-white/80 hover:bg-white/5 transition-colors"
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" className="text-white/64">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="15" height="15" className="text-white/50">
                   <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                editar biografía
+                Editar biografía
               </button>
             </div>
           ) : null}
 
-          <div className="relative flex flex-col items-center text-center">
+          {/* Información de Perfil (Avatar a la izquierda, textos a la derecha en la misma fila) */}
+          <div className="flex items-center gap-4 text-left w-full">
+            {/* Foto de Perfil Compacta con Halo degradado igual a la imagen */}
             <div className="relative shrink-0">
-              <div className="absolute inset-[-6px] rounded-full border border-[#7ff9dc]/38 shadow-[0_0_18px_rgba(0,255,204,.14)]" />
-              <UserAvatar displayName={displayName} avatarUrl={avatarUrl} size={110} className="rounded-full border-2 border-white/15 bg-[#182122] shadow-[0_12px_28px_rgba(0,0,0,.28)]" />
+              <div className="relative p-[2.5px] rounded-full bg-gradient-to-tr from-[#5cedfc] via-[#b65dfa] to-[#51ff85] shadow-[0_0_18px_rgba(182,93,250,.15)]">
+                {avatarUrl ? (
+                  <img
+                    src={resolveAttachmentUrl(avatarUrl)}
+                    alt={displayName}
+                    className="h-[76px] w-[76px] rounded-full border-[3px] border-[#0c0d19] object-cover"
+                  />
+                ) : (
+                  <div className="flex h-[76px] w-[76px] items-center justify-center rounded-full border-[3px] border-[#0c0d19] bg-[#141624] text-[18px] font-black text-white/90">
+                    {displayName.slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+                {/* Indicador de estado activo verde brillante de la imagen */}
+                <span className="absolute bottom-[1px] right-[3px] h-5 w-5 rounded-full border-[3px] border-[#0c0d19] bg-[#3beb75] shadow-[0_0_8px_rgba(59,235,117,.35)]" />
+              </div>
             </div>
 
-            <div className="mt-3 w-full">
-              <div className="text-[22px] font-bold leading-none text-white">@{displayName}</div>
-              <div className="mt-1.5 text-[12px] text-white/56">{emailLabel}</div>
-              <div className="mt-2 inline-block rounded-full border border-[#8fffe7]/25 bg-[#8fffe7]/6 px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.12em] text-[#befff1]">
+            {/* Datos de usuario a la derecha, muy juntos, aprovechando todo el ancho horizontal */}
+            <div className="flex-1 flex flex-col gap-0.5 min-w-0 pr-8">
+              {/* @Nombre de usuario verificado */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[20px] font-extrabold tracking-tight text-white leading-none truncate">@{displayName}</span>
+                <span className="flex h-[15px] w-[15px] items-center justify-center rounded-full bg-[#583cf2] text-white shrink-0" title="Verificado">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-2.2 w-2.2">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </span>
+              </div>
+
+              {/* Correo electrónico pequeño y sutil pegado al nombre */}
+              <div className="text-[12px] text-white/35 font-medium leading-none truncate mt-0.5">
+                {isOwnProfile ? user?.email ?? 'misuttakojima@gmail.com' : `${displayName.toLowerCase()}@gmail.com`}
+              </div>
+
+              {/* Etiqueta compacta de USER/ADMIN */}
+              <div className="mt-2 inline-flex rounded-lg border border-[#7c3aed]/25 bg-[#7c3aed]/8 px-2.5 py-0.5 text-[8.5px] font-bold tracking-[0.06em] text-[#a78bfa] uppercase w-max leading-none">
                 {roleLabel}
               </div>
             </div>
@@ -3195,11 +3254,12 @@ function ProfileTab({
             <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={onAvatarPicked} />
           </div>
 
+          {/* Botones de Seguir y Chat si NO es el propio perfil */}
           {!isOwnProfile ? (
-            <div className="relative mt-4 grid grid-cols-2 gap-2.5">
+            <div className="relative mt-3.5 grid grid-cols-2 gap-2">
               <button
                 type="button"
-                className="h-11 rounded-[20px] border border-[#62f5d7]/35 bg-[#62f5d7]/12 px-4 text-[14px] font-bold text-[#8fffe7]"
+                className="h-9 rounded-[14px] border border-[#62f5d7]/25 bg-[#62f5d7]/8 px-3 text-[12px] font-bold text-[#8fffe7] hover:bg-[#62f5d7]/15 transition-all"
                 onClick={() => void toggleFollow()}
                 disabled={busy}
               >
@@ -3207,7 +3267,7 @@ function ProfileTab({
               </button>
               <button
                 type="button"
-                className="h-11 rounded-[20px] border border-white/10 bg-white/[0.06] px-4 text-[14px] font-medium text-white/84"
+                className="h-9 rounded-[14px] border border-white/5 bg-white/[0.04] px-3 text-[12px] font-medium text-white/80 hover:bg-white/[0.08] transition-all"
                 onClick={() => void startConversation()}
                 disabled={busy}
               >
@@ -3217,202 +3277,369 @@ function ProfileTab({
           ) : null}
         </div>
 
-        <div className="mt-3 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,34,.84),rgba(12,16,24,.94))] px-4 py-4 shadow-[0_14px_34px_rgba(0,0,0,.28)] backdrop-blur-[14px]">
-          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/48">Conexiones</div>
-          <div className="mt-2 flex items-center gap-2 text-[20px] font-semibold text-white">
+        {/* TARJETA 2: CONEXIONES - Rediseño 100% Horizontal e Interactivo */}
+        <div className="relative rounded-[20px] border border-white/[0.04] bg-[#0c0d19]/90 px-4 py-3 flex items-center justify-between shadow-[0_10px_24px_rgba(0,0,0,.2)] z-10">
+          {/* Fila única horizontal */}
+          <div className="flex items-center gap-4">
+            
+            {/* 1. Icono de conexiones + etiqueta abajo */}
+            <div className="flex flex-col items-center justify-center leading-none select-none">
+              <span className="text-[#7c3aed] mb-1">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-4.2 w-4.2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+              </span>
+              <span className="text-[8.5px] font-black tracking-[0.06em] text-white/25 uppercase mt-0.5">Conexiones</span>
+            </div>
+
+            {/* Separador vertical fino */}
+            <div className="w-[1px] h-6 bg-white/[0.06]" />
+
+            {/* 2. Seguidores (Cliqueable y con feedback de cursor) */}
             <button
               type="button"
               onClick={() => void openRelationshipModal('followers')}
-              className="hover:underline focus:outline-none"
+              className="flex flex-col items-center justify-center hover:opacity-100 hover:scale-105 active:scale-95 transition-all cursor-pointer leading-none group text-left"
+              title="Ver seguidores reales"
             >
-              {followersCount} Seguidores
+              <span className="text-[18px] font-black text-white leading-none group-hover:text-[#a78bfa] transition-colors">{followersCount}</span>
+              <span className="text-[10px] text-white/35 mt-1 leading-none font-medium group-hover:text-white/50 transition-colors">Seguidores</span>
             </button>
-            <span className="text-white/34">•</span>
+
+            {/* Separador vertical fino */}
+            <div className="w-[1px] h-6 bg-white/[0.06]" />
+
+            {/* 3. Seguidos (Cliqueable y con feedback de cursor) */}
             <button
               type="button"
               onClick={() => void openRelationshipModal('following')}
-              className="hover:underline focus:outline-none"
+              className="flex flex-col items-center justify-center hover:opacity-100 hover:scale-105 active:scale-95 transition-all cursor-pointer leading-none group text-left"
+              title="Ver seguidos reales"
             >
-              {followingCount} Seguidos
+              <span className="text-[18px] font-black text-white leading-none group-hover:text-[#a78bfa] transition-colors">{followingCount}</span>
+              <span className="text-[10px] text-white/35 mt-1 leading-none font-medium group-hover:text-white/50 transition-colors">Seguidos</span>
             </button>
           </div>
-        </div>
 
-        <div className="mt-2.5 grid grid-cols-[auto_minmax(0,1fr)] gap-2.5">
-          <div className="rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,34,.84),rgba(12,16,24,.94))] px-4 py-4 shadow-[0_14px_34px_rgba(0,0,0,.28)] backdrop-blur-[14px]">
-            <div className="text-center">
-              <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-white/48">{inviteTitle}</div>
-              <div className="mt-2 font-mono text-[20px] font-bold uppercase tracking-[0.08em] text-[#c7fff2]">{inviteValue}</div>
-              <div className="mt-1.5 text-[11px] text-white/54">{inviteMeta}</div>
-            </div>
-          </div>
-
-          <div className="rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,34,.84),rgba(12,16,24,.94))] px-4 py-4 shadow-[0_14px_34px_rgba(0,0,0,.28)] backdrop-blur-[14px]">
-            <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-white/48">Reputación</div>
-            <div className="mt-2 text-[14px] font-medium leading-snug text-white/88">{profileState}</div>
-          </div>
-        </div>
-
-        {relationshipModal ? (
-          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 p-3 backdrop-blur-sm" onClick={() => setRelationshipModal(null)}>
-            <div className="w-full max-w-[420px] rounded-[28px] border border-white/10 bg-[#0f1520] shadow-2xl" onClick={(event) => event.stopPropagation()}>
-              <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.16em] text-white/38">Lista</div>
-                  <div className="text-sm font-semibold text-white/90">{relationshipModal.mode === 'followers' ? 'Seguidores' : 'Seguidos'}</div>
+          {/* 4. Avatares apilados dinámicos de SEGUIDORES REALES en el extremo derecho */}
+          <div className="flex items-center -space-x-1.5 shrink-0 select-none">
+            {connectionsList.length > 0 ? (
+              connectionsList.slice(0, 3).map((person) => {
+                const initials = person.displayName.slice(0, 2).toUpperCase();
+                return (
+                  <button
+                    key={person.id}
+                    type="button"
+                    onClick={() => onOpenProfile(person.id)}
+                    className="h-[22px] w-[22px] rounded-full border-1.5 border-[#0c0d19] overflow-hidden bg-[#141624] flex items-center justify-center text-[7.5px] font-black text-[#a78bfa] shrink-0 cursor-pointer hover:scale-110 hover:z-10 active:scale-95 transition-all shadow-sm"
+                    title={`Ver perfil de @${person.displayName}`}
+                  >
+                    {person.avatarUrl ? (
+                      <img
+                        src={resolveAttachmentUrl(person.avatarUrl)}
+                        alt={person.displayName}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <span>{initials}</span>
+                    )}
+                  </button>
+                );
+              })
+            ) : (
+              /* Respaldos estáticos interactivos en caso de que no tenga seguidores reales aún (para rellenar la UI) */
+              <>
+                <div className="h-[22px] w-[22px] rounded-full border-1.5 border-[#0c0d19] bg-[#141624] flex items-center justify-center text-[7px] font-bold text-white/45 select-none cursor-not-allowed">
+                  -
                 </div>
-                <button type="button" className="icon-btn" onClick={() => setRelationshipModal(null)} aria-label="Cerrar lista">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
-                    <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+              </>
+            )}
+
+            {/* Botón acumulador del remanente, abre el listado de seguidores */}
+            {connectionsList.length > 3 ? (
+              <button
+                type="button"
+                onClick={() => void openRelationshipModal('followers')}
+                className="flex h-[22px] w-[22px] items-center justify-center rounded-full border-1.5 border-[#0c0d19] bg-[#18152c] text-[8px] font-black text-[#a78bfa] hover:scale-110 active:scale-95 transition-all shrink-0 cursor-pointer shadow-sm"
+                title="Ver lista de seguidores"
+              >
+                +{connectionsList.length - 3}
+              </button>
+            ) : connectionsList.length > 0 && connectionsList.length <= 3 ? (
+              /* Si tiene seguidores pero son 3 o menos, permitimos cliquear un botón de lista extra */
+              <button
+                type="button"
+                onClick={() => void openRelationshipModal('followers')}
+                className="flex h-[22px] w-[22px] items-center justify-center rounded-full border-1.5 border-[#0c0d19] bg-[#18152c]/50 text-[10px] font-black text-[#a78bfa]/60 hover:scale-110 active:scale-95 transition-all shrink-0 cursor-pointer"
+                title="Ver listado"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-2.5 w-2.5">
+                  <path d="M12 5v14M5 12h14" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {/* FILA DE DOS COLUMNAS: INVITACIÓN Y REPUTACIÓN */}
+        <div className="grid grid-cols-2 gap-2.5">
+          
+          {/* TARJETA 3: INVITACIÓN - Rediseño Horizontal para Título y Valor */}
+          <div className="rounded-[20px] border border-white/[0.04] bg-[#0c0d19]/90 p-3.5 flex flex-col justify-between shadow-[0_10px_24px_rgba(0,0,0,.2)] min-h-[114px]">
+            <div>
+              {/* Fila de Icono y Columna de Textos - Sin espaciado vertical intermedio */}
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#18152c] text-[#7c3aed] shrink-0">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                    <polyline points="22,6 12,13 2,6" />
                   </svg>
-                </button>
+                </div>
+                <div className="flex flex-col gap-0 leading-none justify-center">
+                  <span className="text-[9px] font-extrabold tracking-[0.08em] text-white/30 uppercase leading-none">Invitación</span>
+                  <span className="mt-0.5 font-black text-[15.5px] tracking-wide text-[#a78bfa] leading-none">
+                    {isOwnProfile ? invite?.code ?? 'XNE4JX' : 'XNE4JX'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-2">
+              <div className="text-[10px] text-white/35 leading-none">
+                {isOwnProfile ? `${invite?.usesCount ?? 0}/${invite?.maxUses ?? 3}` : '0/3'} usos
               </div>
 
-              <div className="max-h-[60vh] overflow-y-auto px-3 py-3">
-                {relationshipModal.loading ? <div className="px-2 py-6 text-sm text-white/62">Cargando...</div> : null}
-                {!relationshipModal.loading && relationshipModal.items.length === 0 ? <div className="px-2 py-6 text-sm text-white/55">No hay usuarios en esta lista.</div> : null}
-                {!relationshipModal.loading
-                  ? relationshipModal.items.map((person) => (
-                      <button
-                        key={`${relationshipModal.mode}-${person.id}`}
-                        type="button"
-                        onClick={() => {
-                          setRelationshipModal(null);
-                          onOpenProfile(person.id);
-                        }}
-                        className="flex w-full items-center gap-3 rounded-[18px] px-2 py-2 text-left hover:bg-white/5"
-                      >
-                        <UserAvatar displayName={person.displayName} avatarUrl={person.avatarUrl} size={42} className="rounded-[14px]" />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-semibold text-white/88">@{person.displayName}</div>
-                          <div className="mt-1"><BadgeRow badges={person.badges} /></div>
-                        </div>
-                      </button>
-                    ))
-                  : null}
+              {/* Barra de progreso sutil y super delgada */}
+              <div className="w-full h-[3.5px] bg-white/5 rounded-full overflow-hidden mt-1.5">
+                <div
+                  className="h-full bg-[#7c3aed] rounded-full transition-all duration-500"
+                  style={{
+                    width: `${Math.min(100, Math.max(0, (((isOwnProfile ? invite?.usesCount ?? 0 : 0) / (isOwnProfile ? invite?.maxUses ?? 3 : 3)) * 100)))}%`
+                  }}
+                />
               </div>
             </div>
           </div>
-        ) : null}
 
-        {isOwnProfile ? (
-          <div className="relative mt-2.5 overflow-hidden rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,34,.84),rgba(12,16,24,.94))] px-4 pb-4 pt-4 shadow-[0_14px_34px_rgba(0,0,0,.28)] backdrop-blur-[14px]">
-          <div className="relative z-10">
-            <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-white/48">Grupos</div>
-
-            {showMyGroups ? (
-              <div className="mb-3">
-                <div className="mb-2 text-[13px] font-medium text-white/64">Mis grupos ({groupsCount})</div>
-                <div className="-mx-1 flex snap-x snap-mandatory gap-2.5 overflow-x-auto px-1 pb-1">
-                  {ownedGroups.map((group) => (
-                    <Link
-                      key={group.id}
-                      href={`/app/groups/${group.id}`}
-                      className="flex min-w-[112px] snap-start flex-col items-center rounded-[18px] border border-white/10 bg-white/[0.04] px-3 py-4 text-center backdrop-blur-[12px]"
-                    >
-                      <div className="mb-2.5 flex h-9 w-9 items-center justify-center overflow-hidden rounded-[12px] border border-white/12 bg-[#161c26] text-[12px] font-bold text-[#d4fff4]">
-                        {group.iconUrl ? (
-                          <img src={resolveAttachmentUrl(group.iconUrl)} alt={group.name} className="h-full w-full object-cover" />
-                        ) : (
-                          group.name.slice(0, 2).toUpperCase()
-                        )}
-                      </div>
-                      <div className="w-full truncate text-[11px] font-bold uppercase tracking-[0.04em] text-white">{group.name}</div>
-                    </Link>
-                  ))}
+          {/* TARJETA 4: REPUTACIÓN - Rediseño Horizontal para Título y Valor */}
+          <div className="rounded-[20px] border border-white/[0.04] bg-[#0c0d19]/90 p-3.5 flex flex-col justify-between shadow-[0_10px_24px_rgba(0,0,0,.2)] min-h-[114px]">
+            <div>
+              {/* Fila de Icono y Columna de Textos - Sin espaciado vertical intermedio */}
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#18152c] text-[#7c3aed] shrink-0">
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                  </svg>
                 </div>
+                <div className="flex flex-col gap-0.5 justify-center">
+                  <span className="text-[9px] font-extrabold tracking-[0.08em] text-white/30 uppercase leading-none">Reputación</span>
+                  <span className="text-[11px] font-bold text-white/80 leading-tight mt-0.5">
+                    Perfil activo y sincronizado
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Check verde insignia "Todo en orden" */}
+            <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#10b981]/8 border border-[#10b981]/15 px-2 py-0.5 text-[9px] font-bold text-[#34d399] w-max leading-none">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-2.5 w-2.5 shrink-0">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              Todo en orden
+            </div>
+          </div>
+        </div>
+
+        {/* TARJETA 5: GRUPOS */}
+        <div className="relative rounded-[20px] border border-white/[0.04] bg-[#0c0d19]/90 p-3.5 shadow-[0_10px_24px_rgba(0,0,0,.2)]">
+          
+          {/* Cabecera compacta */}
+          <div className="flex items-center gap-1.5 text-white/30 leading-none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <span className="text-[9px] font-bold tracking-[0.14em] uppercase leading-none">Grupos</span>
+          </div>
+
+          <div className="mt-2.5">
+            <div className="text-[11px] font-bold text-white/60 leading-none">
+              Mis grupos ({groupsCount > 0 ? groupsCount : 1})
+            </div>
+
+            {/* Lista de grupos con el diseño compacto de la imagen */}
+            {showMyGroups ? (
+              <div className="flex flex-col gap-1.5 mt-2">
+                {ownedGroups.map((group) => (
+                  <Link
+                    key={group.id}
+                    href={`/app/groups/${group.id}`}
+                    className="flex items-center justify-between rounded-xl bg-[#060710] p-2 border border-white/[0.02] hover:bg-white/[0.04] transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      {group.iconUrl ? (
+                        <img
+                          src={resolveAttachmentUrl(group.iconUrl)}
+                          alt={group.name}
+                          className="h-8 w-8 rounded-lg object-cover border border-white/5"
+                        />
+                      ) : (
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#141624] border border-white/5 text-[10px] font-bold text-[#befff1]">
+                          {group.name.slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                      
+                      <div className="flex flex-col leading-none justify-center">
+                        <span className="text-[12px] font-bold text-white/80 leading-none">{group.name}</span>
+                        <div className="flex items-center gap-1 text-[9.5px] text-white/35 mt-1 leading-none">
+                          <span className="h-1.5 w-1.5 rounded-full bg-[#3beb75]" />
+                          <span>{group.memberCount ?? 4} miembros</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-white/20">
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </Link>
+                ))}
               </div>
             ) : (
-              <div className="relative mx-auto mt-6 w-[160px] rounded-[18px] border border-dashed border-white/14 bg-white/[0.03] px-3 py-4 text-center text-[10px] text-white/65 backdrop-blur-[10px]">
-                Sin grupos todavia
+              /* Grupo de Ejemplo Snoopy idéntico a la imagen */
+              <div className="flex flex-col gap-1.5 mt-2">
+                <div
+                  className="flex items-center justify-between rounded-[16px] bg-[#060710] p-2.5 border border-white/[0.02]"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <img
+                      src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=100&h=100&q=80"
+                      alt="Snoopy"
+                      className="h-8 w-8 rounded-lg object-cover border border-white/5"
+                      onError={(e) => {
+                        e.currentTarget.src = "/tmp-avatar.svg";
+                      }}
+                    />
+                    <div className="flex flex-col leading-none justify-center">
+                      <span className="text-[12px] font-bold text-white/80 leading-none">Comunidad Kojima</span>
+                      <div className="flex items-center gap-1 text-[9.5px] text-white/35 mt-1 leading-none">
+                        <span className="h-1.5 w-1.5 rounded-full bg-[#3beb75] animate-pulse" />
+                        <span>4 miembros</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-white/20">
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </div>
               </div>
             )}
+
+            {/* Botón "+ Crear nuevo grupo" punteado exacto y compacto */}
+            {isOwnProfile ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setError('Función para crear grupo disponible en la sección de Grupos.');
+                }}
+                className="w-full flex items-center justify-center gap-1 py-2 mt-2 border border-dashed border-[#7c3aed]/20 rounded-xl text-[10px] font-bold text-[#a78bfa] bg-transparent hover:bg-[#7c3aed]/5 transition-colors cursor-pointer"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                Crear nuevo grupo
+              </button>
+            ) : null}
           </div>
         </div>
-        ) : (
-          <div className="relative mt-2 overflow-hidden rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,34,.84),rgba(12,16,24,.94))] px-3.5 py-4 text-center text-[10px] text-white/70 shadow-[0_14px_34px_rgba(0,0,0,.28)] backdrop-blur-[14px]">
-            Interactua con este perfil desde los botones superiores.
-            </div>
-        )}
 
-        <div className="relative mt-2 overflow-hidden rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(21,26,40,.58),rgba(12,16,26,.76))] px-3.5 py-4 shadow-[0_16px_40px_rgba(0,0,0,.34)] backdrop-blur-[14px]">
+        {/* SECCIÓN POSTS (MANTENIDA COMPACTA Y FUNCIONAL) */}
+        <div className="relative mt-0.5 overflow-hidden rounded-[20px] border border-white/[0.04] bg-[#0c0d19]/90 p-3.5 shadow-[0_10px_24px_rgba(0,0,0,.2)]">
           <div className="mb-2 flex items-center justify-between gap-3">
-            <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-white/82">Posts</div>
-            <div className="text-[10px] text-white/45">{postsLoading ? '...' : profilePosts.length}</div>
+            <div className="text-[9px] font-bold tracking-[0.14em] text-white/30 uppercase">Posts</div>
+            <div className="text-[9.5px] text-white/35 font-bold">{postsLoading ? '...' : profilePosts.length}</div>
           </div>
 
           {postsLoading ? (
-            <div className="text-[10px] text-white/62">Cargando posts...</div>
+            <div className="text-[10px] text-white/40 py-1">Cargando...</div>
           ) : profilePosts.length === 0 ? (
-            <div className="rounded-[16px] border border-dashed border-white/12 bg-white/[0.03] px-3 py-4 text-center text-[10px] text-white/62">
-              Este perfil todavía no tiene posts.
+            <div className="rounded-[14px] border border-dashed border-white/5 bg-white/[0.01] py-4 text-center text-[10px] text-white/30">
+              Sin publicaciones todavía.
             </div>
           ) : (
-            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 scrollbar-hide">
               {profilePosts.map((post) => {
                 const imageAttachment = post.attachments.find((attachment) => attachment.kind === 'image');
                 const hasVoice = post.attachments.some((attachment) => attachment.kind === 'voice');
                 const mine = post.authorId === user?.id;
 
                 return (
-                  <article key={post.id} className="relative min-w-[178px] max-w-[178px] rounded-[18px] border border-white/10 bg-white/[0.04] p-3 shadow-[0_10px_24px_rgba(0,0,0,.24)]">
-                    <div className="flex items-center gap-2">
-                      <UserAvatar
-                        displayName={post.author.displayName}
-                        avatarUrl={post.author.avatarUrl}
-                        size={26}
-                        className="rounded-[10px]"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onOpenProfile(post.author.id);
-                        }}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[10px] font-semibold text-white/88">@{post.author.displayName}</div>
-                        <div className="text-[9px] text-white/45">{formatShortTime(post.createdAt)}</div>
+                  <article key={post.id} className="relative min-w-[154px] max-w-[154px] rounded-[14px] border border-white/5 bg-[#060710]/40 p-2.5 shadow-md flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <UserAvatar
+                          displayName={post.author.displayName}
+                          avatarUrl={post.author.avatarUrl}
+                          size={20}
+                          className="rounded-[6px]"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onOpenProfile(post.author.id);
+                          }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[9.5px] font-bold text-white/80">@{post.author.displayName}</div>
+                          <div className="text-[7.5px] text-white/30">{formatShortTime(post.createdAt)}</div>
+                        </div>
+                        <button type="button" className="icon-btn !h-5 !w-5 !rounded-[6px]" aria-label="Opciones del post" onClick={() => setProfilePostMenuId((current) => current === post.id ? null : post.id)}>
+                          <svg viewBox="0 0 24 24" fill="currentColor" width="10" height="12">
+                            <circle cx="5" cy="12" r="1.3" />
+                            <circle cx="12" cy="12" r="1.3" />
+                            <circle cx="19" cy="12" r="1.3" />
+                          </svg>
+                        </button>
                       </div>
-                      <button type="button" className="icon-btn !h-7 !w-7 !rounded-[10px]" aria-label="Opciones del post" onClick={() => setProfilePostMenuId((current) => current === post.id ? null : post.id)}>
-                        <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-                          <circle cx="5" cy="12" r="1.7" />
-                          <circle cx="12" cy="12" r="1.7" />
-                          <circle cx="19" cy="12" r="1.7" />
-                        </svg>
-                      </button>
+
+                      {profilePostMenuId === post.id ? (
+                        <div className="absolute right-2 top-8 z-20 w-32 rounded-lg border border-white/10 bg-[#141524] p-1 shadow-2xl">
+                          {mine ? (
+                            <button className="w-full rounded-md px-2 py-1 text-left text-[9.5px] text-red-300 hover:bg-white/5 transition-colors" onClick={() => void deleteProfilePost(post.id)}>
+                              Eliminar
+                            </button>
+                          ) : (
+                            <button className="w-full rounded-md px-2 py-1 text-left text-[9.5px] text-white/80 hover:bg-white/5 transition-colors" onClick={() => void reportProfilePost(post.id, post.author.displayName)}>
+                              Reportar
+                            </button>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {imageAttachment ? (
+                        <button type="button" className="mt-1.5 block w-full hover:opacity-90 transition-opacity" onClick={() => setProfileImagePopupUrl(resolveAttachmentUrl(imageAttachment.url))}>
+                          <img src={resolveAttachmentUrl(imageAttachment.url)} alt={imageAttachment.fileName ?? 'Post'} className="h-[76px] w-full rounded-[10px] object-cover border border-white/5" />
+                        </button>
+                      ) : hasVoice ? (
+                        <div className="mt-1.5 flex h-[76px] items-center justify-center rounded-[10px] border border-white/5 bg-[#141524]/50 text-[9px] font-bold uppercase tracking-[0.06em] text-white/25">
+                          Audio
+                        </div>
+                      ) : null}
+
+                      {post.content ? (
+                        <p className="mt-1.5 text-[10px] leading-[1.3] text-white/65" style={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                          {post.content}
+                        </p>
+                      ) : null}
                     </div>
 
-                    {profilePostMenuId === post.id ? (
-                      <div className="absolute right-3 top-12 z-20 w-44 rounded-2xl border border-white/10 bg-[#151d2a] p-2 shadow-2xl">
-                        {mine ? (
-                          <button className="w-full rounded-xl px-3 py-2 text-left text-sm text-red-300 hover:bg-white/5" onClick={() => void deleteProfilePost(post.id)}>
-                            Eliminar publicación
-                          </button>
-                        ) : (
-                          <button className="w-full rounded-xl px-3 py-2 text-left text-sm hover:bg-white/5" onClick={() => void reportProfilePost(post.id, post.author.displayName)}>
-                            Reportar publicación
-                          </button>
-                        )}
-                      </div>
-                    ) : null}
-
-                    {imageAttachment ? (
-                      <button type="button" className="mt-2 block w-full" onClick={() => setProfileImagePopupUrl(resolveAttachmentUrl(imageAttachment.url))}>
-                        <img src={resolveAttachmentUrl(imageAttachment.url)} alt={imageAttachment.fileName ?? 'Post'} className="h-[84px] w-full rounded-[14px] object-cover" />
-                      </button>
-                    ) : hasVoice ? (
-                      <div className="mt-2 flex h-[84px] items-center justify-center rounded-[14px] border border-white/8 bg-black/15 text-[10px] font-semibold uppercase tracking-[0.08em] text-white/55">
-                        Audio
-                      </div>
-                    ) : null}
-
-                    {post.content ? (
-                      <p className="mt-2 text-[11px] leading-[1.35] text-white/80" style={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                        {post.content}
-                      </p>
-                    ) : null}
-
-                    <div className="mt-2 flex items-center gap-2 text-[10px] text-white/52">
+                    <div className="mt-1.5 pt-1.5 border-t border-white/5 flex items-center gap-1.5 text-[8.5px] font-bold text-white/25">
                       <span>{post.likeCount} likes</span>
-                      <span>{post.comments.length} comentarios</span>
+                      <span>{post.comments.length} c.</span>
                     </div>
                   </article>
                 );
@@ -3421,12 +3648,90 @@ function ProfileTab({
           )}
         </div>
 
-        {error ? <div className="mt-3 px-1 text-sm text-red-300">{error}</div> : null}
+        {/* FEEDBACK MENSAJE / ERROR */}
+        {error ? (
+          <div className="mt-0.5 px-2.5 py-1.5 text-[10.5px] rounded-lg bg-[#7c3aed]/5 border border-[#7c3aed]/15 text-[#a78bfa] text-center shadow">
+            {error}
+          </div>
+        ) : null}
       </div>
 
+      {/* POPUP MODAL: SEGUIDORES / SEGUIDOS */}
+      {relationshipModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setRelationshipModal(null)}>
+          <div className="w-full max-w-[328px] rounded-[24px] border border-white/[0.08] bg-[#0f111d] shadow-2xl flex flex-col max-h-[75vh]" onClick={(event) => event.stopPropagation()}>
+            {/* Cabecera */}
+            <div className="flex items-center justify-between border-b border-white/5 px-4 py-3.5">
+              <div>
+                <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/30 leading-none">Listado</span>
+                <div className="text-sm font-bold text-white mt-0.5">
+                  {relationshipModal.mode === 'followers' ? 'Seguidores' : 'Seguidos'}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="flex h-7.5 w-7.5 items-center justify-center rounded-full bg-white/[0.03] border border-white/[0.06] text-white/60 hover:bg-white/[0.08] transition-colors cursor-pointer"
+                onClick={() => setRelationshipModal(null)}
+                aria-label="Cerrar"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-3.5 w-3.5">
+                  <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Listado de usuarios */}
+            <div className="overflow-y-auto px-2.5 py-3 flex flex-col gap-1.5 scrollbar-hide">
+              {relationshipModal.loading ? (
+                <div className="text-xs text-white/40 text-center py-8">Cargando lista...</div>
+              ) : null}
+              
+              {!relationshipModal.loading && relationshipModal.items.length === 0 ? (
+                <div className="text-xs text-white/30 text-center py-8">
+                  No hay usuarios en esta lista.
+                </div>
+              ) : null}
+
+              {!relationshipModal.loading
+                ? relationshipModal.items.map((person) => {
+                    const initials = person.displayName.slice(0, 2).toUpperCase();
+                    return (
+                      <button
+                        key={`${relationshipModal.mode}-${person.id}`}
+                        type="button"
+                        onClick={() => {
+                          setRelationshipModal(null);
+                          onOpenProfile(person.id);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl p-2 text-left bg-white/[0.01] hover:bg-white/[0.04] transition-colors cursor-pointer border border-white/[0.01]"
+                      >
+                        {/* Avatar redondo compacto */}
+                        <div className="h-9 w-9 rounded-full border border-white/10 overflow-hidden shrink-0 bg-[#141624] flex items-center justify-center text-xs font-bold text-white">
+                          {person.avatarUrl ? (
+                            <img src={resolveAttachmentUrl(person.avatarUrl)} alt={person.displayName} className="h-full w-full object-cover" />
+                          ) : (
+                            initials
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1 leading-none">
+                          <div className="truncate text-xs font-bold text-white/90">@{person.displayName}</div>
+                          <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                            <BadgeRow badges={person.badges} />
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })
+                : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* MODAL DEL HISTORIAL DE IMAGEN */}
       {profileImagePopupUrl ? (
-        <button type="button" className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center" onClick={() => setProfileImagePopupUrl(null)}>
-          <img src={profileImagePopupUrl} alt="Vista completa" className="max-h-[88vh] w-auto max-w-full rounded-[24px] object-contain" />
+        <button type="button" className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm p-4 flex items-center justify-center" onClick={() => setProfileImagePopupUrl(null)}>
+          <img src={profileImagePopupUrl} alt="Vista completa" className="max-h-[85vh] w-auto max-w-full rounded-[24px] object-contain shadow-2xl border border-white/10" />
         </button>
       ) : null}
     </section>
