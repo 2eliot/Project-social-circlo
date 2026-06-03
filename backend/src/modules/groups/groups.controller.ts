@@ -14,18 +14,20 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { randomUUID } from 'crypto';
-import { extname } from 'path';
+import { memoryStorage } from 'multer';
 import type { Request } from 'express';
 import { GroupsService } from './groups.service';
 import { JwtAuthGuard, CbacGuard, RbacGuard } from '../../common/guards/auth.guards';
 import { CurrentUser, AuthUser, GroupRoles, Roles } from '../../common/decorators/auth.decorators';
+import { ImageService } from '../../common/pipes/image.service';
 
 @Controller('groups')
 @UseGuards(JwtAuthGuard)
 export class GroupsController {
-  constructor(private readonly service: GroupsService) {}
+  constructor(
+    private readonly service: GroupsService,
+    private readonly imageService: ImageService,
+  ) {}
 
   @Get()
   list(@CurrentUser() user: AuthUser) {
@@ -41,43 +43,33 @@ export class GroupsController {
   }
 
   @Post('upload-icon')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: diskStorage({
-        destination: 'uploads/groups',
-        filename: (_req, file, cb) => cb(null, `${randomUUID()}${extname(file.originalname) || '.png'}`),
-      }),
-      fileFilter: (_req, file, cb) => {
-        cb(null, file.mimetype.startsWith('image/'));
-      },
-      limits: { fileSize: 2 * 1024 * 1024 },
-    }),
-  )
-  uploadIcon(@Req() req: Request, @UploadedFile() file?: Express.Multer.File) {
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  async uploadIcon(@Req() req: Request, @UploadedFile() file?: Express.Multer.File) {
     if (!file) {
       return { url: null };
     }
-      return { url: `/uploads/groups/${file.filename}` };
+    const result = await this.imageService.processAndSave(file, {
+      subDir: 'groups',
+      maxWidth: 512,
+      maxHeight: 512,
+      quality: 80,
+    });
+    return { url: result?.url ?? null };
   }
 
   @Post('upload-banner')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: diskStorage({
-        destination: 'uploads/groups',
-        filename: (_req, file, cb) => cb(null, `${randomUUID()}${extname(file.originalname) || '.png'}`),
-      }),
-      fileFilter: (_req, file, cb) => {
-        cb(null, file.mimetype.startsWith('image/'));
-      },
-      limits: { fileSize: 5 * 1024 * 1024 },
-    }),
-  )
-  uploadBanner(@Req() req: Request, @UploadedFile() file?: Express.Multer.File) {
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  async uploadBanner(@Req() req: Request, @UploadedFile() file?: Express.Multer.File) {
     if (!file) {
       return { url: null };
     }
-      return { url: `/uploads/groups/${file.filename}` };
+    const result = await this.imageService.processAndSave(file, {
+      subDir: 'groups',
+      maxWidth: 1920,
+      maxHeight: 480,
+      quality: 80,
+    });
+    return { url: result?.url ?? null };
   }
 
   @Patch(':groupId')

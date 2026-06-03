@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/database/prisma.module';
 import { RealtimeEventsService } from '../../realtime/realtime-events.service';
 
-export type NotificationKind = 'POST_LIKED' | 'POST_COMMENTED';
+export type NotificationKind = 'POST_LIKED' | 'POST_COMMENTED' | 'COMMENT_REPLIED';
 
 export type NotificationPayload = {
   id: string;

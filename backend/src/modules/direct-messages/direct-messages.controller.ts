@@ -1,17 +1,19 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { randomUUID } from 'crypto';
-import { extname } from 'path';
+import { memoryStorage } from 'multer';
 import type { Request } from 'express';
 import { DirectMessagesService } from './direct-messages.service';
 import { JwtAuthGuard } from '../../common/guards/auth.guards';
 import { CurrentUser, AuthUser } from '../../common/decorators/auth.decorators';
+import { ImageService } from '../../common/pipes/image.service';
 
 @Controller('dm')
 @UseGuards(JwtAuthGuard)
 export class DirectMessagesController {
-  constructor(private readonly service: DirectMessagesService) {}
+  constructor(
+    private readonly service: DirectMessagesService,
+    private readonly imageService: ImageService,
+  ) {}
 
   @Get()
   list(@CurrentUser() user: AuthUser) {
@@ -29,30 +31,52 @@ export class DirectMessagesController {
   }
 
   @Post('upload')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: diskStorage({
-        destination: 'uploads/dm',
-        filename: (_req, file, cb) => cb(null, `${randomUUID()}${extname(file.originalname) || '.bin'}`),
-      }),
-      fileFilter: (_req, file, cb) => {
-        cb(null, file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/'));
-      },
-      limits: { fileSize: 12 * 1024 * 1024 },
-    }),
-  )
-  upload(@Req() req: Request, @UploadedFile() file?: Express.Multer.File) {
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  async upload(@Req() req: Request, @UploadedFile() file?: Express.Multer.File) {
     if (!file) {
       return { attachment: null };
     }
-    const kind = file.mimetype.startsWith('audio/') ? 'voice' : 'image';
+
+    // Si es audio, guardar raw
+    if (file.mimetype.startsWith('audio/')) {
+      const { writeFile, mkdir } = require('fs/promises');
+      const { join } = require('path');
+      const { randomUUID } = require('crypto');
+      const { extname } = require('path');
+      const ext = extname(file.originalname) || '.bin';
+      const filename = `${randomUUID()}${ext}`;
+      const dir = join(process.cwd(), 'uploads', 'dm');
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, filename), file.buffer);
+      return {
+        attachment: {
+          kind: 'voice',
+          url: `/uploads/dm/${filename}`,
+          mimeType: file.mimetype,
+          fileName: file.originalname,
+          size: file.size,
+        },
+      };
+    }
+
+    const result = await this.imageService.processAndSave(file, {
+      subDir: 'dm',
+      maxWidth: 1920,
+      maxHeight: 1080,
+      quality: 80,
+    });
+
+    if (!result) {
+      return { attachment: null };
+    }
+
     return {
       attachment: {
-        kind,
-          url: `/uploads/dm/${file.filename}`,
-        mimeType: file.mimetype,
+        kind: 'image',
+        url: result.url,
+        mimeType: result.mimeType,
         fileName: file.originalname,
-        size: file.size,
+        size: result.size,
       },
     };
   }

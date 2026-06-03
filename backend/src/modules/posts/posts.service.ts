@@ -352,6 +352,19 @@ export class PostsService implements OnModuleInit {
       return this.serialize({ ...row, comments }, userId);
     });
     this.realtimeEvents.emitFeedPostUpdated(post);
+
+    const commentAuthorId = post.comments.find((item) => item.id === commentId)?.authorId;
+    if (commentAuthorId && commentAuthorId !== userId) {
+      await this.notifications.createInteraction({
+        userId: commentAuthorId,
+        actorUserId: userId,
+        kind: 'COMMENT_REPLIED',
+        postId,
+        title: 'Respondieron tu comentario',
+        body: `${author?.displayName ?? 'Alguien'} respondió tu comentario.`,
+      });
+    }
+
     return post;
   }
 
@@ -458,6 +471,7 @@ export class PostsService implements OnModuleInit {
       const body = typeof item?.body === 'string' ? item.body : null;
       const authorId = typeof item?.authorId === 'string' ? item.authorId : null;
       const authorName = typeof item?.authorName === 'string' ? item.authorName : 'Usuario';
+      const authorAvatarUrl = typeof item?.authorAvatarUrl === 'string' ? item.authorAvatarUrl : null;
       const createdAt = typeof item?.createdAt === 'string' ? item.createdAt : new Date().toISOString();
       const id = typeof item?.id === 'string' ? item.id : crypto.randomUUID();
       if (!body || !authorId) return [];
@@ -479,7 +493,7 @@ export class PostsService implements OnModuleInit {
             }];
           })
         : [];
-      return [{ id, body, authorId, authorName, createdAt, likeUserIds, replies }];
+      return [{ id, body, authorId, authorName, authorAvatarUrl, createdAt, likeUserIds, replies }];
     });
   }
 

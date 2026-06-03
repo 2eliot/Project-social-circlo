@@ -168,7 +168,7 @@ type LiveDmNotice = {
 
 type NotificationItem = {
   id: string;
-  kind: 'POST_LIKED' | 'POST_COMMENTED';
+  kind: 'POST_LIKED' | 'POST_COMMENTED' | 'COMMENT_REPLIED';
   title: string;
   body: string;
   postId: string | null;
@@ -279,6 +279,7 @@ export default function AppHome() {
   const [liveDmNotice, setLiveDmNotice] = useState<LiveDmNotice | null>(null);
   const [liveInteractionNotice, setLiveInteractionNotice] = useState<LiveInteractionNotice | null>(null);
   const [openGroupCreatorOnTabChange, setOpenGroupCreatorOnTabChange] = useState(false);
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const tabRef = useRef<Tab>('feed');
   const selectedConvRef = useRef<string | null>(null);
 
@@ -362,6 +363,42 @@ export default function AppHome() {
     };
   }, [user?.id]);
 
+  // Global presence subscription — always active across all tabs
+  useEffect(() => {
+    if (!user?.id) return;
+    const socket = getSocket('/presence');
+
+    const onPresence = (payload: { userId: string; online: boolean }) => {
+      setOnlineUserIds((prev) => {
+        const next = new Set(prev);
+        if (payload.online) next.add(payload.userId);
+        else next.delete(payload.userId);
+        return next;
+      });
+    };
+
+    const onPresenceInitial = (payload: { onlineIds: string[] }) => {
+      setOnlineUserIds(new Set(payload.onlineIds));
+    };
+
+    socket.on('presence', onPresence);
+    socket.on('presence:initial', onPresenceInitial);
+
+    const onConnect = () => {
+      socket.emit('presence:subscribe', { userId: user.id });
+    };
+    socket.on('connect', onConnect);
+    if (socket.connected) {
+      socket.emit('presence:subscribe', { userId: user.id });
+    }
+
+    return () => {
+      socket.off('presence', onPresence);
+      socket.off('presence:initial', onPresenceInitial);
+      socket.off('connect', onConnect);
+    };
+  }, [user?.id]);
+
   useEffect(() => {
     if (!liveDmNotice) return;
     const timer = window.setTimeout(() => setLiveDmNotice(null), 4200);
@@ -411,7 +448,7 @@ export default function AppHome() {
 
   return (
     <div className="app-shell">
-      {tab === 'groups' ? <TopBar onOpenProfile={handleOpenProfile} currentTab={tab} /> : null}
+      {tab === 'groups' ? <TopBar onOpenProfile={handleOpenProfile} currentTab={tab} onlineUserIds={onlineUserIds} /> : null}
 
       {liveDmNotice ? (
         <button
@@ -450,7 +487,7 @@ export default function AppHome() {
       ) : null}
 
       <main className="app-content">
-        {tab === 'feed' ? <FeedTab onOpenProfile={handleOpenProfile} /> : null}
+        {tab === 'feed' ? <FeedTab onOpenProfile={handleOpenProfile} onlineUserIds={onlineUserIds} /> : null}
         {tab === 'chats' ? (
           selectedConversationId ? (
             <ChatsTab
@@ -487,6 +524,7 @@ export default function AppHome() {
               setOpenGroupCreatorOnTabChange(true);
               setTab('groups');
             }}
+            onlineUserIds={onlineUserIds}
           />
         ) : null}
       </main>
@@ -496,7 +534,7 @@ export default function AppHome() {
   );
 }
 
-function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string) => void; currentTab: Tab }) {
+function TopBar({ onOpenProfile, currentTab, onlineUserIds }: { onOpenProfile: (userId: string) => void; currentTab: Tab; onlineUserIds: Set<string> }) {
   const user = useAuth((state) => state.user);
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -508,7 +546,6 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
-  const [activeFriendsCount, setActiveFriendsCount] = useState(0);
   const canSearch = currentTab === 'feed' || currentTab === 'groups';
 
   async function loadNotifications() {
@@ -556,24 +593,8 @@ function TopBar({ onOpenProfile, currentTab }: { onOpenProfile: (userId: string)
     };
   }, [user?.id]);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    const socket = getSocket('/presence');
-    const onlineIds = new Set<string>();
-    const onPresence = (payload: { userId: string; online: boolean }) => {
-      if (payload.online) {
-        onlineIds.add(payload.userId);
-      } else {
-        onlineIds.delete(payload.userId);
-      }
-      setActiveFriendsCount(onlineIds.size);
-    };
-    socket.on('presence', onPresence);
-    socket.emit('presence:subscribe', { userId: user.id });
-    return () => {
-      socket.off('presence', onPresence);
-    };
-  }, [user?.id]);
+  // Amigos activos desde presencia global
+  const activeFriendsCount = onlineUserIds.size;
 
   useEffect(() => {
     if (!open || !canSearch) return;
@@ -826,7 +847,8 @@ function InterestPerson({ name, avatarUrl, online, onClick }: { name: string; av
   );
 }
 
-function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void }) {
+function FeedTab({ onOpenProfile, onlineUserIds }: { onOpenProfile: (userId: string) => void; onlineUserIds: Set<string> }) {
+  const router = useRouter();
   const user = useAuth((state) => state.user);
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [composer, setComposer] = useState('');
@@ -844,8 +866,13 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [commentLikePending, setCommentLikePending] = useState<Set<string>>(new Set());
   const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const audioInputRef = useRef<HTMLInputElement | null>(null);
   const remainingChars = POST_CONTENT_MAX_LENGTH - composer.length;
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
 
   // --- Nuevo estado para el feed rediseñado ---
   const [searchQuery, setSearchQuery] = useState('');
@@ -861,7 +888,6 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
   const [topUsers, setTopUsers] = useState<Array<{ id: string; displayName: string; avatarUrl?: string | null; reputationScore: number }>>([]);
   const [interestPeople, setInterestPeople] = useState<Array<{ id: string; displayName: string; avatarUrl?: string | null }>>([]);
   const [activeFilter, setActiveFilter] = useState<'todos' | 'amigos' | 'tendencia'>('todos');
-  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
 
   // Cargar datos iniciales
   async function loadInitialData() {
@@ -885,20 +911,28 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
     void loadInitialData();
   }, []);
 
-  // Cargar amigos (usuarios que sigo)
+  // Cargar amigos reales (mutuo follow)
   useEffect(() => {
     if (!user?.id) return;
-    api<Array<{ id: string; displayName: string; avatarUrl?: string | null }>>(`/users/${user.id}/following`)
-      .then((rows) => {
-        // Filtrar el propio usuario por si acaso
-        const mapped = rows.filter(r => r.id !== user.id).slice(0, 8).map((r) => ({
-          id: r.id,
-          displayName: r.displayName,
-          avatarUrl: r.avatarUrl,
-        }));
-        setFriends(mapped);
-        setInterestPeople(mapped.slice(0, 6));
-        setActivePeople(mapped.filter((p) => onlineUserIds.has(p.id)));
+
+    Promise.all([
+      api<Array<{ id: string; displayName: string; avatarUrl?: string | null }>>(`/users/${user.id}/following`).catch(() => []),
+      api<Array<{ id: string; displayName: string; avatarUrl?: string | null }>>(`/users/${user.id}/followers`).catch(() => []),
+    ])
+      .then(([following, followers]) => {
+        const followerIds = new Set(followers.map((row) => row.id));
+        const mutualFriends = following
+          .filter((row) => row.id !== user.id && followerIds.has(row.id))
+          .slice(0, 8)
+          .map((row) => ({
+            id: row.id,
+            displayName: row.displayName,
+            avatarUrl: row.avatarUrl,
+          }));
+
+        setFriends(mutualFriends);
+        setInterestPeople(mutualFriends.slice(0, 6));
+        setActivePeople(mutualFriends.filter((p) => onlineUserIds.has(p.id)));
       })
       .catch(() => {});
   }, [user?.id]);
@@ -940,46 +974,8 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
     };
   }, []);
 
-  // Presence en tiempo real
-  useEffect(() => {
-    if (!user?.id) return;
-    const socket = getSocket('/presence');
-
-    const onPresence = (payload: { userId: string; online: boolean }) => {
-      setOnlineUserIds((prev) => {
-        const next = new Set(prev);
-        if (payload.online) {
-          next.add(payload.userId);
-        } else {
-          next.delete(payload.userId);
-        }
-        return next;
-      });
-    };
-
-    const onPresenceInitial = (payload: { onlineIds: string[] }) => {
-      setOnlineUserIds(new Set(payload.onlineIds));
-    };
-
-    socket.on('presence', onPresence);
-    socket.on('presence:initial', onPresenceInitial);
-
-    // Subscribe on connect and re-subscribe on reconnect
-    const onConnect = () => {
-      socket.emit('presence:subscribe', { userId: user.id });
-    };
-    socket.on('connect', onConnect);
-    // Also emit immediately if already connected
-    if (socket.connected) {
-      socket.emit('presence:subscribe', { userId: user.id });
-    }
-
-    return () => {
-      socket.off('presence', onPresence);
-      socket.off('presence:initial', onPresenceInitial);
-      socket.off('connect', onConnect);
-    };
-  }, [user?.id]);
+  // Presence en tiempo real — gestionado globalmente desde AppHome
+  // (onlineUserIds se recibe como prop)
 
   // Actualizar activePeople reactivamente cuando cambien onlineUserIds o friends
   useEffect(() => {
@@ -1032,11 +1028,71 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
     e.target.value = '';
   }
 
-  async function onPickAudio(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    await addAttachment(file);
-    e.target.value = '';
+  // Timer para contador de grabacion
+  useEffect(() => {
+    if (!isRecording || !recordingStartedAt) return;
+    const interval = setInterval(() => {
+      setRecordingElapsed(Math.floor((Date.now() - recordingStartedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isRecording, recordingStartedAt]);
+
+  async function toggleVoiceRecording() {
+    if (isRecording) {
+      recorderRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setError('Tu navegador no soporta grabar notas de voz.');
+      return;
+    }
+
+    try {
+      if (!window.isSecureContext) {
+        setError('La grabacion de voz necesita un contexto seguro. Usa localhost o HTTPS.');
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const [track] = stream.getAudioTracks();
+      const settings = track?.getSettings?.();
+      if (track && settings) {
+        await track.applyConstraints({
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        }).catch(() => undefined);
+      }
+      const mimeType = getSupportedVoiceMimeType();
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      recordedChunksRef.current = [];
+      streamRef.current = stream;
+      recorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recordedChunksRef.current.push(event.data);
+      };
+      recorder.onstop = async () => {
+        const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        recorderRef.current = null;
+        recordedChunksRef.current = [];
+        setRecordingStartedAt(null);
+        setRecordingElapsed(0);
+        if (blob.size > 0) {
+          const extension = getVoiceFileExtension(blob.type || mimeType);
+          await addAttachment(new File([blob], `nota-de-voz-${Date.now()}.${extension}`, { type: blob.type || mimeType || 'audio/webm' }));
+        }
+      };
+      recorder.start();
+      setIsRecording(true);
+      setRecordingStartedAt(Date.now());
+      setRecordingElapsed(0);
+    } catch (err) {
+      setError(getVoiceRecordingErrorMessage(err));
+    }
   }
 
   async function publishPost() {
@@ -1152,7 +1208,6 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
     <section className="feed-exact-container">
       {/* Inputs ocultos para adjuntar archivos */}
       <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
-      <input ref={audioInputRef} type="file" accept="audio/*" className="hidden" onChange={onPickAudio} />
 
       {/* ===== HEADER: SALUDO + AVATAR ===== */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 14px', marginBottom: 4 }}>
@@ -1218,7 +1273,7 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
                         <span style={{ position: 'absolute', bottom: -2, right: -2, width: 14, height: 14, borderRadius: '50%', background: '#ff4d6d', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <svg viewBox="0 0 24 24" width="8" height="8" fill="#fff"><path d="M12 20.4 4.9 13.8A4.8 4.8 0 0 1 12 7.5a4.8 4.8 0 0 1 7.1 6.3L12 20.4Z"/></svg>
                         </span>
-                      ) : n.kind === 'POST_COMMENTED' ? (
+                      ) : (n.kind === 'POST_COMMENTED' || n.kind === 'COMMENT_REPLIED') ? (
                         <span style={{ position: 'absolute', bottom: -2, right: -2, width: 14, height: 14, borderRadius: '50%', background: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <svg viewBox="0 0 24 24" width="8" height="8" fill="#fff"><path d="M7 17.2 3.8 20V6.9A2.9 2.9 0 0 1 6.7 4h10.6a2.9 2.9 0 0 1 2.9 2.9v7.4a2.9 2.9 0 0 1-2.9 2.9H7Z"/></svg>
                         </span>
@@ -1276,7 +1331,7 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
                       <div>
                         <div style={{ padding: '8px 12px 4px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#727693' }}>Grupos</div>
                         {groupSearchResults.map((g) => (
-                          <button key={g.id} type="button" onClick={() => { setSearchQuery(''); }} style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                          <button key={g.id} type="button" onClick={() => { setSearchQuery(''); router.push(`/app/groups/${g.id}`); }} style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
                             <img src={g.iconUrl ? resolveAttachmentUrl(g.iconUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(g.name)}&background=2a1f5e&color=fff&size=24`} alt={g.name} style={{ width: 28, height: 28, borderRadius: 8, objectFit: 'cover' }} />
                             <span style={{ fontSize: 13, color: '#f0f4ff' }}>{g.name}</span>
                           </button>
@@ -1344,11 +1399,33 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
               <path d="M21 15l-5-5L5 21" />
             </svg>
           </button>
-          <button type="button" onClick={() => audioInputRef.current?.click()} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-              <path d="M9 8h6M12 8v8" />
-            </svg>
+          <button
+            type="button"
+            onClick={() => void toggleVoiceRecording()}
+            style={{
+              background: isRecording ? 'rgba(239,68,68,0.2)' : 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 4,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            {isRecording ? (
+              <>
+                <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600, minWidth: 32 }}>{recordingElapsed}s</span>
+                <svg viewBox="0 0 24 24" fill="#ef4444" stroke="none" width="18" height="18">
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+              </>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="22" />
+              </svg>
+            )}
           </button>
           {composer.trim() || pendingAttachments.length > 0 ? (
             <>
@@ -1365,7 +1442,7 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
           {pendingAttachments.map((att, idx) => (
             <div key={idx} style={{ position: 'relative', flexShrink: 0 }}>
               {att.kind === 'image' ? (
-                <img src={resolveAttachmentUrl(att.url)} alt="" style={{ height: 50, borderRadius: 8, objectFit: 'cover' }} />
+                <img src={resolveAttachmentUrl(att.url)} alt="" style={{ height: 50, borderRadius: 8, objectFit: 'contain' }} />
               ) : null}
               <button type="button" onClick={() => removePendingAttachment(idx)} style={{ position: 'absolute', top: -3, right: -3, width: 16, height: 16, borderRadius: '50%', background: '#ff4d6d', border: 'none', color: '#fff', fontSize: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
@@ -1412,9 +1489,9 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
                       {post.author.displayName}
                       {post.author.id === user?.id ? (
                         <span className="feed-exact-badge you">Tú</span>
-                      ) : (
+                      ) : friendIds.has(post.author.id) ? (
                         <span className="feed-exact-badge">Amigo</span>
-                      )}
+                      ) : null}
                     </h4>
                     <p className="post-time">{formatShortTime(post.createdAt)}</p>
                   </div>
@@ -1452,7 +1529,11 @@ function FeedTab({ onOpenProfile }: { onOpenProfile: (userId: string) => void })
                     <div key={`${post.id}-${att.url}`}>
                       {att.kind === 'image' ? (
                         <button type="button" style={{ width: '100%', padding: 0, background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setImagePopupUrl(resolveAttachmentUrl(att.url))}>
-                          <img src={resolveAttachmentUrl(att.url)} alt={att.fileName ?? 'Imagen'} style={{ width: '100%', borderRadius: 16, objectFit: 'cover', maxHeight: 180 }} />
+                          <img
+                            src={resolveAttachmentUrl(att.url)}
+                            alt={att.fileName ?? 'Imagen'}
+                            style={{ width: '100%', borderRadius: 16, objectFit: 'contain', maxHeight: 240, display: 'block' }}
+                          />
                         </button>
                       ) : (
                         <audio controls style={{ width: '100%' }}>
@@ -2418,17 +2499,20 @@ function UserProfileSheet({
   onClose,
   onOpenConversation,
   onRelationshipChanged,
+  onlineUserIds,
 }: {
   userId: string;
   onClose: () => void;
   onOpenConversation: (conversationId: string) => void;
   onRelationshipChanged: () => void;
+  onlineUserIds: Set<string>;
 }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isOnline = onlineUserIds.has(userId);
 
   async function loadProfile() {
     setLoading(true);
@@ -2446,30 +2530,6 @@ function UserProfileSheet({
 
   useEffect(() => {
     void loadProfile();
-  }, [userId]);
-
-  // Escuchar estado online/offline en el sheet
-  useEffect(() => {
-    if (!userId) return;
-    const socket = getSocket('/presence');
-    const onPresenceUpdate = (payload: { userId: string; online: boolean }) => {
-      if (payload.userId === userId) {
-        setProfile((current) => (current ? { ...current, isOnline: payload.online } : current));
-      }
-    };
-    const onPresenceList = (list: { userId: string; online: boolean }[]) => {
-      const entry = list.find((p) => p.userId === userId);
-      if (entry) {
-        setProfile((current) => (current ? { ...current, isOnline: entry.online } : current));
-      }
-    };
-    socket.on('presence:update', onPresenceUpdate);
-    socket.on('presence:list', onPresenceList);
-    socket.emit('presence:subscribe', { userIds: [userId] });
-    return () => {
-      socket.off('presence:update', onPresenceUpdate);
-      socket.off('presence:list', onPresenceList);
-    };
   }, [userId]);
 
   async function toggleFollow() {
@@ -2579,7 +2639,7 @@ function UserProfileSheet({
           <div className="p-5 space-y-4">
             <div className="rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(124,92,255,.35),rgba(124,92,255,.08)_40%,rgba(11,13,18,.3)_75%)] p-5">
               <div className="flex items-start gap-4">
-                <UserAvatar displayName={profile.displayName} avatarUrl={profile.avatarUrl} size={68} className="rounded-[24px]" isOnline={profile.isOnline} />
+                <UserAvatar displayName={profile.displayName} avatarUrl={profile.avatarUrl} size={68} className="rounded-[24px]" isOnline={isOnline} />
                 <div className="flex-1 min-w-0">
                   <div className="text-xl font-semibold truncate">@{profile.displayName}</div>
                   <div className="mt-2"><BadgeRow badges={profile.badges} /></div>
@@ -3361,6 +3421,7 @@ function ProfileTab({
   onRelationshipChanged,
   onOpenProfile,
   onOpenGroupCreator,
+  onlineUserIds,
 }: {
   viewedUserId?: string | null;
   onOpenChats: () => void;
@@ -3368,6 +3429,7 @@ function ProfileTab({
   onRelationshipChanged: () => void;
   onOpenProfile: (userId: string) => void;
   onOpenGroupCreator?: () => void;
+  onlineUserIds: Set<string>;
 }) {
   const router = useRouter();
   const { user, logout, updateUser } = useAuth();
@@ -3463,30 +3525,6 @@ function ProfileTab({
       socket.off('feed_post_created', onFeedPostCreated);
       socket.off('feed_post_updated', onFeedPostUpdated);
       socket.off('feed_post_deleted', onFeedPostDeleted);
-    };
-  }, [targetUserId]);
-
-  // Escuchar estado online/offline del perfil via presencia
-  useEffect(() => {
-    if (!targetUserId) return;
-    const socket = getSocket('/presence');
-    const onPresenceUpdate = (payload: { userId: string; online: boolean }) => {
-      if (payload.userId === targetUserId) {
-        setProfile((current) => (current ? { ...current, isOnline: payload.online } : current));
-      }
-    };
-    const onPresenceList = (list: { userId: string; online: boolean }[]) => {
-      const entry = list.find((p) => p.userId === targetUserId);
-      if (entry) {
-        setProfile((current) => (current ? { ...current, isOnline: entry.online } : current));
-      }
-    };
-    socket.on('presence:update', onPresenceUpdate);
-    socket.on('presence:list', onPresenceList);
-    socket.emit('presence:subscribe', { userIds: [targetUserId] });
-    return () => {
-      socket.off('presence:update', onPresenceUpdate);
-      socket.off('presence:list', onPresenceList);
     };
   }, [targetUserId]);
 
@@ -3652,6 +3690,7 @@ function ProfileTab({
 
   const displayName = profile?.displayName ?? user?.displayName ?? user?.email?.split('@')[0] ?? 'Usuario';
   const avatarUrl = isOwnProfile ? profile?.avatarUrl ?? user?.avatarUrl ?? null : profile?.avatarUrl ?? null;
+  const isOnline = targetUserId ? onlineUserIds.has(targetUserId) : false;
   const invitationUsage = invite ? `${invite.usesCount}/${invite.maxUses}` : '--';
   const ownedGroups = isOwnProfile ? myGroups.filter((group) => group.ownerId === user?.id) : [];
   const groupsCount = ownedGroups.length;
@@ -3779,7 +3818,7 @@ function ProfileTab({
                   </div>
                 )}
                 {/* Indicador de estado online/offline dinámico */}
-                <span className={`absolute bottom-[1px] right-[3px] h-5 w-5 rounded-full border-[3px] border-[#0c0d19] ${profile?.isOnline ? 'bg-[#3beb75] shadow-[0_0_8px_rgba(59,235,117,.35)]' : 'bg-[#6b7280]'}`} />
+                <span className={`absolute bottom-[1px] right-[3px] h-5 w-5 rounded-full border-[3px] border-[#0c0d19] ${isOnline ? 'bg-[#3beb75] shadow-[0_0_8px_rgba(59,235,117,.35)]' : 'bg-[#6b7280]'}`} />
               </div>
             </div>
 
@@ -4334,7 +4373,7 @@ function BottomNav({ tab, setTab, pendingChatsCount, unreadDmsCount }: { tab: Ta
     },
     {
       id: 'groups',
-      label: 'Amigos',
+      label: 'Grupos',
       icon: (
         <svg viewBox="0 0 24 24" fill={tab === 'groups' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={tab === 'groups' ? 0 : 1.8}>
           <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" strokeLinecap="round" strokeLinejoin="round" />

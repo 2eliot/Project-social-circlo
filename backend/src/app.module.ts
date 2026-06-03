@@ -6,6 +6,7 @@ import { AppController } from './app.controller';
 import { PrismaModule } from './infrastructure/database/prisma.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
 import { CryptoModule } from './common/crypto/crypto.module';
+import { ImageModule } from './common/image.module';
 
 import { AuthModule } from './modules/auth/auth.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
@@ -31,6 +32,7 @@ import { RealtimeModule } from './realtime/realtime.module';
     PrismaModule,
     RedisModule,
     CryptoModule,
+    ImageModule,
     AuthModule,
     InvitationsModule,
     UsersModule,

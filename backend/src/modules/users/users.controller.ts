@@ -1,13 +1,12 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { randomUUID } from 'crypto';
-import { extname } from 'path';
+import { memoryStorage } from 'multer';
 import type { Request } from 'express';
 import { UsersService } from './users.service';
 import { ReputationService } from './reputation.service';
 import { JwtAuthGuard } from '../../common/guards/auth.guards';
 import { CurrentUser, AuthUser } from '../../common/decorators/auth.decorators';
+import { ImageService } from '../../common/pipes/image.service';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -15,6 +14,7 @@ export class UsersController {
   constructor(
     private readonly service: UsersService,
     private readonly reputationService: ReputationService,
+    private readonly imageService: ImageService,
   ) {}
 
   @Get('search')
@@ -72,23 +72,18 @@ export class UsersController {
   }
 
   @Post('upload-avatar')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: diskStorage({
-        destination: 'uploads/avatars',
-        filename: (_req, file, cb) => cb(null, `${randomUUID()}${extname(file.originalname) || '.png'}`),
-      }),
-      fileFilter: (_req, file, cb) => {
-        cb(null, file.mimetype.startsWith('image/'));
-      },
-      limits: { fileSize: 8 * 1024 * 1024 },
-    }),
-  )
-  uploadAvatar(@Req() req: Request, @UploadedFile() file?: Express.Multer.File) {
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  async uploadAvatar(@Req() req: Request, @UploadedFile() file?: Express.Multer.File) {
     if (!file) {
       return { url: null };
     }
-      return { url: `/uploads/avatars/${file.filename}` };
+    const result = await this.imageService.processAndSave(file, {
+      subDir: 'avatars',
+      maxWidth: 512,
+      maxHeight: 512,
+      quality: 80,
+    });
+    return { url: result?.url ?? null };
   }
 
   @Patch('me')
