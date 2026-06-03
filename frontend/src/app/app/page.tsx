@@ -8,6 +8,7 @@ import { normalizeMediaUrl, resolveMediaUrl } from '@/lib/media-url';
 import { getSocket } from '@/lib/socket-client';
 import { useAuth } from '@/store/auth.store';
 import ChatsView from '@/features/chats/ChatsView';
+import ChatConversation from '@/features/chats/ChatConversation';
 
 type Tab = 'feed' | 'chats' | 'groups' | 'profile';
 
@@ -496,6 +497,7 @@ export default function AppHome() {
               onSelectConversation={setSelectedConversationId}
               onOpenProfile={handleOpenProfile}
               onConversationChanged={handleConversationChanged}
+              onlineUserIds={onlineUserIds}
             />
           ) : (
             <ChatsView
@@ -1707,12 +1709,14 @@ function ChatsTab({
   onSelectConversation,
   onOpenProfile,
   onConversationChanged,
+  onlineUserIds,
 }: {
   selectedConversationId: string | null;
   refreshToken: number;
   onSelectConversation: (conversationId: string | null) => void;
   onOpenProfile: (userId: string) => void;
   onConversationChanged: () => void;
+  onlineUserIds: Set<string>;
 }) {
   const { user } = useAuth();
   const [dms, setDms] = useState<ConversationSummary[]>([]);
@@ -2149,8 +2153,8 @@ function ChatsTab({
     const canWrite = Boolean(activeConversation && (activeConversation.canReply || activeConversation.canSendIntro));
 
     return (
-      <section>
-        <h1 className="section-title">Chats</h1>
+      <section className={selectedConversationId ? 'flex flex-col h-[calc(100dvh-96px)] overflow-hidden' : ''}>
+        {!selectedConversationId && <h1 className="section-title">Chats</h1>}
 
         {!selectedConversationId ? (
           <>
@@ -2206,293 +2210,59 @@ function ChatsTab({
               ))
             )}
           </>
-        ) : (
-          <div className="glass-card !p-0 overflow-hidden flex flex-col h-[calc(100dvh-190px)] min-h-[520px]">
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5 bg-white/5">
-              <button className="icon-btn shrink-0" onClick={() => onSelectConversation(null)} aria-label="Volver al listado de chats">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
-                  <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-              <button className="flex items-center gap-3 text-left min-w-0" onClick={() => activeConversation && onOpenProfile(activeConversation.peer.id)}>
-                <UserAvatar displayName={activeConversation?.peer.displayName} avatarUrl={activeConversation?.peer.avatarUrl} size={44} className="rounded-[16px]" />
-                <div className="min-w-0">
-                  <div className="font-semibold truncate">{activeConversation?.peer.displayName ?? 'Chat'}</div>
-                  <div className="text-xs opacity-60">
-                    {activeConversation?.status === 'ACCEPTED'
-                      ? 'Conversación activa'
-                      : activeConversation?.pendingForMe
-                        ? 'Solicitud por responder'
-                        : activeConversation?.status === 'REJECTED'
-                          ? 'Solicitud rechazada'
-                          : 'Esperando aceptación'}
-                  </div>
-                </div>
-              </button>
-              <button className="icon-btn shrink-0 ml-auto" disabled={acting} onClick={() => void deleteConversation()} aria-label="Eliminar conversación">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
-                  <path d="M4 7h16" strokeLinecap="round" />
-                  <path d="M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2" strokeLinecap="round" strokeLinejoin="round" />
-                  <path d="M7 7l.6 11a1 1 0 001 .94h6.8a1 1 0 001-.94L17 7" strokeLinecap="round" strokeLinejoin="round" />
-                  <path d="M10 11v4M14 11v4" strokeLinecap="round" />
-                </svg>
-              </button>
-            </div>
-
-            {loadingConversation ? (
-              <div className="px-4 py-10 text-sm opacity-70">Cargando chat...</div>
-            ) : error ? (
-              <div className="px-4 py-10 text-sm text-red-400">{error}</div>
-            ) : (
-              <>
-                <div ref={dmMessagesRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-[radial-gradient(circle_at_top,#1f2a3a_0%,#111722_45%,#0b0d12_100%)] min-h-0">
-                  {activeConversation?.status === 'PENDING' && activeConversation.pendingForMe ? (
-                    <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3 text-sm space-y-3 sticky top-0 z-10 backdrop-blur-sm">
-                      <div className="font-semibold text-emerald-200">Solicitud de conversación</div>
-                      <div className="opacity-80">Acepta para seguir conversando o rechaza para cerrar esta solicitud.</div>
-                      <div className="flex gap-2">
-                        <button className="primary" disabled={acting} onClick={() => void answerRequest('accept')}>
-                          {acting ? 'Procesando...' : 'Aceptar'}
-                        </button>
-                        <button className="icon-btn !w-auto px-4" disabled={acting} onClick={() => void answerRequest('reject')}>
-                          Rechazar
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {activeConversation?.status === 'PENDING' && !activeConversation.pendingForMe ? (
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm opacity-80">
-                      {messages.length === 0
-                        ? 'Puedes enviar un solo mensaje inicial. Luego tendrás que esperar a que la otra persona acepte.'
-                        : 'Ya enviaste tu mensaje inicial. Espera a que acepten para seguir hablando.'}
-                    </div>
-                  ) : null}
-
-                  {activeConversation?.status === 'REJECTED' ? (
-                    <div className="rounded-2xl border border-red-400/15 bg-red-500/10 p-4 text-sm text-red-200">
-                      Esta solicitud fue rechazada. Puedes volver a intentarlo desde el perfil del usuario.
-                    </div>
-                  ) : null}
-
-                  {messages.length === 0 ? (
-                    <div className="text-center text-sm opacity-55 py-8">Todavía no hay mensajes.</div>
-                  ) : (
-                    messages.map((message) => {
-                      const mine = message.authorId === user?.id;
-                      const offset = swipingMessageId === message.id ? swipeOffset : 0;
-                      const hasText = Boolean(message.content?.trim());
-                      const hasReply = Boolean(message.parent);
-                      const hasAttachments = Boolean(message.attachments?.length);
-                      const attachmentOnly = hasAttachments && !hasText && !hasReply;
-                      const shortText = (message.content ?? '').trim();
-                      const showCompactTimestamp = Boolean(
-                        shortText && !hasAttachments && !hasReply && shortText.length <= 24 && !shortText.includes('\n'),
-                      );
-                      const bubbleClassName = attachmentOnly
-                        ? 'max-w-[80%] px-0 py-0 text-white shadow-none cursor-pointer bg-transparent border-0'
-                        : mine
-                          ? 'max-w-[78%] rounded-[16px] rounded-br-[8px] bg-[#7c5cff] px-3 py-2 text-white shadow-sm cursor-pointer'
-                          : 'max-w-[78%] rounded-[16px] rounded-bl-[8px] bg-[#1a2330] px-3 py-2 text-white/90 border border-white/6 cursor-pointer';
-
-                      return (
-                        <div key={message.id} className={mine ? 'flex justify-end' : 'flex justify-start'}>
-                          <div className={mine ? 'flex items-center justify-end w-full gap-2' : 'flex items-center w-full gap-2'}>
-                            <div className={offset > 24 ? 'text-xs text-[#cdbfff] opacity-90' : 'text-xs text-[#cdbfff] opacity-0'}>
-                              Responder
-                            </div>
-                            <div
-                              onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); beginSwipe(message, e.clientX, e.currentTarget); }}
-                              onPointerMove={(e) => moveSwipe(e.clientX)}
-                              onPointerUp={() => finishSwipe(message)}
-                              onPointerCancel={() => finishSwipe(message)}
-                              onClickCapture={(e) => {
-                                if (suppressLongPressClickRef.current) {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  suppressLongPressClickRef.current = false;
-                                }
-                              }}
-                              onContextMenu={(e) => {
-                                e.preventDefault();
-                                openMessageActionMenu(message, e.currentTarget);
-                              }}
-                              className={bubbleClassName}
-                              style={{ transform: `translateX(${offset}px)`, transition: swipingMessageId === message.id ? 'none' : 'transform 120ms ease-out', touchAction: 'pan-y' }}
-                            >
-                              {message.parent ? (
-                                <div className={mine ? 'rounded-2xl bg-black/15 border border-white/10 px-3 py-2 mb-2' : 'rounded-2xl bg-white/5 border border-white/10 px-3 py-2 mb-2'}>
-                                  <div className="text-[11px] font-semibold opacity-80">{message.parent.author?.displayName ?? 'Mensaje'}</div>
-                                  <div className="text-[12px] opacity-70 truncate">{getReplyPreview(message.parent)}</div>
-                                </div>
-                              ) : null}
-                              {message.attachments?.length ? (
-                                <div className="space-y-2 mb-2">
-                                  {message.attachments.map((attachment) => (
-                                    <AttachmentPreview
-                                      key={`${message.id}-${attachment.url}`}
-                                      attachment={attachment}
-                                      onOpenImage={(url) => setImagePopupUrl(url)}
-                                    />
-                                  ))}
-                                </div>
-                              ) : null}
-                              {message.content ? (
-                                showCompactTimestamp ? (
-                                  <div className="flex items-end gap-2">
-                                    <div className="text-[14px] leading-snug whitespace-pre-wrap break-words">{message.content}</div>
-                                    <div className={mine ? 'text-[10px] leading-none text-white/60 shrink-0' : 'text-[10px] leading-none text-white/40 shrink-0'}>
-                                      {formatShortTime(message.createdAt)}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <div className="text-[14px] leading-snug whitespace-pre-wrap break-words">{message.content}</div>
-                                    <div className={mine ? 'text-[10px] leading-none text-white/60 mt-1.5' : 'text-[10px] leading-none text-white/40 mt-1.5'}>
-                                      {formatShortTime(message.createdAt)}
-                                    </div>
-                                  </>
-                                )
-                              ) : (
-                                <div className={mine ? 'text-[10px] leading-none text-white/60 mt-1' : 'text-[10px] leading-none text-white/40 mt-1'}>
-                                  {formatShortTime(message.createdAt)}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-                {peerIsTyping ? (
-                  <div className="px-4 py-1.5 flex items-center gap-2 text-xs text-white/45 bg-[#0d131d] border-t border-white/5">
-                    <span className="flex gap-[3px] items-center">
-                      <span className="h-1.5 w-1.5 rounded-full bg-white/40 animate-bounce [animation-delay:0ms]" />
-                      <span className="h-1.5 w-1.5 rounded-full bg-white/40 animate-bounce [animation-delay:150ms]" />
-                      <span className="h-1.5 w-1.5 rounded-full bg-white/40 animate-bounce [animation-delay:300ms]" />
-                    </span>
-                    <span>{activeConversation?.peer.displayName} está escribiendo</span>
-                  </div>
-                ) : null}
-
-                <div className="px-3 py-2 border-t border-white/5 bg-[#0d131d]">
-                  {replyingTo ? (
-                    <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 mb-2 flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-[11px] font-semibold text-[#cdbfff]">Respondiendo a {replyingTo.author?.displayName ?? (replyingTo.authorId === user?.id ? 'ti' : 'mensaje')}</div>
-                        <div className="text-xs opacity-70 truncate">{getReplyPreview(replyingTo)}</div>
-                      </div>
-                      <button className="text-xs opacity-60 shrink-0" onClick={() => setReplyingTo(null)}>Cancelar</button>
-                    </div>
-                  ) : null}
-                  {pendingAttachments.length > 0 ? (
-                    <div className="flex gap-2 flex-wrap mb-2">
-                      {pendingAttachments.map((attachment, index) => (
-                        <div key={`${attachment.url}-${index}`} className="rounded-2xl border border-white/10 bg-white/5 px-2 py-2 flex items-center gap-2 max-w-full">
-                          {attachment.kind === 'image' ? (
-                            <button className="shrink-0" onClick={() => setImagePopupUrl(resolveAttachmentUrl(attachment.url))}>
-                              <img src={resolveAttachmentUrl(attachment.url)} alt="Vista previa" className="h-12 w-12 rounded-xl object-cover border border-white/10" />
-                            </button>
-                          ) : (
-                            <div className="h-12 w-12 rounded-xl bg-[#182131] border border-white/10 flex items-center justify-center text-xs text-white/80">
-                              Voz
-                            </div>
-                          )}
-                          <div className="text-xs opacity-80 truncate max-w-[170px]">{attachment.kind === 'image' ? 'Imagen lista' : 'Nota de voz lista'}</div>
-                          <button className="text-xs opacity-60" onClick={() => removePendingAttachment(index)}>
-                            Quitar
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                  <div className="flex items-end gap-2">
-                    <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
-                    <button className="icon-btn shrink-0" disabled={!canWrite || sending || uploadingAttachment || isRecording} onClick={() => imageInputRef.current?.click()} aria-label="Enviar imagen">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
-                        <rect x="4" y="5" width="16" height="14" rx="3" />
-                        <circle cx="9" cy="10" r="1.5" />
-                        <path d="M20 16l-4.5-4.5L8 19" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </button>
-                    <button className={isRecording ? 'icon-btn shrink-0 !bg-red-500/20 !border-red-400/25 !text-red-200' : 'icon-btn shrink-0'} disabled={!canWrite || sending || uploadingAttachment} onClick={() => void toggleVoiceRecording()} aria-label="Grabar nota de voz">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
-                        <rect x="9" y="4" width="6" height="11" rx="3" />
-                        <path d="M6 11a6 6 0 0012 0M12 17v3M9 20h6" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </button>
-                    <textarea
-                      rows={1}
-                      value={composer}
-                      onChange={(e) => {
-                        setComposer(e.target.value);
-                        if (activeConversation && canWrite) {
-                          const now = Date.now();
-                          if (now - lastTypingEmitRef.current > 3000) {
-                            lastTypingEmitRef.current = now;
-                            getSocket('/social').emit('dm_typing', { conversationId: activeConversation.id, peerId: activeConversation.peer.id });
-                          }
-                        }
-                      }}
-                      placeholder={
-                        activeConversation?.canReply
-                          ? 'Escribe un mensaje'
-                          : activeConversation?.canSendIntro
-                            ? 'Escribe tu único mensaje inicial'
-                            : 'No puedes escribir ahora'
-                      }
-                      className="min-h-[42px] max-h-24 rounded-[18px] resize-none text-sm"
-                      disabled={!canWrite || sending || uploadingAttachment}
-                    />
-                    <button className="primary h-[42px] px-4" disabled={!canWrite || sending || uploadingAttachment || (!composer.trim() && pendingAttachments.length === 0)} onClick={() => void sendMessage()}>
-                      {sending ? 'Enviando...' : uploadingAttachment ? 'Subiendo...' : activeConversation?.canReply ? 'Enviar' : 'Solicitar'}
-                    </button>
-                  </div>
-                  {isRecording ? (
-                    <div className="flex items-center gap-2 text-xs text-red-200 mt-2 rounded-full bg-red-500/10 border border-red-400/15 px-3 py-2 w-fit">
-                      <span className="h-2.5 w-2.5 rounded-full bg-red-400 animate-pulse" />
-                      <span>Grabando {formatVoiceDuration(recordingElapsed)}</span>
-                      <span className="opacity-70">pulsa el micro para detener</span>
-                    </div>
-                  ) : null}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {imagePopupUrl ? (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setImagePopupUrl(null)}>
-            <div className="relative max-w-[92vw] max-h-[88vh]" onClick={(e) => e.stopPropagation()}>
-              <button className="icon-btn absolute right-3 top-3 z-10" onClick={() => setImagePopupUrl(null)} aria-label="Cerrar imagen">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
-                  <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
-                </svg>
-              </button>
-              <img src={imagePopupUrl} alt="Imagen ampliada" className="max-w-[92vw] max-h-[88vh] rounded-[24px] object-contain border border-white/10 shadow-2xl" />
-            </div>
-          </div>
-        ) : null}
-
-        {messageActionMenu ? (
-          <div className="fixed inset-0 z-40" onClick={() => setMessageActionMenu(null)}>
-            <div
-              className="message-action-menu"
-              data-side={messageActionMenu.side}
-              style={{ left: messageActionMenu.x, top: messageActionMenu.y }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="message-action-menu__eyebrow">Accion rapida</div>
-              <button className="message-action-menu__button message-action-menu__button--danger" onClick={() => void deleteMessage(messageActionMenu.messageId)}>
-                {messageActionMenu.mine ? 'Eliminar' : 'Eliminar para mi'}
-              </button>
-              <div className="message-action-menu__hint">
-                {messageActionMenu.mine ? 'Se elimina para ambos participantes.' : 'Solo desaparece de tu chat.'}
-              </div>
-            </div>
-          </div>
+        ) : activeConversation ? (
+          <ChatConversation
+            conversation={activeConversation}
+            messages={messages}
+            loading={loadingConversation}
+            error={error}
+            onlineUserIds={onlineUserIds}
+            onBack={() => onSelectConversation(null)}
+            onOpenProfile={onOpenProfile}
+            onConversationChanged={onConversationChanged}
+            onSendMessage={async (content: string, attachments: DMAttachment[], parentId?: string) => {
+              if (!user) return;
+              const tempContent = content;
+              const tempAttachments = [...attachments];
+              const tempId = `temp-${Date.now()}-${Math.random()}`;
+              const optimisticMessage: DMMessage = {
+                id: tempId,
+                conversationId: activeConversation.id,
+                authorId: user.id,
+                content: tempContent,
+                createdAt: new Date().toISOString(),
+                author: { id: user.id, displayName: user.displayName ?? user.email, avatarUrl: user.avatarUrl },
+                attachments: tempAttachments,
+              };
+              setMessages((current) => [...current, optimisticMessage]);
+              try {
+                const sent = await api<DMMessage>(`/dm/${activeConversation.id}/messages`, {
+                  method: 'POST',
+                  body: { content: tempContent, attachments: tempAttachments, parentId },
+                });
+                setMessages((current) => current.map((msg) => (msg.id === tempId ? sent : msg)));
+                onConversationChanged();
+              } catch (err) {
+                setMessages((current) => current.filter((msg) => msg.id !== tempId));
+                throw err;
+              }
+            }}
+            onDeleteMessage={async (messageId: string) => {
+              try {
+                await api(`/dm/${activeConversation.id}/messages/${messageId}`, { method: 'DELETE' });
+                setMessages((current) => current.filter((msg) => msg.id !== messageId));
+                onConversationChanged();
+              } catch {
+                throw new Error('No se pudo eliminar el mensaje.');
+              }
+            }}
+            onDeleteConversation={async () => {
+              await api(`/dm/${activeConversation.id}`, { method: 'DELETE' });
+              onConversationChanged();
+              onSelectConversation(null);
+              await loadConversations();
+            }}
+          />
         ) : null}
       </section>
     );
