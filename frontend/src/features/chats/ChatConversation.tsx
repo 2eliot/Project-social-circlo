@@ -76,7 +76,8 @@ function resolveAttachmentUrl(url: string) {
 
 function getSupportedVoiceMimeType() {
   if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return '';
-  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+  // audio/mp4 first for iOS Safari; audio/webm for Android/desktop
+  const candidates = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
   return candidates.find((c) => MediaRecorder.isTypeSupported(c)) ?? '';
 }
 
@@ -478,7 +479,7 @@ export default function ChatConversation({
   return (
     <div className="flex flex-col h-full bg-[#050712] relative overflow-hidden">
 
-      <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
+      <input ref={imageInputRef} type="file" accept="image/*" className="opacity-0 absolute w-0 h-0 overflow-hidden -z-10" onChange={onPickImage} />
 
       {/* ===== HEADER ===== */}
       <header className={`flex items-center gap-2 px-2 py-1.5 bg-[#090b19]/96 border-b border-white/[0.05] shrink-0 ${longPressMenu ? 'z-50' : 'z-5'} relative`}>
