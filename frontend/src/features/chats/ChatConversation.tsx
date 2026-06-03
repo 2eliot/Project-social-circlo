@@ -563,6 +563,9 @@ export default function ChatConversation({
           Hoy
         </div>
 
+        {/* Initial scroll to bottom (near chat form) when conversation loads */}
+        {!loading && messages.length > 0 && <InitScroll />}
+
         {loading ? (
           <div className="text-center text-[#727693] text-sm py-8">Cargando chat...</div>
         ) : displayError ? (
@@ -825,6 +828,19 @@ export default function ChatConversation({
       `}</style>
     </div>
   );
+}
+
+/* ================================================================== */
+/*  InitScroll — scrolls to bottom once on conversation load          */
+/* ================================================================== */
+
+function InitScroll() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current?.parentElement;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, []);
+  return <div ref={ref} className="hidden" />;
 }
 
 /* ================================================================== */
