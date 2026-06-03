@@ -242,7 +242,6 @@ export default function ChatConversation({
   const streamRef = useRef<MediaStream | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<number | null>(null);
   const lastTypingEmitRef = useRef<number>(0);
 
@@ -281,11 +280,6 @@ export default function ChatConversation({
       setPeerIsTyping(false);
     };
   }, [conversation.id, peerId]);
-
-  /* --- Scroll to bottom --- */
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, loading]);
 
   /* --- Recording timer --- */
   useEffect(() => {
@@ -711,7 +705,8 @@ export default function ChatConversation({
           </div>
         )}
 
-        <div ref={messagesEndRef} />
+        {/* spacer so typing indicator isn't flush with last message */}
+        <div className="h-2" />
       </div>
 
       {/* ===== PENDING ATTACHMENTS ===== */}

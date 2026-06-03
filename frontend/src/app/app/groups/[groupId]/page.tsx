@@ -542,22 +542,22 @@ export default function GroupPage() {
         <section className="relative overflow-hidden rounded-[38px] border border-white/10 bg-[linear-gradient(180deg,#111623,#090c16)] shadow-[0_32px_90px_rgba(0,0,0,.56)]">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_16%,rgba(74,238,255,.12),transparent_16%),radial-gradient(circle_at_85%_22%,rgba(226,88,255,.12),transparent_18%),linear-gradient(180deg,rgba(255,255,255,.03),transparent_24%)]" />
           <div className="relative px-4 pb-3 pt-4">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={handleBack}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/78 shadow-[0_8px_18px_rgba(0,0,0,.24)]"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/78 shadow-[0_4px_10px_rgba(0,0,0,.24)]"
                 aria-label="Regresar"
               >
                 <BackMiniIcon />
               </button>
-              <div className="min-w-0 flex-1 truncate text-[13px] font-semibold text-white/72">grupo del programador</div>
-              <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1 truncate text-[12px] font-semibold text-white/72">grupo del programador</div>
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => void handleVoiceAction()}
                   disabled={voiceJoinBusy || !voiceChannel?.isEnabled}
-                  className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-[0_8px_18px_rgba(0,0,0,.22)] transition disabled:opacity-50 ${voiceJoined ? 'border-emerald-300/26 bg-emerald-400/10 text-emerald-100' : voiceRequestPending ? 'border-amber-300/26 bg-amber-400/10 text-amber-100' : 'border-white/10 bg-white/[0.04] text-white/72'}`}
+                  className={`flex h-8 w-8 items-center justify-center rounded-full border shadow-[0_4px_10px_rgba(0,0,0,.22)] transition disabled:opacity-50 ${voiceJoined ? 'border-emerald-300/26 bg-emerald-400/10 text-emerald-100' : voiceRequestPending ? 'border-amber-300/26 bg-amber-400/10 text-amber-100' : 'border-white/10 bg-white/[0.04] text-white/72'}`}
                   aria-label={voiceJoined ? 'Bajar de voz' : 'Subir a voz'}
                 >
                   <VoiceJoinIcon joined={voiceJoined} pending={voiceRequestPending} />
@@ -567,7 +567,7 @@ export default function GroupPage() {
                     type="button"
                     disabled={!voiceChannel}
                     onClick={voiceChannel ? () => void toggleChannel(voiceChannel, !voiceChannel.isEnabled) : undefined}
-                    className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-[0_8px_18px_rgba(0,0,0,.22)] transition disabled:opacity-50 ${voiceChannel?.isEnabled ? 'border-rose-300/26 bg-[radial-gradient(circle,rgba(255,98,144,.32),rgba(255,98,144,.1))] text-rose-100' : 'border-white/10 bg-white/[0.04] text-white/60'}`}
+                    className={`flex h-8 w-8 items-center justify-center rounded-full border shadow-[0_4px_10px_rgba(0,0,0,.22)] transition disabled:opacity-50 ${voiceChannel?.isEnabled ? 'border-rose-300/26 bg-[radial-gradient(circle,rgba(255,98,144,.32),rgba(255,98,144,.1))] text-rose-100' : 'border-white/10 bg-white/[0.04] text-white/60'}`}
                     aria-label={voiceChannel?.isEnabled ? 'Apagar voz' : 'Encender voz'}
                   >
                     <VoicePowerIcon enabled={voiceChannel?.isEnabled ?? false} />
@@ -577,7 +577,7 @@ export default function GroupPage() {
                   <button
                     type="button"
                     onClick={() => setSettingsOpen(true)}
-                    className="flex h-10 w-7 items-center justify-center text-white/62"
+                    className="flex h-8 w-6 items-center justify-center text-white/62"
                     aria-label="Ajustes del grupo"
                   >
                     <DotsMiniIcon />
@@ -596,14 +596,14 @@ export default function GroupPage() {
                   <>
                     <div>
                       {canManageChannels && pendingVoiceRequests.length > 0 ? (
-                        <div className="mb-3 flex flex-wrap gap-2">
+                        <div className="mb-3 flex flex-wrap gap-1.5 overflow-x-auto scrollbar-thin pb-1">
                           {pendingVoiceRequests.map((member) => (
                             <button
                               key={member.id}
                               type="button"
                               onClick={() => void approveVoiceRequest(member.id)}
                               disabled={voiceJoinBusy}
-                              className="rounded-full border border-fuchsia-300/18 bg-fuchsia-400/10 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-fuchsia-100 disabled:opacity-50"
+                              className="whitespace-nowrap rounded-full border border-fuchsia-300/18 bg-fuchsia-400/10 px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.08em] text-fuchsia-100 disabled:opacity-50"
                             >
                               Subir a {truncateName(member.displayName)}
                             </button>

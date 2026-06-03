@@ -326,9 +326,10 @@ export default function AppHome() {
       attachments?: DMAttachment[];
     }) => {
       if (!payload || payload.authorId === user.id) return;
-      setConversationRefreshToken((current) => current + 1);
       void refreshPendingChatsCount();
       if (tabRef.current !== 'chats' || selectedConvRef.current !== payload.conversationId) {
+        /* Only reload if NOT the currently open conversation (ChatsTab handles it via socket) */
+        setConversationRefreshToken((current) => current + 1);
         setUnreadDmsCount((c) => c + 1);
       }
       const preview = getConversationPreview({
@@ -1538,9 +1539,7 @@ function FeedTab({ onOpenProfile, onlineUserIds }: { onOpenProfile: (userId: str
                           />
                         </button>
                       ) : (
-                        <audio controls style={{ width: '100%' }}>
-                          <source src={resolveAttachmentUrl(att.url)} type={att.mimeType ?? 'audio/webm'} />
-                        </audio>
+                        <VoiceNote attachment={att} src={resolveAttachmentUrl(att.url)} />
                       )}
                     </div>
                   ))}
@@ -1751,7 +1750,6 @@ function ChatsTab({
   const typingTimerRef = useRef<number | null>(null);
   const lastTypingEmitRef = useRef<number>(0);
   const dmMessagesRef = useRef<HTMLDivElement>(null);
-  const dmInitialLoadRef = useRef(true);
 
   async function loadConversations() {
     setLoadingList(true);
@@ -1870,8 +1868,42 @@ function ChatsTab({
       }, 3500);
     };
     socket.on('dm_typing', onTyping);
+
+    /* Real-time message receiving — append to queue without reloading */
+    const onNewMessage = (payload: {
+      conversationId: string;
+      messageId: string;
+      authorId: string;
+      authorDisplayName?: string;
+      authorAvatarUrl?: string | null;
+      content?: string | null;
+      attachments?: DMAttachment[];
+      createdAt: string;
+    }) => {
+      if (!payload || payload.conversationId !== convId || payload.authorId === user?.id) return;
+      const newMsg: DMMessage = {
+        id: payload.messageId,
+        conversationId: payload.conversationId,
+        authorId: payload.authorId,
+        content: payload.content ?? '',
+        createdAt: payload.createdAt,
+        author: payload.authorId
+          ? { id: payload.authorId, displayName: payload.authorDisplayName ?? 'Usuario', avatarUrl: payload.authorAvatarUrl ?? null }
+          : null,
+        attachments: payload.attachments,
+      };
+      setMessages((current) => {
+        if (current.some((m) => m.id === newMsg.id)) return current;
+        return [...current, newMsg];
+      });
+      updateLastMessage(newMsg);
+      /* No auto-scroll — el usuario controla su posición de scroll manualmente */
+    };
+    socket.on('dm_message_new', onNewMessage);
+
     return () => {
       socket.off('dm_typing', onTyping);
+      socket.off('dm_message_new', onNewMessage);
       if (typingTimerRef.current !== null) {
         window.clearTimeout(typingTimerRef.current);
         typingTimerRef.current = null;
@@ -1880,10 +1912,7 @@ function ChatsTab({
     };
   }, [activeConversation?.id, activeConversation?.peer.id]);
 
-  useEffect(() => {
-    dmMessagesRef.current?.scrollTo({ top: dmMessagesRef.current.scrollHeight, behavior: dmInitialLoadRef.current ? 'auto' : 'smooth' });
-    dmInitialLoadRef.current = false;
-  }, [messages.length]);
+  /* No auto-scroll — the user scrolls manually to see older messages */
 
   async function addAttachment(file: File) {
     setUploadingAttachment(true);
@@ -2564,38 +2593,50 @@ function VoiceNote({ attachment, src }: { attachment: DMAttachment; src: string 
     }
   }
 
+  const bars = Array.from({ length: 16 }, (_, i) => Math.max(6, 10 + Math.sin(i * 1.1) * 6 + Math.sin(i * 0.5) * 4 + Math.random() * 3));
+
   return (
-    <div className="bg-transparent px-0 py-0 min-w-[220px] max-w-[260px]" onClick={(e) => e.stopPropagation()}>
+    <div className="rounded-2xl rounded-bl-lg bg-gradient-to-b from-[#161826] to-[#101220] border border-white/[0.055] px-3 py-2.5 min-w-[220px] max-w-[280px]" onClick={(e) => e.stopPropagation()}>
       <audio ref={audioRef} preload="metadata">
         <source src={src} type={attachment.mimeType ?? 'audio/webm'} />
       </audio>
-      <div className="flex items-center gap-3">
-        <button type="button" onClick={() => void togglePlay()} className="h-10 w-10 rounded-full bg-white text-[#111722] flex items-center justify-center shrink-0">
+      {/* Play + time + speed */}
+      <div className="flex items-center mb-1.5">
+        <button type="button" onClick={() => void togglePlay()}
+          className="flex items-center justify-center w-9 h-9 rounded-full border-none cursor-pointer mr-3 shrink-0 text-white shadow-lg"
+          style={{ background: 'radial-gradient(circle at 35% 35%, #8a4eff, #4e1bd1)' }}>
           {isPlaying ? (
-            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-              <rect x="7" y="6" width="3.5" height="12" rx="1" />
-              <rect x="13.5" y="6" width="3.5" height="12" rx="1" />
-            </svg>
+            <svg viewBox="0 0 24 24" width={16} height={16} fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
           ) : (
-            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-              <path d="M8 6v12l10-6-10-6z" />
-            </svg>
+            <svg viewBox="0 0 24 24" width={16} height={16} fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
           )}
         </button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 h-6">
-            {Array.from({ length: 22 }).map((_, index) => {
-              const threshold = (index + 1) / 22;
-              const active = progress >= threshold;
-              const height = 8 + ((index * 7) % 16);
-              return <span key={index} className={active ? 'w-1 rounded-full bg-[#7c5cff]' : 'w-1 rounded-full bg-white/20'} style={{ height }} />;
-            })}
-          </div>
-          <div className="flex items-center justify-between text-[11px] text-white/55 mt-1">
-            <span>{formatVoiceDuration(progress > 0 && duration ? progress * duration : duration)}</span>
-            <span>Nota de voz</span>
-          </div>
-        </div>
+        <span className="text-xs font-medium text-[#9b9bbf]">
+          {formatVoiceDuration(Math.floor(progress * duration || 0))}
+          <span className="opacity-50 ml-1">/ {formatVoiceDuration(Math.floor(duration))}</span>
+        </span>
+        <span className="ml-auto text-[11px] font-bold bg-black/55 text-[#bbbbdb] px-2 py-0.5 rounded-md">1x</span>
+      </div>
+      {/* Waveform */}
+      <div className="flex items-center gap-0.5 text-[#8a5aff]">
+        {bars.map((h, i) => {
+          const threshold = (i + 1) / bars.length;
+          const active = progress >= threshold;
+          return (
+            <span key={i} className="rounded-sm"
+              style={{
+                width: 3,
+                height: h,
+                background: 'currentColor',
+                opacity: active ? 0.9 : 0.4,
+              }}
+            />
+          );
+        })}
+      </div>
+      {/* Progress bar */}
+      <div className="w-full h-1 rounded-sm bg-white/10 mt-2.5 overflow-hidden relative">
+        <div className="h-full rounded-sm bg-gradient-to-r from-[#884aff] to-[#b47cff]" style={{ width: `${progress * 100}%`, transition: 'width 0.25s linear' }} />
       </div>
     </div>
   );
