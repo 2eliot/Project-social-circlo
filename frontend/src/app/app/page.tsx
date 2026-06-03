@@ -2270,7 +2270,6 @@ function ChatsTab({
                   body: { content: tempContent, attachments: tempAttachments, parentId },
                 });
                 setMessages((current) => current.map((msg) => (msg.id === tempId ? sent : msg)));
-                onConversationChanged();
               } catch (err) {
                 setMessages((current) => current.filter((msg) => msg.id !== tempId));
                 throw err;
