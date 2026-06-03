@@ -101,17 +101,17 @@ function getVoiceRecordingErrorMessage(err: unknown) {
 /* ------------------------------------------------------------------ */
 
 async function uploadDmAttachment(file: File): Promise<DMAttachment | null> {
-  const form = new FormData();
-  form.append('file', file);
-  const resp = await fetch('/api/v1/upload', { method: 'POST', body: form, credentials: 'include' });
-  if (!resp.ok) throw new Error('Upload failed');
-  const data = await resp.json();
-  return {
-    kind: file.type.startsWith('image') ? 'image' : 'voice',
-    url: data.url ?? data.path,
-    fileName: file.name,
-    mimeType: file.type,
-  };
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const result = await api<{ attachment: DMAttachment | null }>('/dm/upload', {
+      method: 'POST',
+      body: formData,
+    });
+    return result.attachment;
+  } catch {
+    throw new Error('No se pudo subir el archivo');
+  }
 }
 
 /* ------------------------------------------------------------------ */
