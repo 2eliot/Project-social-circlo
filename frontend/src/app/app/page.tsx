@@ -1598,12 +1598,14 @@ function FeedTab({ onOpenProfile, onlineUserIds }: { onOpenProfile: (userId: str
                         <div key={comment.id} style={{ background: '#11142a', borderRadius: 12, padding: '8px 12px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <img
-                                src={comment.authorAvatarUrl ? resolveAttachmentUrl(comment.authorAvatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.authorName)}&background=4d26b3&color=fff&size=20`}
-                                alt={comment.authorName}
-                                style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' }}
-                              />
-                              <span style={{ fontSize: 12, fontWeight: 600, color: '#cdbfff' }}>{comment.authorName}</span>
+                              <button type="button" onClick={() => { if (comment.authorId) onOpenProfile(comment.authorId); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <img
+                                  src={comment.authorAvatarUrl ? resolveAttachmentUrl(comment.authorAvatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.authorName)}&background=4d26b3&color=fff&size=20`}
+                                  alt={comment.authorName}
+                                  style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' }}
+                                />
+                                <span style={{ fontSize: 12, fontWeight: 600, color: '#cdbfff' }}>{comment.authorName}</span>
+                              </button>
                             </div>
                             <div style={{ display: 'flex', gap: 6 }}>
                               <button type="button" onClick={() => void toggleCommentLike(post.id, comment.id)} disabled={commentLikePending.has(comment.id)} style={{ background: 'none', border: 'none', color: comment.likedByMe ? '#ff4d6d' : '#727693', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', gap: 3, padding: 0 }}>
@@ -1622,12 +1624,14 @@ function FeedTab({ onOpenProfile, onlineUserIds }: { onOpenProfile: (userId: str
                             <div style={{ marginTop: 6, paddingLeft: 12, borderLeft: '2px solid rgba(77,38,179,.3)', display: 'flex', flexDirection: 'column', gap: 4 }}>
                               {comment.replies?.map((reply) => (
                                 <div key={reply.id} style={{ fontSize: 12, color: '#c8cce0', display: 'flex', alignItems: 'center', gap: 4 }}>
-                                  <img
-                                    src={reply.authorAvatarUrl ? resolveAttachmentUrl(reply.authorAvatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(reply.authorName)}&background=4d26b3&color=fff&size=16`}
-                                    alt={reply.authorName}
-                                    style={{ width: 16, height: 16, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
-                                  />
-                                  <span style={{ fontWeight: 600, color: '#cdbfff' }}>{reply.authorName}: </span>
+                                  <button type="button" onClick={() => { if (reply.authorId) onOpenProfile(reply.authorId); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <img
+                                      src={reply.authorAvatarUrl ? resolveAttachmentUrl(reply.authorAvatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(reply.authorName)}&background=4d26b3&color=fff&size=16`}
+                                      alt={reply.authorName}
+                                      style={{ width: 16, height: 16, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                                    />
+                                    <span style={{ fontWeight: 600, color: '#cdbfff' }}>{reply.authorName}: </span>
+                                  </button>
                                   <span>{reply.body}</span>
                                 </div>
                               ))}
