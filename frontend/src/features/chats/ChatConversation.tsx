@@ -238,6 +238,7 @@ export default function ChatConversation({
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* --- Refs --- */
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
@@ -297,6 +298,13 @@ export default function ChatConversation({
     window.addEventListener('click', handler);
     return () => window.removeEventListener('click', handler);
   }, [showMenu]);
+
+  /* --- Auto-scroll to bottom when messages load / conversation changes --- */
+  useEffect(() => {
+    if (loading) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [loading, messages.length, conversation.id]);
 
   /* --- Upload attachment --- */
   async function addAttachment(file: File) {
@@ -554,7 +562,7 @@ export default function ChatConversation({
       </header>
 
       {/* ===== MESSAGES ===== */}
-      <div className="flex-1 overflow-y-auto px-3 relative z-2 scrollbar-thin"
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 relative z-2 scrollbar-thin"
         style={{ scrollbarWidth: 'thin' }}>
 
         {/* Date pill */}
