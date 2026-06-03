@@ -299,12 +299,42 @@ export default function ChatConversation({
     return () => window.removeEventListener('click', handler);
   }, [showMenu]);
 
-  /* --- Auto-scroll to bottom when messages load / conversation changes --- */
+  /* --- Track if user scrolled up --- */
+  const userScrolledUpRef = useRef(false);
+
+  /* --- Scroll to bottom helper (uses rAF so DOM is painted first) --- */
+  function scrollToBottom() {
+    const el = scrollRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'instant' as ScrollBehavior });
+    });
+  }
+
+  /* --- Scroll to bottom when messages finish loading or conversation changes --- */
   useEffect(() => {
     if (loading) return;
+    const raf = requestAnimationFrame(() => {
+      scrollToBottom();
+      userScrolledUpRef.current = false;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [loading, conversation.id]);
+
+  /* --- Scroll to bottom when new message arrives (only if user hasn't scrolled up) --- */
+  useEffect(() => {
+    if (loading || messages.length === 0) return;
+    if (userScrolledUpRef.current) return;
+    scrollToBottom();
+  }, [messages.length]);
+
+  /* --- Detect manual scroll --- */
+  function handleScroll() {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [loading, messages.length, conversation.id]);
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    userScrolledUpRef.current = !atBottom;
+  }
 
   /* --- Upload attachment --- */
   async function addAttachment(file: File) {
@@ -562,7 +592,7 @@ export default function ChatConversation({
       </header>
 
       {/* ===== MESSAGES ===== */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 relative z-2 scrollbar-thin"
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 relative z-2 scrollbar-thin"
         style={{ scrollbarWidth: 'thin' }}>
 
         {/* Date pill */}
