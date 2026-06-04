@@ -2877,6 +2877,8 @@ function ChatsTab({
               onSelectConversation(null);
               await loadConversations();
             }}
+            onAcceptConversation={() => answerRequest('accept')}
+            onRejectConversation={() => answerRequest('reject')}
           />
         ) : null}
       </section>

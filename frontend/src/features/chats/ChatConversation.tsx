@@ -191,6 +191,8 @@ interface ChatConversationProps {
   onSendMessage: (content: string, attachments: DMAttachment[], parentId?: string) => Promise<void>;
   onDeleteMessage: (messageId: string) => Promise<void>;
   onDeleteConversation: () => Promise<void>;
+  onAcceptConversation?: () => Promise<void>;
+  onRejectConversation?: () => Promise<void>;
 }
 
 /* ================================================================== */
@@ -209,6 +211,8 @@ export default function ChatConversation({
   onSendMessage,
   onDeleteMessage,
   onDeleteConversation,
+  onAcceptConversation,
+  onRejectConversation,
 }: ChatConversationProps) {
   const { user } = useAuth();
 
@@ -554,6 +558,37 @@ export default function ChatConversation({
           )}
         </div>
       </header>
+
+      {/* ===== PENDING REQUEST BANNER ===== */}
+      {conversation.pendingForMe && (
+        <div className="flex flex-col items-center gap-3 px-4 py-4 mx-3 mt-2 mb-1 rounded-2xl bg-gradient-to-b from-[#1a1035] to-[#120b28] border border-[#7349ff]/25 shadow-lg shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">💬</span>
+            <span className="text-sm font-semibold text-white">Solicitud de chat</span>
+          </div>
+          <p className="text-xs text-[#a8a8c0] text-center">
+            {conversation.peer.displayName} quiere conversar contigo
+          </p>
+          <div className="flex gap-3 w-full">
+            <button
+              type="button"
+              onClick={() => onAcceptConversation?.()}
+              disabled={acting}
+              className="flex-1 py-2.5 rounded-xl border-none bg-gradient-to-r from-[#7b43ff] to-[#5d27ff] text-white text-sm font-bold cursor-pointer disabled:opacity-50 transition-all active:scale-[0.97]"
+            >
+              Aceptar
+            </button>
+            <button
+              type="button"
+              onClick={() => onRejectConversation?.()}
+              disabled={acting}
+              className="flex-1 py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 text-red-300 text-sm font-semibold cursor-pointer disabled:opacity-50 transition-all active:scale-[0.97]"
+            >
+              Rechazar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ===== MESSAGES ===== */}
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 relative z-2 scrollbar-thin"
