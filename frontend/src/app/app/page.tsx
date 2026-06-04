@@ -2466,6 +2466,8 @@ function ChatsTab({
       content?: string | null;
       attachments?: DMAttachment[];
       createdAt: string;
+      parentId?: string | null;
+      parent?: DMMessage['parent'] | null;
     }) => {
       if (!payload || payload.conversationId !== convId || payload.authorId === user?.id) return;
       const newMsg: DMMessage = {
@@ -2478,6 +2480,7 @@ function ChatsTab({
           ? { id: payload.authorId, displayName: payload.authorDisplayName ?? 'Usuario', avatarUrl: payload.authorAvatarUrl ?? null }
           : null,
         attachments: payload.attachments,
+        parent: payload.parent ?? undefined,
       };
       setMessages((current) => {
         if (current.some((m) => m.id === newMsg.id)) return current;

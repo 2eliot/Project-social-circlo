@@ -270,7 +270,17 @@ export class DirectMessagesService {
         attachments: normalizedAttachments as Prisma.InputJsonValue,
         status: 'PUBLISHED',
       },
-      include: { author: { select: { id: true, displayName: true, avatarUrl: true } } },
+      include: {
+        author: { select: { id: true, displayName: true, avatarUrl: true } },
+        parent: {
+          select: {
+            id: true,
+            content: true,
+            attachments: true,
+            author: { select: { id: true, displayName: true } },
+          },
+        },
+      },
     });
 
     this.realtimeEvents.emitDmMessage(peerId, {
@@ -282,6 +292,8 @@ export class DirectMessagesService {
       content: message.content,
       attachments: message.attachments,
       createdAt: message.createdAt,
+      parentId: parentMessageId,
+      parent: message.parent,
     });
 
     return message;
