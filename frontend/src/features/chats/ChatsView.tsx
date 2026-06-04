@@ -230,6 +230,7 @@ interface ChatsViewProps {
   onSelectConversation: (id: string | null) => void;
   onOpenProfile: (userId: string) => void;
   onConversationChanged: () => void;
+  unreadDmsCount?: number;
 }
 
 /* ================================================================== */
@@ -242,6 +243,7 @@ export default function ChatsView({
   onSelectConversation,
   onOpenProfile,
   onConversationChanged,
+  unreadDmsCount = 0,
 }: ChatsViewProps) {
   const { user } = useAuth();
   const [subTab, setSubTab] = useState<SubTab>('chats');
@@ -326,13 +328,15 @@ export default function ChatsView({
   useEffect(() => {
     if (!user?.id) return;
     const socket = getSocket('/presence');
-    const onPresence = (payload: { userId: string; online: boolean }) => {
-      // Refrescar la lista completa cuando cambia presencia
+    const onPresence = () => {
       void loadOnlineFriends();
     };
     socket.on('presence', onPresence);
+    // Refresco periódico como fallback (cada 30s)
+    const interval = setInterval(() => void loadOnlineFriends(), 30_000);
     return () => {
       socket.off('presence', onPresence);
+      clearInterval(interval);
     };
   }, [user?.id]);
 
@@ -411,41 +415,21 @@ export default function ChatsView({
     <div className="px-4 pb-4">
       {/* ===== STICKY: amigos + tabs siempre visibles ===== */}
       <div className="sticky top-0 z-20 bg-[#060713] -mx-4 px-4 pb-1 shadow-[0_4px_12px_rgba(6,7,19,.8)]">
-      {/* ============ ENCABEZADO ============ */}
-      <header className="mb-3 mt-2 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold leading-tight text-white">
-            {greeting},{' '}
-            <span className="text-[#3b228e]">{user?.displayName ?? 'Usuario'}</span>
-            <span className="ml-1">👋</span>
-          </h1>
-          <p className="mt-1 text-sm text-[#727693]">
-            <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-[#2ecc71]" />
-            {onlineCount} amigo{onlineCount !== 1 ? 's' : ''} en línea
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-[#0e1126] text-[#727693] transition hover:bg-[#1a1f3a] hover:text-white"
-            aria-label="Añadir amigo"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20">
-              <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2" strokeLinecap="round" strokeLinejoin="round" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M19 8v6M16 11h6" strokeLinecap="round" />
-            </svg>
-          </button>
-          <button
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-[#0e1126] text-[#727693] transition hover:bg-[#1a1f3a] hover:text-white"
-            aria-label="Buscar"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20">
-              <circle cx="11" cy="11" r="7" />
-              <path d="M21 21l-4.3-4.3" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
-      </header>
+        {/* ============ ENCABEZADO ============ */}
+        <header className="mb-3 mt-2 flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold leading-tight text-white">
+              {greeting},{' '}
+              <span className="text-[#3b228e]">{user?.displayName ?? 'Usuario'}</span>
+              <span className="ml-1">👋</span>
+            </h1>
+            <p className="mt-1 text-sm text-[#727693]">
+              <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-[#2ecc71]" />
+              {onlineCount} amigo{onlineCount !== 1 ? 's' : ''} en línea
+            </p>
+          </div>
+        </header>
+      </div>
 
       {/* ============ AMIGOS ACTIVOS (scroll horizontal) ============ */}
       <section className="mb-2">
@@ -500,7 +484,7 @@ export default function ChatsView({
               </svg>
             }
             label="Chats"
-            count={dms.filter((d) => d.status === 'ACCEPTED').length}
+            count={unreadDmsCount}
           />
           <TabButton
             active={subTab === 'grupos'}
@@ -541,7 +525,6 @@ export default function ChatsView({
           />
         </div>
       </section>
-      </div>
 
       {/* ============ LISTA DE CHATS ============ */}
       <section>
@@ -611,13 +594,13 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`flex h-7 shrink-0 items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-all ${
+      className={`flex h-6 shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-all ${
         active
           ? 'bg-[#3b228e] text-white'
           : 'bg-[#0e1126] text-[#727693] hover:bg-[#1a1f3a] hover:text-white'
       }`}
     >
-      <span className="[&>svg]:h-3.5 [&>svg]:w-3.5">{icon}</span>
+      <span className="[&>svg]:h-3 [&>svg]:w-3">{icon}</span>
       <span>{label}</span>
       {count !== undefined && count > 0 && (
         <span
@@ -660,8 +643,8 @@ function ChatCard({
   return (
     <div
       onClick={onSelect}
-      className={`flex cursor-pointer items-center gap-4 rounded-2xl p-4 transition hover:bg-[#1a1f3a] active:scale-[0.98] ${
-        unread ? 'bg-[#1a1040] ring-1 ring-[#3b228e]/50' : 'bg-[#0e1126]'
+      className={`flex cursor-pointer items-center gap-4 rounded-2xl p-4 transition hover:bg-[#1a1f3a]/60 active:scale-[0.98] ${
+        unread ? 'ring-1 ring-[#3b228e]/40' : ''
       }`}
     >
       {/* Avatar */}

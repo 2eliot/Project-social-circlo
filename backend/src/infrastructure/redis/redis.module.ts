@@ -66,6 +66,12 @@ export class PresenceService {
       .filter((r) => r.status === 'fulfilled' && r.value !== null)
       .map((r) => (r as PromiseFulfilledResult<string>).value);
   }
+
+  async clearAll(): Promise<number> {
+    const keys = await this.redis.client.keys('presence:user:*');
+    if (keys.length === 0) return 0;
+    return (await this.redis.client.del(keys)) ?? 0;
+  }
 }
 
 @Injectable()

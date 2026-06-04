@@ -118,6 +118,36 @@ export class PostsService implements OnModuleInit {
     return rows.map((row) => this.serialize(row, viewerId));
   }
 
+  async findById(postId: string, viewerId: string) {
+    const rows = await this.prisma.$queryRawUnsafe<FeedPostRow[]>(
+      `
+        SELECT
+          p.id,
+          p.author_id AS "authorId",
+          p.content,
+          p.attachments,
+          p.like_user_ids AS "likeUserIds",
+          p.comments,
+          p.created_at AS "createdAt",
+          u.display_name AS "authorDisplayName",
+          u.avatar_url AS "authorAvatarUrl",
+          u.global_role AS "authorGlobalRole",
+          u.is_verified_moderator AS "authorIsVerifiedModerator"
+        FROM feed_posts p
+        INNER JOIN users u ON u.id = p.author_id
+        WHERE p.id = $1::uuid AND p.deleted_at IS NULL
+        LIMIT 1
+      `,
+      postId,
+    );
+
+    if (rows.length === 0) {
+      throw new NotFoundException('La publicacion no existe.');
+    }
+
+    return this.serialize(rows[0], viewerId);
+  }
+
   async create(authorId: string, body: { content?: string; attachments?: Array<Record<string, unknown>> }) {
     const content = body.content?.trim() ?? '';
     if (content.length > POST_CONTENT_MAX_LENGTH) {

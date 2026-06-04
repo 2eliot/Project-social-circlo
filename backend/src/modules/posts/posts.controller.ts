@@ -20,6 +20,11 @@ export class PostsController {
     return this.service.list(user.id, limit ? Number(limit) : 40, authorId);
   }
 
+  @Get(':postId')
+  getById(@CurrentUser() user: AuthUser, @Param('postId') postId: string) {
+    return this.service.findById(postId, user.id);
+  }
+
   @Post('upload')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
   async upload(@Req() req: Request, @UploadedFile() file?: Express.Multer.File) {

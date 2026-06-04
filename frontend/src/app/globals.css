@@ -49,6 +49,15 @@ body {
   display: none;
 }
 
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 /* Scroll snap horizontal para carruseles */
 .scroll-snap-x {
   scroll-snap-type: x proximity;
@@ -592,7 +601,7 @@ button.primary:disabled { opacity: .5; cursor: not-allowed; }
   position: fixed; left: 0; right: 0; margin: 0 auto;
   bottom: calc(14px + env(safe-area-inset-bottom));
   width: min(392px, calc(100% - 42px));
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   padding: 6px 8px;
   border-radius: 26px;
   background: rgba(6,7,19,.92);
@@ -637,23 +646,33 @@ button.primary:disabled { opacity: .5; cursor: not-allowed; }
   left: 50%;
   transform: translateX(-50%);
 }
-/* FAB central */
+/* Botón + central integrado */
 .bottom-nav .nav-fab {
-  width: 42px; height: 42px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px;
+  min-height: 48px;
+  color: #4d26b3;
   border-radius: 16px;
-  background: linear-gradient(135deg, #4d26b3, #7c5cff);
-  color: white;
+  background: transparent;
   border: none;
-  display: grid; place-items: center;
-  font-size: 22px;
-  box-shadow: 0 8px 20px rgba(77,38,179,.4);
-  margin-top: -18px;
+  font-size: 9px;
+  font-weight: 600;
   cursor: pointer;
-  transition: transform .15s, box-shadow .15s;
+  transition: color .15s, background .15s;
+  position: relative;
+  padding: 4px 2px;
+}
+.bottom-nav .nav-fab .nav-icon {
+  width: 22px; height: 22px;
+  display: grid; place-items: center;
+  position: relative;
+}
+.bottom-nav .nav-fab .nav-label {
+  font-size: 9px;
+  letter-spacing: .02em;
 }
 .bottom-nav .nav-fab:hover {
-  transform: scale(1.05);
-  box-shadow: 0 10px 26px rgba(77,38,179,.5);
+  color: #7c5cff;
 }
 .bottom-nav svg { width: 20px; height: 20px; }
 
@@ -2506,7 +2525,6 @@ body {
 
 /* Post card - exact design */
 .feed-exact-post-card {
-  background-color: #0e1126;
   border-radius: 24px;
   padding: 16px;
   display: flex;
@@ -2656,5 +2674,241 @@ body {
   flex-direction: column;
   gap: 14px;
   padding-bottom: 20px;
+}
+
+/* ==================== POST COMPOSER POPUP ==================== */
+.post-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 8, 14, .54);
+  backdrop-filter: blur(8px);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: postPopupFadeIn .2s ease;
+}
+
+.post-popup-card {
+  width: min(420px, calc(100% - 24px));
+  margin-bottom: calc(100px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(24,29,40,.98), rgba(15,19,28,.98));
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 28px;
+  padding: 18px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.5), 0 10px 26px rgba(76,43,217,.25);
+  animation: postPopupSlideUp .28s cubic-bezier(.22,1,.36,1);
+}
+
+.post-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.post-popup-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #e8ecf4;
+}
+
+.post-popup-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.06);
+  border: none;
+  color: #727693;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background .15s, color .15s;
+}
+
+.post-popup-close:hover {
+  background: rgba(255,255,255,.12);
+  color: #e8ecf4;
+}
+
+.post-popup-close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.post-popup-body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.post-popup-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.post-popup-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  font-size: 15px;
+  color: #f0f4ff;
+  outline: none;
+  font-family: inherit;
+  padding: 0;
+}
+
+.post-popup-input::placeholder {
+  color: #727693;
+}
+
+.post-popup-attachments {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin-bottom: 10px;
+  padding: 0 2px;
+}
+
+.post-popup-attachment {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.post-popup-attachment-img {
+  height: 56px;
+  border-radius: 10px;
+  object-fit: contain;
+  background: #1b1f2a;
+}
+
+.post-popup-voice-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #1b1f2a;
+  border-radius: 10px;
+  color: #3b82f6;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.post-popup-attachment-remove {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ff4d6d;
+  border: none;
+  color: #fff;
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.post-popup-error {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #ff6b6b;
+  padding: 0 2px;
+}
+
+.post-popup-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.post-popup-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.post-popup-toolbar-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 10px;
+  transition: background .15s;
+}
+
+.post-popup-toolbar-btn:hover {
+  background: rgba(255,255,255,.05);
+}
+
+.post-popup-rec-time {
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 28px;
+}
+
+.post-popup-uploading {
+  font-size: 11px;
+  color: #727693;
+  margin-left: 4px;
+}
+
+.post-popup-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.post-popup-chars {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.post-popup-publish-btn {
+  background: #4d26b3;
+  border: none;
+  border-radius: 12px;
+  padding: 7px 16px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .15s, background .15s;
+}
+
+.post-popup-publish-btn:hover:not(:disabled) {
+  background: #5f3ad0;
+}
+
+.post-popup-publish-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+@keyframes postPopupFadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes postPopupSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(24px) scale(.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 

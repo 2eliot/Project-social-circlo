@@ -2,12 +2,19 @@ import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway, WebSocketSe
 import { Server, Socket } from 'socket.io';
 import { WsAuthService } from '../ws-auth.service';
 import { PresenceService } from '../../infrastructure/redis/redis.module';
+import { Logger } from '@nestjs/common';
 
 @WebSocketGateway({ namespace: '/presence', cors: true })
 export class PresenceGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() server!: Server;
+  private readonly logger = new Logger(PresenceGateway.name);
 
-  constructor(private readonly auth: WsAuthService, private readonly presence: PresenceService) {}
+  constructor(private readonly auth: WsAuthService, private readonly presence: PresenceService) {
+    // Limpiar entradas huérfanas al iniciar el servidor
+    this.presence.clearAll().then((count) => {
+      this.logger.log(`Presencia reiniciada — ${count} entradas huérfanas limpiadas`);
+    });
+  }
 
   async handleConnection(socket: Socket) {
     try {

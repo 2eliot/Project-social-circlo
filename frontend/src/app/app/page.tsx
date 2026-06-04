@@ -280,6 +280,8 @@ export default function AppHome() {
   const [liveDmNotice, setLiveDmNotice] = useState<LiveDmNotice | null>(null);
   const [liveInteractionNotice, setLiveInteractionNotice] = useState<LiveInteractionNotice | null>(null);
   const [openGroupCreatorOnTabChange, setOpenGroupCreatorOnTabChange] = useState(false);
+  const [showPostPopup, setShowPostPopup] = useState(false);
+  const [focusedPostId, setFocusedPostId] = useState<string | null>(null);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const tabRef = useRef<Tab>('feed');
   const selectedConvRef = useRef<string | null>(null);
@@ -311,6 +313,12 @@ export default function AppHome() {
     const nextTab = searchParams.get('tab');
     if (nextTab === 'feed' || nextTab === 'chats' || nextTab === 'groups' || nextTab === 'profile') {
       setTab(nextTab);
+    }
+
+    const nextPostId = searchParams.get('post');
+    if (nextPostId) {
+      setFocusedPostId(nextPostId);
+      setTab('feed');
     }
   }, [searchParams]);
 
@@ -497,7 +505,7 @@ export default function AppHome() {
       ) : null}
 
       <main className="app-content">
-        {tab === 'feed' ? <FeedTab onOpenProfile={handleOpenProfile} onlineUserIds={onlineUserIds} /> : null}
+        {tab === 'feed' ? <FeedTab onOpenProfile={handleOpenProfile} onlineUserIds={onlineUserIds} onOpenFocusedPost={(id) => setFocusedPostId(id)} /> : null}
         {tab === 'chats' ? (
           selectedConversationId ? (
             <ChatsTab
@@ -515,6 +523,7 @@ export default function AppHome() {
               onSelectConversation={handleSelectConversation}
               onOpenProfile={handleOpenProfile}
               onConversationChanged={handleConversationChanged}
+              unreadDmsCount={unreadDmsCount}
             />
           )
         ) : null}
@@ -540,7 +549,22 @@ export default function AppHome() {
         ) : null}
       </main>
 
-      <BottomNav tab={tab} setTab={handleSelectTab} pendingChatsCount={pendingChatsCount} unreadDmsCount={unreadDmsCount} />
+      <BottomNav tab={tab} setTab={handleSelectTab} pendingChatsCount={pendingChatsCount} unreadDmsCount={unreadDmsCount} onCreatePost={() => setShowPostPopup(true)} />
+
+      {/* Popup para crear post */}
+      {showPostPopup ? <PostComposerPopup onClose={() => setShowPostPopup(false)} /> : null}
+
+      {/* Vista enfocada de un post (desde notificación) */}
+      {focusedPostId ? (
+        <FocusedPostView
+          postId={focusedPostId}
+          onClose={() => {
+            setFocusedPostId(null);
+            router.replace('/app?tab=feed', { scroll: false });
+          }}
+          onOpenProfile={handleOpenProfile}
+        />
+      ) : null}
     </div>
   );
 }
@@ -758,7 +782,9 @@ function TopBar({ onOpenProfile, currentTab, onlineUserIds }: { onOpenProfile: (
               </div>
             </button>
           ))}
-          <button type="button" onClick={() => { setNotificationsOpen(false); router.push('/notifications'); }} className="block w-full text-center text-[11px] text-[#4d26b3] font-semibold pt-2 pb-1 hover:underline bg-transparent border-none cursor-pointer">Ver todas →</button>
+          {notifications.length > 5 ? (
+            <button type="button" onClick={() => { setNotificationsOpen(false); router.push('/notifications'); }} className="block w-full text-center text-[11px] text-[#4d26b3] font-semibold pt-2 pb-1 hover:underline bg-transparent border-none cursor-pointer">Ver todas →</button>
+          ) : null}
         </div>
       ) : null}
 
@@ -858,13 +884,12 @@ function InterestPerson({ name, avatarUrl, online, onClick }: { name: string; av
   );
 }
 
-function FeedTab({ onOpenProfile, onlineUserIds }: { onOpenProfile: (userId: string) => void; onlineUserIds: Set<string> }) {
+function FeedTab({ onOpenProfile, onlineUserIds, onOpenFocusedPost }: { onOpenProfile: (userId: string) => void; onlineUserIds: Set<string>; onOpenFocusedPost: (postId: string) => void; }) {
   const router = useRouter();
   const user = useAuth((state) => state.user);
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [composer, setComposer] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState<DMAttachment[]>([]);
-  const [composerOpen, setComposerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -877,6 +902,7 @@ function FeedTab({ onOpenProfile, onlineUserIds }: { onOpenProfile: (userId: str
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [commentLikePending, setCommentLikePending] = useState<Set<string>>(new Set());
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const composerInputRef = useRef<HTMLInputElement | null>(null);
   const remainingChars = POST_CONTENT_MAX_LENGTH - composer.length;
   const [isRecording, setIsRecording] = useState(false);
   const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
@@ -1118,7 +1144,7 @@ function FeedTab({ onOpenProfile, onlineUserIds }: { onOpenProfile: (userId: str
       });
       setComposer('');
       setPendingAttachments([]);
-      setComposerOpen(false);
+      /* composer se cierra después de publicar */
       setPosts((current) => [post, ...current.filter((row) => row.id !== post.id)]);
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
@@ -1272,10 +1298,7 @@ function FeedTab({ onOpenProfile, onlineUserIds }: { onOpenProfile: (userId: str
                     }
                     if (n.postId) {
                       setShowNotifications(false);
-                      setTimeout(() => {
-                        const el = document.getElementById(`post-${n.postId}`);
-                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                      }, 100);
+                      onOpenFocusedPost(n.postId);
                     }
                   }} style={{ display: 'flex', width: '100%', alignItems: 'flex-start', gap: 8, padding: '8px 0', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', opacity: n.isRead ? 0.75 : 1, borderBottom: '1px solid rgba(255,255,255,.04)' }}>
                     <div style={{ position: 'relative', flexShrink: 0 }}>
@@ -1299,7 +1322,9 @@ function FeedTab({ onOpenProfile, onlineUserIds }: { onOpenProfile: (userId: str
                     </div>
                   </button>
                 ))}
-                <button type="button" onClick={() => { setShowNotifications(false); window.location.href = '/notifications'; }} style={{ display: 'block', width: '100%', textAlign: 'center', fontSize: 11, color: '#4d26b3', fontWeight: 600, padding: '6px 0 0', background: 'none', border: 'none', cursor: 'pointer' }}>Ver todas →</button>
+                {notifications.length > 3 ? (
+                  <button type="button" onClick={() => { setShowNotifications(false); window.location.href = '/notifications'; }} style={{ display: 'block', width: '100%', textAlign: 'center', fontSize: 11, color: '#4d26b3', fontWeight: 600, padding: '6px 0 0', background: 'none', border: 'none', cursor: 'pointer' }}>Ver todas →</button>
+                ) : null}
               </div>
             )}
           </div>
@@ -1395,6 +1420,7 @@ function FeedTab({ onOpenProfile, onlineUserIds }: { onOpenProfile: (userId: str
           style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
         />
         <input
+          ref={composerInputRef}
           type="text"
           value={composer}
           onChange={(e) => setComposer(e.target.value.slice(0, POST_CONTENT_MAX_LENGTH))}
@@ -1707,6 +1733,559 @@ function CommentTinyIcon() {
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+/* ==================== FOCUSED POST VIEW (desde notificación) ==================== */
+function FocusedPostView({ postId, onClose, onOpenProfile }: { postId: string; onClose: () => void; onOpenProfile: (userId: string) => void }) {
+  const user = useAuth((state) => state.user);
+  const [post, setPost] = useState<FeedPost | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [commentLikePending, setCommentLikePending] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    api<FeedPost>(`/posts/${postId}`)
+      .then(setPost)
+      .catch(() => setError('No se pudo cargar la publicación.'))
+      .finally(() => setLoading(false));
+  }, [postId]);
+
+  async function toggleLike() {
+    if (!post) return;
+    try {
+      const updated = await api<FeedPost>(`/posts/${post.id}/like`, { method: 'POST' });
+      setPost(updated);
+    } catch {}
+  }
+
+  async function addComment() {
+    if (!post || !commentDraft.trim()) return;
+    const body = commentDraft.trim();
+    setCommentDraft('');
+    try {
+      const updated = await api<FeedPost>(`/posts/${post.id}/comments`, {
+        method: 'POST',
+        body: JSON.stringify({ body }),
+      });
+      setPost(updated);
+    } catch {}
+  }
+
+  async function toggleCommentLike(commentId: string) {
+    if (!post || commentLikePending.has(commentId)) return;
+    setCommentLikePending((prev) => new Set(prev).add(commentId));
+    try {
+      const updated = await api<FeedPost>(`/posts/${post.id}/comments/${commentId}/like`, { method: 'POST' });
+      setPost(updated);
+    } catch {}
+    setCommentLikePending((prev) => { const next = new Set(prev); next.delete(commentId); return next; });
+  }
+
+  async function deletePost() {
+    if (!post) return;
+    try {
+      await api(`/posts/${post.id}`, { method: 'DELETE' });
+      onClose();
+    } catch {}
+  }
+
+  async function reportPost() {
+    if (!post) return;
+    try {
+      await api(`/posts/${post.id}/report`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'Contenido inapropiado' }),
+      });
+    } catch {}
+  }
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 80,
+          background: 'rgba(0,0,0,.5)',
+        }}
+      />
+
+      {/* Panel lateral */}
+      <div
+        style={{
+          position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: 90,
+          width: 'min(420px, 100vw)',
+          background: '#0b0d1e',
+          borderLeft: '1px solid rgba(255,255,255,.06)',
+          display: 'flex', flexDirection: 'column',
+          boxShadow: '-8px 0 32px rgba(0,0,0,.5)',
+          animation: 'slideInRight .2s ease-out',
+        }}
+      >
+        {/* Header con X */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '14px 16px',
+          borderBottom: '1px solid rgba(255,255,255,.06)',
+          flexShrink: 0,
+        }}>
+          <span style={{ fontSize: 15, fontWeight: 600, color: '#f0f4ff' }}>Publicación</span>
+          <button
+            onClick={onClose}
+            style={{
+              width: 32, height: 32, borderRadius: '50%', border: 'none',
+              background: 'rgba(255,255,255,.08)', color: '#f0f4ff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', fontSize: 16, lineHeight: 1,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Scrollable content */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#727693', fontSize: 14 }}>
+              <div style={{
+                width: 28, height: 28, margin: '0 auto 12px',
+                borderRadius: '50%', border: '3px solid rgba(59,34,142,.3)',
+                borderTopColor: '#3b228e', animation: 'spin .6s linear infinite',
+              }} />
+              Cargando publicación...
+            </div>
+          ) : error || !post ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#727693', fontSize: 14 }}>
+              {error ?? 'Publicación no encontrada.'}
+            </div>
+          ) : (
+            <article className="feed-exact-post-card" style={{ margin: 0 }}>
+              {/* Header */}
+              <div className="feed-exact-post-header">
+                <div className="feed-exact-post-user">
+                  <img
+                    src={post.author.avatarUrl ? resolveAttachmentUrl(post.author.avatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(post.author.displayName)}&background=4d26b3&color=fff&bold=true`}
+                    alt={post.author.displayName}
+                    onClick={() => { onOpenProfile(post.author.id); onClose(); }}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <div className="feed-exact-post-user-meta">
+                    <h4>
+                      {post.author.displayName}
+                      {post.author.id === user?.id ? (
+                        <span className="feed-exact-badge you">Tú</span>
+                      ) : null}
+                    </h4>
+                    <p className="post-time">{formatShortTime(post.createdAt)}</p>
+                  </div>
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <button
+                    type="button"
+                    className="feed-exact-post-options"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const menu = (e.currentTarget as HTMLElement).nextElementSibling as HTMLElement | null;
+                      if (menu) menu.style.display = menu.style.display === 'none' ? 'flex' : 'none';
+                    }}
+                    aria-label="Opciones"
+                  >⋯</button>
+                  <div style={{
+                    display: 'none', position: 'absolute', top: '100%', right: 0, marginTop: 4,
+                    minWidth: 180, background: '#1a1d35', borderRadius: 14,
+                    border: '1px solid rgba(255,255,255,.08)', boxShadow: '0 8px 32px rgba(0,0,0,.5)',
+                    padding: 6, zIndex: 50, flexDirection: 'column', gap: 2,
+                  }}>
+                    {post.authorId === user?.id ? (
+                      <button style={{
+                        background: 'none', border: 'none', color: '#ff6b6b', padding: '10px 14px',
+                        borderRadius: 10, fontSize: 13, cursor: 'pointer', textAlign: 'left',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                      }} onClick={() => void deletePost()}>
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                        Eliminar publicación
+                      </button>
+                    ) : (
+                      <button style={{
+                        background: 'none', border: 'none', color: '#f0f4ff', padding: '10px 14px',
+                        borderRadius: 10, fontSize: 13, cursor: 'pointer', textAlign: 'left',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                      }} onClick={() => void reportPost()}>
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        Reportar publicación
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Contenido */}
+              {post.content && <p className="feed-exact-post-content">{post.content}</p>}
+
+              {/* Adjuntos */}
+              {post.attachments?.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {post.attachments.map((att) => (
+                    <div key={`${post.id}-${att.url}`}>
+                      {att.kind === 'image' ? (
+                        <button type="button" style={{ width: '100%', padding: 0, background: 'none', border: 'none', cursor: 'pointer' }}>
+                          <img
+                            src={resolveAttachmentUrl(att.url)}
+                            alt={att.fileName ?? 'Imagen'}
+                            style={{ width: '100%', borderRadius: 16, objectFit: 'contain', maxHeight: 240, display: 'block' }}
+                          />
+                        </button>
+                      ) : (
+                        <VoiceNote attachment={att} src={resolveAttachmentUrl(att.url)} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Actions row */}
+              <div className="feed-exact-post-actions-row">
+                <div className="feed-exact-interaction-buttons">
+                  <button type="button" onClick={() => void toggleLike()} className={`feed-exact-action-btn ${post.likedByMe ? 'liked' : ''}`}>
+                    <svg viewBox="0 0 24 24" fill={post.likedByMe ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 20.4 4.9 13.8A4.8 4.8 0 0 1 12 7.5a4.8 4.8 0 0 1 7.1 6.3L12 20.4Z" />
+                    </svg>
+                    {post.likeCount}
+                  </button>
+                  <button type="button" onClick={() => {
+                    const input = document.getElementById(`focused-comment-${post.id}`);
+                    input?.focus();
+                  }} className="feed-exact-action-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M7 17.2 3.8 20V6.9A2.9 2.9 0 0 1 6.7 4h10.6a2.9 2.9 0 0 1 2.9 2.9v7.4a2.9 2.9 0 0 1-2.9 2.9H7Z" />
+                    </svg>
+                    {post.comments?.length ?? 0}
+                  </button>
+                </div>
+              </div>
+
+              {/* Comentarios */}
+              <div style={{ borderTop: '1px solid rgba(255,255,255,.06)', paddingTop: 12, marginTop: 4 }}>
+                {post.comments && post.comments.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+                    {post.comments.map((comment) => (
+                      <div key={comment.id} style={{ display: 'flex', gap: 8 }}>
+                        <img
+                          src={comment.authorAvatarUrl ? resolveAttachmentUrl(comment.authorAvatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.authorName)}&background=4d26b3&color=fff&size=26`}
+                          alt={comment.authorName}
+                          style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, marginTop: 2, cursor: 'pointer' }}
+                          onClick={() => { if (comment.authorId) { onOpenProfile(comment.authorId); onClose(); } }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{
+                            background: 'rgba(255,255,255,.04)', borderRadius: 14,
+                            padding: '6px 12px',
+                          }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: '#f0f4ff' }}>{comment.authorName}</span>
+                            <p style={{ fontSize: 13, color: '#c8cce5', margin: '2px 0 0', lineHeight: 1.4 }}>{comment.body}</p>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 2, paddingLeft: 4 }}>
+                            {comment.createdAt && (
+                              <span style={{ fontSize: 10, color: '#727693' }}>{formatShortTime(comment.createdAt)}</span>
+                            )}
+                            {comment.likeCount !== undefined && (
+                              <button
+                                onClick={() => void toggleCommentLike(comment.id)}
+                                style={{
+                                  background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                                  fontSize: 10, color: comment.likedByMe ? '#3b228e' : '#727693',
+                                  display: 'flex', alignItems: 'center', gap: 3, fontWeight: comment.likedByMe ? 700 : 400,
+                                }}
+                              >
+                                <svg viewBox="0 0 24 24" width="10" height="10" fill={comment.likedByMe ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                                  <path d="M12 20.4 4.9 13.8A4.8 4.8 0 0 1 12 7.5a4.8 4.8 0 0 1 7.1 6.3L12 20.4Z" />
+                                </svg>
+                                {comment.likeCount}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    id={`focused-comment-${post.id}`}
+                    value={commentDraft}
+                    onChange={(e) => setCommentDraft(e.target.value.slice(0, 80))}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && commentDraft.trim()) void addComment(); }}
+                    placeholder="Escribe un comentario..."
+                    style={{
+                      flex: 1, background: '#11142a', border: 'none', borderRadius: 12,
+                      padding: '8px 12px', fontSize: 13, color: '#f0f4ff', outline: 'none',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void addComment()}
+                    disabled={!commentDraft.trim()}
+                    style={{
+                      background: commentDraft.trim() ? '#4d26b3' : 'rgba(77,38,179,.4)',
+                      border: 'none', borderRadius: 12, padding: '8px 14px',
+                      color: '#fff', fontSize: 13, cursor: commentDraft.trim() ? 'pointer' : 'default',
+                      fontWeight: 600,
+                    }}
+                  >Enviar</button>
+                </div>
+              </div>
+            </article>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ==================== POST COMPOSER POPUP ==================== */
+function PostComposerPopup({ onClose }: { onClose: () => void }) {
+  const user = useAuth((state) => state.user);
+  const [composer, setComposer] = useState('');
+  const [pendingAttachments, setPendingAttachments] = useState<DMAttachment[]>([]);
+  const [publishing, setPublishing] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const remainingChars = POST_CONTENT_MAX_LENGTH - composer.length;
+
+  // Auto-foco al abrir
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  async function addAttachment(file: File) {
+    setUploading(true);
+    setError(null);
+    try {
+      const attachment = await uploadPostAttachment(file);
+      if (attachment) {
+        setPendingAttachments((current) => [...current, attachment].slice(0, 4));
+      }
+    } catch {
+      setError('No se pudo subir el archivo.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await addAttachment(file);
+    e.target.value = '';
+  }
+
+  function removePendingAttachment(index: number) {
+    setPendingAttachments((current) => current.filter((_, i) => i !== index));
+  }
+
+  // Timer para grabación
+  useEffect(() => {
+    if (!isRecording || !recordingStartedAt) return;
+    const interval = setInterval(() => {
+      setRecordingElapsed(Math.floor((Date.now() - recordingStartedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isRecording, recordingStartedAt]);
+
+  async function toggleVoiceRecording() {
+    if (isRecording) {
+      recorderRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setError('Tu navegador no soporta grabar notas de voz.');
+      return;
+    }
+    try {
+      if (!window.isSecureContext) {
+        setError('La grabación necesita un contexto seguro (localhost o HTTPS).');
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const [track] = stream.getAudioTracks();
+      const settings = track?.getSettings?.();
+      if (track && settings) {
+        await track.applyConstraints({ echoCancellation: true, noiseSuppression: true, autoGainControl: true }).catch(() => undefined);
+      }
+      const mimeType = getSupportedVoiceMimeType();
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      recordedChunksRef.current = [];
+      streamRef.current = stream;
+      recorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recordedChunksRef.current.push(event.data);
+      };
+      recorder.onstop = async () => {
+        const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        stream.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        recorderRef.current = null;
+        recordedChunksRef.current = [];
+        setRecordingStartedAt(null);
+        setRecordingElapsed(0);
+        if (blob.size > 0) {
+          const extension = getVoiceFileExtension(blob.type || mimeType);
+          await addAttachment(new File([blob], `nota-de-voz-${Date.now()}.${extension}`, { type: blob.type || mimeType || 'audio/webm' }));
+        }
+      };
+      recorder.start();
+      setIsRecording(true);
+      setRecordingStartedAt(Date.now());
+      setRecordingElapsed(0);
+    } catch (err) {
+      setError(getVoiceRecordingErrorMessage(err));
+    }
+  }
+
+  async function publishPost() {
+    if (!composer.trim() && pendingAttachments.length === 0) return;
+    if (publishing) return;
+    setPublishing(true);
+    setError(null);
+    try {
+      const post = await api<FeedPost>('/posts', {
+        method: 'POST',
+        body: { content: composer, attachments: pendingAttachments },
+      });
+      setComposer('');
+      setPendingAttachments([]);
+      // Inyectar el post al feed global via socket (el socket event lo hará)
+      onClose();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400) {
+        setError(`La publicación necesita texto o archivo (máx ${POST_CONTENT_MAX_LENGTH} caracteres).`);
+      } else {
+        setError('No se pudo publicar.');
+      }
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  const hasContent = composer.trim() || pendingAttachments.length > 0;
+
+  return (
+    <div className="post-popup-overlay" onClick={onClose}>
+      <div className="post-popup-card" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="post-popup-header">
+          <span className="post-popup-title">Crear publicación</span>
+          <button type="button" className="post-popup-close" onClick={onClose}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Avatar + Input */}
+        <div className="post-popup-body">
+          <img
+            src={user?.avatarUrl ? resolveAttachmentUrl(user.avatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.displayName ?? 'U')}&background=4d26b3&color=fff&bold=true`}
+            alt={user?.displayName ?? 'Avatar'}
+            className="post-popup-avatar"
+          />
+          <input
+            ref={inputRef}
+            type="text"
+            value={composer}
+            onChange={(e) => setComposer(e.target.value.slice(0, POST_CONTENT_MAX_LENGTH))}
+            placeholder="¿Qué estás pensando?"
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && composer.trim()) { e.preventDefault(); void publishPost(); } }}
+            className="post-popup-input"
+          />
+        </div>
+
+        {/* Attachment thumbnails */}
+        {pendingAttachments.length > 0 && (
+          <div className="post-popup-attachments">
+            {pendingAttachments.map((att, idx) => (
+              <div key={idx} className="post-popup-attachment">
+                {att.kind === 'image' ? (
+                  <img src={resolveAttachmentUrl(att.url)} alt="" className="post-popup-attachment-img" />
+                ) : att.kind === 'voice' ? (
+                  <div className="post-popup-voice-badge">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    </svg>
+                    <span>Nota de voz</span>
+                  </div>
+                ) : null}
+                <button type="button" onClick={() => removePendingAttachment(idx)} className="post-popup-attachment-remove">×</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {error ? <div className="post-popup-error">{error}</div> : null}
+
+        {/* Toolbar */}
+        <div className="post-popup-toolbar">
+          <div className="post-popup-toolbar-left">
+            <button type="button" onClick={() => imageInputRef.current?.click()} className="post-popup-toolbar-btn" title="Adjuntar imagen">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#2ecc71" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <path d="M21 15l-5-5L5 21" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => void toggleVoiceRecording()}
+              className="post-popup-toolbar-btn"
+              title={isRecording ? 'Detener grabación' : 'Grabar nota de voz'}
+              style={{ color: isRecording ? '#ef4444' : '#3b82f6' }}
+            >
+              {isRecording ? (
+                <>
+                  <span className="post-popup-rec-time">{recordingElapsed}s</span>
+                  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                    <rect x="6" y="6" width="12" height="12" rx="2" />
+                  </svg>
+                </>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="22" />
+                </svg>
+              )}
+            </button>
+            {uploading ? <span className="post-popup-uploading">Subiendo...</span> : null}
+          </div>
+          <div className="post-popup-toolbar-right">
+            {hasContent ? <span className="post-popup-chars" style={{ color: remainingChars < 20 ? '#ff6b6b' : '#727693' }}>{remainingChars}</span> : null}
+            <button
+              type="button"
+              onClick={() => void publishPost()}
+              disabled={publishing || !hasContent}
+              className="post-popup-publish-btn"
+            >
+              {publishing ? '...' : 'Publicar'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Hidden file input */}
+      <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
+    </div>
   );
 }
 
@@ -4172,7 +4751,7 @@ function ProfileTab({
 }
 
 /* -------------------- Bottom nav -------------------- */
-function BottomNav({ tab, setTab, pendingChatsCount, unreadDmsCount }: { tab: Tab; setTab: (t: Tab) => void; pendingChatsCount: number; unreadDmsCount: number }) {
+function BottomNav({ tab, setTab, pendingChatsCount, unreadDmsCount, onCreatePost }: { tab: Tab; setTab: (t: Tab) => void; pendingChatsCount: number; unreadDmsCount: number; onCreatePost?: () => void }) {
   const user = useAuth((state) => state.user);
   const items: { id: Tab | 'search'; label: string; icon: React.ReactNode }[] = [
     {
@@ -4218,7 +4797,7 @@ function BottomNav({ tab, setTab, pendingChatsCount, unreadDmsCount }: { tab: Ta
 
   return (
     <nav className="bottom-nav">
-      {items.map((it) => {
+      {items.slice(0, 2).map((it) => {
         return (
           <button
             key={it.id}
@@ -4233,6 +4812,38 @@ function BottomNav({ tab, setTab, pendingChatsCount, unreadDmsCount }: { tab: Ta
                   {(pendingChatsCount + unreadDmsCount) > 9 ? '9+' : pendingChatsCount + unreadDmsCount}
                 </span>
               ) : null}
+              {tab === it.id ? <span className="nav-indicator" /> : null}
+            </span>
+            <span className="nav-label">{it.label}</span>
+          </button>
+        );
+      })}
+
+      {/* Botón + para crear post */}
+      <button
+        aria-label="Crear post"
+        className="nav-fab"
+        onClick={() => onCreatePost?.()}
+      >
+        <span className="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </span>
+        <span className="nav-label">Post</span>
+      </button>
+
+      {items.slice(2).map((it) => {
+        return (
+          <button
+            key={it.id}
+            aria-label={it.label}
+            className={tab === it.id ? 'active' : ''}
+            onClick={() => setTab(it.id as Tab)}
+          >
+            <span className="nav-icon">
+              {it.icon}
               {tab === it.id ? <span className="nav-indicator" /> : null}
             </span>
             <span className="nav-label">{it.label}</span>

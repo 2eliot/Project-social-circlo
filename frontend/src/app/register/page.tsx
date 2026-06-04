@@ -51,8 +51,8 @@ export default function RegisterPage() {
   if (issuedCode) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6">
-        <div className="card max-w-sm w-full text-center">
-          <h2 className="text-xl font-semibold mb-2">¡Bienvenido!</h2>
+        <div className="max-w-sm w-full text-center space-y-4">
+          <h2 className="text-xl font-semibold">¡Bienvenido!</h2>
           <p className="opacity-70 mb-4">Este es tu código personal (máx. 3 usos):</p>
           <div className="text-3xl font-mono tracking-widest bg-black/30 rounded p-3">{issuedCode}</div>
           <p className="text-sm opacity-60 mt-4">Redirigiendo…</p>
@@ -63,8 +63,8 @@ export default function RegisterPage() {
 
   return (
     <main className="min-h-screen flex items-center justify-center p-6">
-      <form onSubmit={onSubmit} className="card max-w-sm w-full space-y-3">
-        <h1 className="text-2xl font-semibold">Crear cuenta</h1>
+      <form onSubmit={onSubmit} className="max-w-sm w-full space-y-5">
+        <h1 className="text-2xl font-semibold text-center">Crear cuenta</h1>
         <input
           placeholder="Código de invitación (6 chars)"
           maxLength={6}

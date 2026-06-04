@@ -4,10 +4,10 @@ import { DevServiceWorkerCleanup } from './DevServiceWorkerCleanup';
 import { AuthSessionSync } from './AuthSessionSync';
 
 export const metadata: Metadata = {
-  title: 'Appchat',
+  title: 'Social Circle',
   description: 'Private invite-only social network',
   manifest: '/manifest.webmanifest',
-  appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'Appchat' },
+  appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'Social Circle' },
 };
 
 export const viewport: Viewport = {
