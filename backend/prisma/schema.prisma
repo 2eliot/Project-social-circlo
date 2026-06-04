@@ -208,6 +208,8 @@ model DirectConversation {
   initiatorId String                   @map("initiator_id") @db.Uuid
   acceptedAt  DateTime?                @map("accepted_at") @db.Timestamptz(6)
   rejectedAt  DateTime?                @map("rejected_at") @db.Timestamptz(6)
+  userAHiddenAt DateTime?              @map("user_a_hidden_at") @db.Timestamptz(6)
+  userBHiddenAt DateTime?              @map("user_b_hidden_at") @db.Timestamptz(6)
   initiator   User                     @relation("DMInitiator", fields: [initiatorId], references: [id], onDelete: Cascade)
   userA       User                     @relation("DMUserA", fields: [userAId], references: [id], onDelete: Cascade)
   userB       User                     @relation("DMUserB", fields: [userBId], references: [id], onDelete: Cascade)

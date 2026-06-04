@@ -77,6 +77,25 @@ export class DirectMessagesService {
     });
 
     if (existing && existing.status !== 'REJECTED') {
+      /* Un-hide if the current user had hidden this conversation */
+      const isUserA = existing.userAId === meId;
+      if ((isUserA && existing.userAHiddenAt) || (!isUserA && existing.userBHiddenAt)) {
+        const updated = await this.prisma.directConversation.update({
+          where: { id: existing.id },
+          data: isUserA ? { userAHiddenAt: null } : { userBHiddenAt: null },
+          include: {
+            userA: { select: { id: true, displayName: true, avatarUrl: true } },
+            userB: { select: { id: true, displayName: true, avatarUrl: true } },
+            messages: {
+              where: { deletedAt: null, status: 'PUBLISHED', hiddenFor: { none: { userId: meId } } },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              select: { id: true, content: true, createdAt: true, authorId: true, attachments: true },
+            },
+          },
+        });
+        return this.serializeConversation(meId, updated);
+      }
       return this.serializeConversation(meId, existing);
     }
 
@@ -88,6 +107,8 @@ export class DirectMessagesService {
             status: 'PENDING',
             acceptedAt: null,
             rejectedAt: null,
+            /* Also un-hide for the current user */
+            ...(existing.userAId === meId ? { userAHiddenAt: null } : { userBHiddenAt: null }),
           },
           include: {
             userA: { select: { id: true, displayName: true, avatarUrl: true } },
@@ -141,7 +162,11 @@ export class DirectMessagesService {
     return conversations
       .filter((conversation) => {
         const peerId = conversation.userAId === userId ? conversation.userBId : conversation.userAId;
-        return !blockedIds.includes(peerId);
+        if (blockedIds.includes(peerId)) return false;
+        /* Skip if the current user has hidden this conversation */
+        if (conversation.userAId === userId && conversation.userAHiddenAt) return false;
+        if (conversation.userBId === userId && conversation.userBHiddenAt) return false;
+        return true;
       })
       .map((conversation) => this.serializeConversation(userId, conversation));
   }
@@ -161,6 +186,9 @@ export class DirectMessagesService {
       },
     });
     if (!conv || (conv.userAId !== userId && conv.userBId !== userId)) throw new NotFoundException();
+    /* Return 404 if the current user has hidden this conversation */
+    if (conv.userAId === userId && conv.userAHiddenAt) throw new NotFoundException();
+    if (conv.userBId === userId && conv.userBHiddenAt) throw new NotFoundException();
     const peerId = conv.userAId === userId ? conv.userBId : conv.userAId;
     await this.assertNotBlocked(userId, peerId);
     return this.serializeConversation(userId, conv);
@@ -294,8 +322,14 @@ export class DirectMessagesService {
   }
 
   async removeConversation(userId: string, conversationId: string) {
-    await this.assertParticipant(userId, conversationId);
-    await this.prisma.directConversation.delete({ where: { id: conversationId } });
+    const conv = await this.assertParticipant(userId, conversationId);
+    const isUserA = conv.userAId === userId;
+    await this.prisma.directConversation.update({
+      where: { id: conversationId },
+      data: isUserA
+        ? { userAHiddenAt: new Date() }
+        : { userBHiddenAt: new Date() },
+    });
     return { ok: true };
   }
 
