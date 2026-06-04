@@ -327,9 +327,11 @@ export default function AppHome() {
     }) => {
       if (!payload || payload.authorId === user.id) return;
       void refreshPendingChatsCount();
-      if (tabRef.current !== 'chats' || selectedConvRef.current !== payload.conversationId) {
-        /* Only reload if NOT the currently open conversation (ChatsTab handles it via socket) */
+      /* Solo refrescar si NO estamos en la pestaña chats (ChatsTab/ChatsView manejan por socket) */
+      if (tabRef.current !== 'chats') {
         setConversationRefreshToken((current) => current + 1);
+      }
+      if (tabRef.current !== 'chats' || selectedConvRef.current !== payload.conversationId) {
         setUnreadDmsCount((c) => c + 1);
       }
       const preview = getConversationPreview({
@@ -434,7 +436,13 @@ export default function AppHome() {
     router.push(nextTab === 'feed' ? '/app?tab=feed' : `/app?tab=${nextTab}`);
   }
 
+  function handleSelectConversation(conversationId: string | null) {
+    setLiveDmNotice(null);
+    setSelectedConversationId(conversationId);
+  }
+
   function handleOpenConversation(conversationId: string) {
+    setLiveDmNotice(null);
     setTab('chats');
     router.push('/app?tab=chats');
     setSelectedConversationId(conversationId);
@@ -495,7 +503,7 @@ export default function AppHome() {
             <ChatsTab
               selectedConversationId={selectedConversationId}
               refreshToken={conversationRefreshToken}
-              onSelectConversation={setSelectedConversationId}
+              onSelectConversation={handleSelectConversation}
               onOpenProfile={handleOpenProfile}
               onConversationChanged={handleConversationChanged}
               onlineUserIds={onlineUserIds}
@@ -504,7 +512,7 @@ export default function AppHome() {
             <ChatsView
               selectedConversationId={selectedConversationId}
               refreshToken={conversationRefreshToken}
-              onSelectConversation={setSelectedConversationId}
+              onSelectConversation={handleSelectConversation}
               onOpenProfile={handleOpenProfile}
               onConversationChanged={handleConversationChanged}
             />

@@ -336,13 +336,43 @@ export default function ChatsView({
     };
   }, [user?.id]);
 
-  /* ---- Escuchar mensajes nuevos en tiempo real ---- */
+  /* ---- Escuchar mensajes nuevos en tiempo real (silencioso) ---- */
   useEffect(() => {
     if (!user?.id) return;
     const socket = getSocket('/social');
-    const onDmMessage = (payload: { conversationId: string; authorId: string }) => {
+    const onDmMessage = (payload: {
+      conversationId: string;
+      authorId: string;
+      content?: string | null;
+      createdAt?: string;
+      attachments?: DMAttachment[];
+    }) => {
       if (!payload || payload.authorId === user.id) return;
-      void loadConversations();
+      /* Actualizar el lastMessage de la conversación sin recargar toda la lista */
+      setDms((current) => {
+        const updated = current.map((d) =>
+          d.id === payload.conversationId
+            ? {
+                ...d,
+                lastMessage: {
+                  content: payload.content ?? '',
+                  createdAt: payload.createdAt ?? new Date().toISOString(),
+                  authorId: payload.authorId,
+                  attachments: payload.attachments,
+                },
+              }
+            : d,
+        );
+        return updated.slice().sort((a, b) => {
+          const ta = a.lastMessage?.createdAt
+            ? new Date(a.lastMessage.createdAt).getTime()
+            : new Date(a.createdAt).getTime();
+          const tb = b.lastMessage?.createdAt
+            ? new Date(b.lastMessage.createdAt).getTime()
+            : new Date(b.createdAt).getTime();
+          return tb - ta;
+        });
+      });
       setUnreadConversations((prev) => {
         const next = new Set(prev);
         next.add(payload.conversationId);
