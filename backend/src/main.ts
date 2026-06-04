@@ -33,7 +33,7 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.setGlobalPrefix('api/v1');
 
-  const uploadsDir = join(__dirname, '..', '..', '..', 'uploads');
+  const uploadsDir = join(__dirname, '..', '..', 'uploads');
   mkdirSync(join(uploadsDir, 'avatars'), { recursive: true });
   mkdirSync(join(uploadsDir, 'groups'), { recursive: true });
   mkdirSync(join(uploadsDir, 'dm'), { recursive: true });
