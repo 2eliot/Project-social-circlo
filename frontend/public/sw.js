@@ -1,27 +1,156 @@
-/*
- * Development-safe no-op service worker.
- * The previous precached worker served stale Next.js chunks and left the app
- * stuck on the loading screen. Keep this file as a self-cleaning stub until
- * PWA support is wired back intentionally.
- */
+/* Service Worker — Social Circle PWA */
+const CACHE_PREFIX = 'socialcircle';
+const CACHE_VERSION = 'v1';
+const NAV_CACHE = `${CACHE_PREFIX}-nav-${CACHE_VERSION}`;
+const STATIC_CACHE = `${CACHE_PREFIX}-static-${CACHE_VERSION}`;
+const UPLOADS_CACHE = `${CACHE_PREFIX}-uploads-${CACHE_VERSION}`;
+
+/* ───── INSTALL ───── */
 self.addEventListener('install', (event) => {
 	self.skipWaiting();
 });
 
+/* ───── ACTIVATE ───── */
 self.addEventListener('activate', (event) => {
 	event.waitUntil(
 		(async () => {
 			const keys = await caches.keys();
-			await Promise.all(keys.map((key) => caches.delete(key)));
+			await Promise.all(
+				keys
+					.filter((k) => k.startsWith(CACHE_PREFIX) && k !== NAV_CACHE && k !== STATIC_CACHE && k !== UPLOADS_CACHE)
+					.map((k) => caches.delete(k)),
+			);
 			await self.clients.claim();
-			const registrations = await self.registration.unregister();
-			const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-			await Promise.all(clients.map((client) => client.navigate(client.url)));
-			return registrations;
 		})(),
 	);
 });
 
-self.addEventListener('fetch', () => {
-	// Intentionally empty.
+/* ───── HELPERS ───── */
+function isApi(url) {
+	return url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io/');
+}
+function isUpload(url) {
+	return url.pathname.startsWith('/uploads/');
+}
+function isStatic(url) {
+	return /\.(js|css|woff2?|svg|png|jpg|jpeg|gif|webp|ico)(\?|$)/.test(url.pathname);
+}
+function isNavigation(url) {
+	return url.pathname.startsWith('/app') || url.pathname === '/' || url.pathname.startsWith('/notifications') || url.pathname.startsWith('/login') || url.pathname.startsWith('/register');
+}
+
+/* ───── FETCH ───── */
+self.addEventListener('fetch', (event) => {
+	const url = new URL(event.request.url);
+
+	// Only handle same-origin requests
+	if (url.origin !== location.origin) return;
+
+	// API calls — Network Only
+	if (isApi(url)) return;
+
+	// Navigation pages — Network First, fallback to cache
+	if (isNavigation(url)) {
+		event.respondWith(networkFirst(event.request, NAV_CACHE));
+		return;
+	}
+
+	// Uploaded images — Cache First with background refresh
+	if (isUpload(url)) {
+		event.respondWith(cacheFirst(event.request, UPLOADS_CACHE));
+		return;
+	}
+
+	// Static assets — Stale While Revalidate
+	if (isStatic(url)) {
+		event.respondWith(staleWhileRevalidate(event.request, STATIC_CACHE));
+		return;
+	}
+});
+
+/* ───── STRATEGIES ───── */
+async function networkFirst(request, cacheName) {
+	const cache = await caches.open(cacheName);
+	try {
+		const response = await fetch(request);
+		if (response.ok) {
+			await cache.put(request, response.clone());
+		}
+		return response;
+	} catch {
+		const cached = await cache.match(request);
+		if (cached) return cached;
+		return new Response('Sin conexión', { status: 503 });
+	}
+}
+
+async function cacheFirst(request, cacheName) {
+	const cache = await caches.open(cacheName);
+	const cached = await cache.match(request);
+	if (cached) return cached;
+	try {
+		const response = await fetch(request);
+		if (response.ok) {
+			await cache.put(request, response.clone());
+		}
+		return response;
+	} catch {
+		return new Response('', { status: 503 });
+	}
+}
+
+async function staleWhileRevalidate(request, cacheName) {
+	const cache = await caches.open(cacheName);
+	const cached = await cache.match(request);
+	const fetchPromise = fetch(request)
+		.then((response) => {
+			if (response.ok) {
+				cache.put(request, response.clone());
+			}
+			return response;
+		})
+		.catch(() => cached || new Response('', { status: 503 }));
+	return cached || fetchPromise;
+}
+
+/* ───── PUSH NOTIFICATIONS ───── */
+self.addEventListener('push', (event) => {
+	if (!event.data) return;
+
+	let data;
+	try {
+		data = event.data.json();
+	} catch {
+		data = { title: 'Social Circle', body: event.data.text() };
+	}
+
+	const title = data.title || 'Social Circle';
+	const options = {
+		body: data.body || '',
+		icon: '/icons/icon.svg',
+		badge: '/icons/icon.svg',
+		data: data.data || {},
+		actions: data.actions || [],
+		vibrate: [200, 100, 200],
+		requireInteraction: true,
+	};
+
+	event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+	event.notification.close();
+
+	const urlToOpen = event.notification.data?.url || '/app';
+
+	event.waitUntil(
+		self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+			for (const client of clients) {
+				if (client.url.includes(urlToOpen) && 'focus' in client) {
+					return client.focus();
+				}
+			}
+			return self.clients.openWindow(urlToOpen);
+		}),
+	);
 });

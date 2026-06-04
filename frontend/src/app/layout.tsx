@@ -1,13 +1,19 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { DevServiceWorkerCleanup } from './DevServiceWorkerCleanup';
+import { PwaRegister } from './PwaRegister';
 import { AuthSessionSync } from './AuthSessionSync';
 
 export const metadata: Metadata = {
   title: 'Social Circle',
-  description: 'Private invite-only social network',
+  description: 'Red social privada exclusiva — solo por invitación',
   manifest: '/manifest.webmanifest',
   appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'Social Circle' },
+  icons: {
+    icon: '/icons/icon.svg',
+    apple: '/icons/icon.svg',
+    shortcut: '/icons/icon.svg',
+  },
 };
 
 export const viewport: Viewport = {
@@ -23,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es">
       <body>
         <DevServiceWorkerCleanup />
+        <PwaRegister />
         <AuthSessionSync />
         {children}
       </body>
