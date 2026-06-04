@@ -688,30 +688,28 @@ export default function ChatConversation({
           })
         )}
 
-        {/* Typing indicator */}
-        {peerIsTyping && (
-          <div className="flex items-center gap-2.5 px-3 py-2 rounded-2xl bg-gradient-to-b from-[#101321] to-[#0c0f1b] border border-white/[0.055] shadow-lg w-fit max-w-[90%]">
-            <div className="relative w-7 h-7 shrink-0">
-              <img
-                src={conversation.peer.avatarUrl ? resolveMediaUrl(conversation.peer.avatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(conversation.peer.displayName)}&background=b7c26f&color=fff&bold=true`}
-                alt="" className="w-7 h-7 rounded-lg object-cover bg-[#b7c26f]"
-              />
-              {onlineUserIds.has(peerId) && (
-                <span className="absolute w-2 h-2 rounded-full bg-[#28ff63] -right-0.5 bottom-0 border border-[#080a17]" />
-              )}
-            </div>
-            <span className="text-xs text-[#e5e5ef]">{conversation.peer.displayName} está escribiendo</span>
-            <span className="flex gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#7b38ff] shadow-[0_0_6px_rgba(123,56,255,0.9)] animate-bounce [animation-delay:0ms]" />
-              <span className="w-1.5 h-1.5 rounded-full bg-[#7b38ff] shadow-[0_0_6px_rgba(123,56,255,0.9)] animate-bounce [animation-delay:150ms]" />
-              <span className="w-1.5 h-1.5 rounded-full bg-[#7b38ff] shadow-[0_0_6px_rgba(123,56,255,0.9)] animate-bounce [animation-delay:300ms]" />
-            </span>
-          </div>
-        )}
-
-        {/* spacer so typing indicator isn't flush with last message */}
-        <div className="h-2" />
       </div>
+
+      {/* Typing indicator — outside scroll container so it doesn't affect scroll position */}
+      {peerIsTyping && (
+        <div className="flex items-center gap-2.5 px-3 py-2 mx-3 rounded-2xl bg-gradient-to-b from-[#101321] to-[#0c0f1b] border border-white/[0.055] shadow-lg w-fit max-w-[90%] shrink-0">
+          <div className="relative w-7 h-7 shrink-0">
+            <img
+              src={conversation.peer.avatarUrl ? resolveMediaUrl(conversation.peer.avatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(conversation.peer.displayName)}&background=b7c26f&color=fff&bold=true`}
+              alt="" className="w-7 h-7 rounded-lg object-cover bg-[#b7c26f]"
+            />
+            {onlineUserIds.has(peerId) && (
+              <span className="absolute w-2 h-2 rounded-full bg-[#28ff63] -right-0.5 bottom-0 border border-[#080a17]" />
+            )}
+          </div>
+          <span className="text-xs text-[#e5e5ef]">{conversation.peer.displayName} está escribiendo</span>
+          <span className="flex gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#7b38ff] shadow-[0_0_6px_rgba(123,56,255,0.9)] animate-bounce [animation-delay:0ms]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#7b38ff] shadow-[0_0_6px_rgba(123,56,255,0.9)] animate-bounce [animation-delay:150ms]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#7b38ff] shadow-[0_0_6px_rgba(123,56,255,0.9)] animate-bounce [animation-delay:300ms]" />
+          </span>
+        </div>
+      )}
 
       {/* ===== PENDING ATTACHMENTS ===== */}
       {pendingAttachments.length > 0 && !isRecording && (
