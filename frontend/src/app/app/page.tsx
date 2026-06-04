@@ -2839,7 +2839,7 @@ function ChatsTab({
             onBack={() => onSelectConversation(null)}
             onOpenProfile={onOpenProfile}
             onConversationChanged={onConversationChanged}
-            onSendMessage={async (content: string, attachments: DMAttachment[], parentId?: string) => {
+            onSendMessage={async (content: string, attachments: DMAttachment[], parentId?: string, parent?: DMMessage['parent']) => {
               if (!user) return;
               const tempContent = content;
               const tempAttachments = [...attachments];
@@ -2852,6 +2852,7 @@ function ChatsTab({
                 createdAt: new Date().toISOString(),
                 author: { id: user.id, displayName: user.displayName ?? user.email, avatarUrl: user.avatarUrl },
                 attachments: tempAttachments,
+                parent: parent ?? undefined,
               };
               setMessages((current) => [...current, optimisticMessage]);
               try {

@@ -188,7 +188,7 @@ interface ChatConversationProps {
   onBack: () => void;
   onOpenProfile: (userId: string) => void;
   onConversationChanged: () => void;
-  onSendMessage: (content: string, attachments: DMAttachment[], parentId?: string) => Promise<void>;
+  onSendMessage: (content: string, attachments: DMAttachment[], parentId?: string, parent?: DMMessage['parent']) => Promise<void>;
   onDeleteMessage: (messageId: string) => Promise<void>;
   onDeleteConversation: () => Promise<void>;
   onAcceptConversation?: () => Promise<void>;
@@ -372,9 +372,16 @@ export default function ChatConversation({
     const content = composer;
     const attachments = [...pendingAttachments];
     const parentId = replyingTo?.id;
+    const parent = replyingTo ? {
+      id: replyingTo.id,
+      authorId: replyingTo.authorId,
+      content: replyingTo.content,
+      attachments: replyingTo.attachments,
+      author: replyingTo.author,
+    } : undefined;
     setComposer(''); setPendingAttachments([]); setReplyingTo(null);
     try {
-      await onSendMessage(content, attachments, parentId);
+      await onSendMessage(content, attachments, parentId, parent);
     } catch (err) {
       setComposer(content); setPendingAttachments(attachments); setReplyingTo(replyingTo);
       if (err instanceof ApiError && err.status === 403) { setLocalError('No puedes enviar más mensajes.'); }

@@ -213,6 +213,7 @@ export class DirectMessagesService {
         parent: {
           select: {
             id: true,
+            authorId: true,
             content: true,
             attachments: true,
             author: { select: { id: true, displayName: true } },
@@ -275,6 +276,7 @@ export class DirectMessagesService {
         parent: {
           select: {
             id: true,
+            authorId: true,
             content: true,
             attachments: true,
             author: { select: { id: true, displayName: true } },
