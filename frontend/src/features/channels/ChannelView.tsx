@@ -215,7 +215,7 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
   }
 
   return (
-    <div className={`relative flex h-full flex-col overflow-hidden rounded-[24px] bg-[linear-gradient(180deg,rgba(12,15,28,.98),rgba(8,10,19,.99))] ${minimal ? 'max-h-full' : 'min-h-[520px]'}`}>
+    <div className={`relative flex h-full flex-col overflow-hidden rounded-[24px] bg-[linear-gradient(180deg,rgba(12,15,28,.98),rgba(8,10,19,.99))] ${minimal ? 'max-h-full' : 'min-h-0 lg:min-h-[520px]'}`}>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_16%_14%,rgba(83,240,255,.08),transparent_16%),radial-gradient(circle_at_78%_22%,rgba(236,94,255,.1),transparent_20%),radial-gradient(circle_at_52%_72%,rgba(84,114,255,.08),transparent_24%)]" />
 
       <div ref={listRef} className="relative flex-1 overflow-y-auto px-0 py-0">
@@ -328,7 +328,7 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
             </div>
           ) : null}
           {pendingAttachments.length > 0 ? (
-            <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
+            <div className="mb-2 flex gap-2 overflow-x-auto pb-1 scroll-snap-x">
               {pendingAttachments.map((attachment, index) => (
                 <div key={`${attachment.url ?? 'pending'}-${index}`} className="relative min-w-[88px] overflow-hidden rounded-[16px] border border-white/10 bg-white/5">
                   <img src={resolveAttachmentRenderUrl(attachment.url)} alt={attachment.fileName ?? 'Adjunto'} className="h-[88px] w-[88px] object-cover" />
@@ -396,7 +396,7 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
           ) : null}
 
           {stickerOpen ? (
-            <div className="mt-2 flex gap-2 overflow-x-auto rounded-[18px] border border-white/10 bg-white/[0.04] p-2">
+            <div className="mt-2 flex gap-2 overflow-x-auto rounded-[18px] border border-white/10 bg-white/[0.04] p-2 scroll-snap-x">
               {STICKER_LIBRARY.map((sticker) => (
                 <button
                   key={sticker.id}

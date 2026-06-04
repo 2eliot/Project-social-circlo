@@ -409,8 +409,10 @@ export default function ChatsView({
   /* ================================================================ */
   return (
     <div className="px-4 pb-4">
+      {/* ===== STICKY: amigos + tabs siempre visibles ===== */}
+      <div className="sticky top-0 z-20 bg-[#060713] -mx-4 px-4 pb-1 shadow-[0_4px_12px_rgba(6,7,19,.8)]">
       {/* ============ ENCABEZADO ============ */}
-      <header className="mb-6 mt-2 flex items-center justify-between">
+      <header className="mb-3 mt-2 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold leading-tight text-white">
             {greeting},{' '}
@@ -446,8 +448,8 @@ export default function ChatsView({
       </header>
 
       {/* ============ AMIGOS ACTIVOS (scroll horizontal) ============ */}
-      <section className="mb-6">
-        <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-none">
+      <section className="mb-2">
+        <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-none scroll-snap-x">
           {onlineFriends.slice(0, 8).map((friend) => (
             <button
               key={friend.id}
@@ -487,8 +489,8 @@ export default function ChatsView({
       </section>
 
       {/* ============ BARRA DE PESTAÑAS (Sub-header) ============ */}
-      <section className="mb-5">
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+      <section className="mb-0">
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none scroll-snap-x">
           <TabButton
             active={subTab === 'chats'}
             onClick={() => setSubTab('chats')}
@@ -539,6 +541,7 @@ export default function ChatsView({
           />
         </div>
       </section>
+      </div>
 
       {/* ============ LISTA DE CHATS ============ */}
       <section>

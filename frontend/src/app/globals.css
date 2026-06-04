@@ -49,6 +49,15 @@ body {
   display: none;
 }
 
+/* Scroll snap horizontal para carruseles */
+.scroll-snap-x {
+  scroll-snap-type: x proximity;
+}
+.scroll-snap-x > * {
+  scroll-snap-align: start;
+  flex-shrink: 0;
+}
+
 input, textarea { background: #1b1f2a; border: 1px solid #2a3142; color: #e5e7eb; padding: .55rem .75rem; border-radius: .55rem; width: 100%; }
 button.primary { background: #7c5cff; color: white; padding: .55rem 1rem; border-radius: .55rem; font-weight: 600; }
 button.primary:disabled { opacity: .5; cursor: not-allowed; }
@@ -580,7 +589,7 @@ button.primary:disabled { opacity: .5; cursor: not-allowed; }
 
 /* Bottom nav - 5 tabs con FAB central */
 .bottom-nav {
-  position: fixed; left: 50%; transform: translateX(-50%);
+  position: fixed; left: 0; right: 0; margin: 0 auto;
   bottom: calc(14px + env(safe-area-inset-bottom));
   width: min(392px, calc(100% - 42px));
   display: grid; grid-template-columns: repeat(4, 1fr);
@@ -2310,10 +2319,13 @@ body {
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  scroll-snap-type: x proximity;
 }
 .feed-exact-stories::-webkit-scrollbar { display: none; }
 
 .feed-exact-story {
+  scroll-snap-align: start;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: center;

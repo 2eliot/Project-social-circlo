@@ -473,7 +473,7 @@ export default function ChatConversation({
   const displayError = error || localError;
 
   return (
-    <div className="flex flex-col h-full bg-[#050712] relative overflow-hidden">
+    <div className="flex flex-col h-full bg-[#050712] relative overflow-hidden min-h-0">
 
       <input ref={imageInputRef} type="file" accept="image/*" className="opacity-0 absolute w-0 h-0 overflow-hidden -z-10" onChange={onPickImage} />
 
@@ -715,7 +715,7 @@ export default function ChatConversation({
 
       {/* ===== PENDING ATTACHMENTS ===== */}
       {pendingAttachments.length > 0 && !isRecording && (
-        <div className="flex gap-2 px-3 py-1.5 bg-[#0e1021]/95 rounded-xl border border-[#7349ff]/20 z-9 overflow-x-auto shrink-0 mx-3 mb-1.5">
+        <div className="flex gap-2 px-3 py-1.5 bg-[#0e1021]/95 rounded-xl border border-[#7349ff]/20 z-9 overflow-x-auto shrink-0 mx-3 mb-1.5 scroll-snap-x">
           {pendingAttachments.map((att, i) => (
             <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-white/5 rounded-lg shrink-0">
               {att.kind === 'image' ? (

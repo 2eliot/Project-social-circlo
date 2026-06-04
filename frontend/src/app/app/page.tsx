@@ -4006,7 +4006,7 @@ function ProfileTab({
               Sin publicaciones todavía.
             </div>
           ) : (
-            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 scrollbar-hide">
+            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 scrollbar-hide scroll-snap-x">
               {profilePosts.map((post) => {
                 const imageAttachment = post.attachments.find((attachment) => attachment.kind === 'image');
                 const hasVoice = post.attachments.some((attachment) => attachment.kind === 'voice');
