@@ -239,6 +239,7 @@ export default function ChatConversation({
 
   /* --- Refs --- */
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
@@ -555,7 +556,7 @@ export default function ChatConversation({
       </header>
 
       {/* ===== MESSAGES ===== */}
-      <div className="flex-1 overflow-y-auto px-3 relative z-2 scrollbar-thin"
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 relative z-2 scrollbar-thin"
         style={{ scrollbarWidth: 'thin' }}>
 
         {/* Date pill */}
@@ -563,8 +564,7 @@ export default function ChatConversation({
           Hoy
         </div>
 
-        {/* Initial scroll to bottom (near chat form) when conversation loads */}
-        {!loading && messages.length > 0 && <InitScroll />}
+        <PreserveScroll containerRef={messagesContainerRef} loading={loading} messagesLength={messages.length} />
 
         {loading ? (
           <div className="text-center text-[#727693] text-sm py-8">Cargando chat...</div>
@@ -831,16 +831,31 @@ export default function ChatConversation({
 }
 
 /* ================================================================== */
-/*  InitScroll — scrolls to bottom once on conversation load          */
+/*  Preserve scroll — stay at bottom if user was near bottom          */
 /* ================================================================== */
 
-function InitScroll() {
-  const ref = useRef<HTMLDivElement>(null);
+function PreserveScroll({ containerRef, loading, messagesLength }: { containerRef: React.RefObject<HTMLDivElement | null>; loading: boolean; messagesLength: number }) {
+  const firstLoad = useRef(true);
+
   useEffect(() => {
-    const el = ref.current?.parentElement;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, []);
-  return <div ref={ref} className="hidden" />;
+    const container = containerRef.current;
+    if (!container) return;
+
+    if (firstLoad.current && !loading) {
+      /* Initial load: scroll to bottom (recent messages near form) */
+      firstLoad.current = false;
+      container.scrollTop = container.scrollHeight;
+      return;
+    }
+
+    /* Messages changed: if user was near bottom, stay at bottom */
+    const wasNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+    if (wasNearBottom) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }, [loading, messagesLength]);
+
+  return null;
 }
 
 /* ================================================================== */
