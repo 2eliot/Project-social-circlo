@@ -24,10 +24,12 @@ interface NotificationItem {
 export default function NotificationsPage() {
   const router = useRouter();
   const user = useAuth((s) => s.user);
+  const hydrated = useAuth((s) => s.hydrated);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!hydrated) return;
     if (!user) {
       router.push('/login');
       return;
@@ -36,7 +38,7 @@ export default function NotificationsPage() {
       .then(setNotifications)
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [user, router]);
+  }, [user, hydrated, router]);
 
   async function markAsRead(id: string) {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
