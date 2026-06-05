@@ -38,7 +38,13 @@ async function bootstrap() {
   mkdirSync(join(uploadsDir, 'groups'), { recursive: true });
   mkdirSync(join(uploadsDir, 'dm'), { recursive: true });
   mkdirSync(join(uploadsDir, 'posts'), { recursive: true });
-  app.use('/uploads', express.static(uploadsDir));
+  app.use('/uploads', express.static(uploadsDir, {
+    setHeaders(res, path) {
+      if (path.endsWith('.webm')) {
+        res.setHeader('Content-Type', 'audio/webm');
+      }
+    },
+  }));
 
   // Scaling Socket.io horizontally via Redis pub/sub
   try {

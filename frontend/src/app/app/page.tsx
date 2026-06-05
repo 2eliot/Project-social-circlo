@@ -3208,7 +3208,7 @@ function VoiceNote({ attachment, src }: { attachment: DMAttachment; src: string 
 
   return (
     <div className="rounded-2xl rounded-bl-lg bg-gradient-to-b from-[#161826] to-[#101220] border border-white/[0.055] px-3 py-2.5 min-w-[220px] max-w-[280px]" onClick={(e) => e.stopPropagation()}>
-      <audio ref={audioRef} src={src} preload="metadata" playsInline />
+      <audio ref={audioRef} src={src} preload="metadata" playsInline type={attachment.mimeType ?? 'audio/webm'} />
       {/* Play + time + speed */}
       <div className="flex items-center mb-1.5">
         <button type="button" onClick={() => void togglePlay()}

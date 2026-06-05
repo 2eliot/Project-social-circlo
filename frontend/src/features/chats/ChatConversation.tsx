@@ -936,7 +936,7 @@ function VoiceBubble({ attachment, src, mine }: { attachment: DMAttachment; src:
   return (
     <div className={`relative max-w-[75vw] ${mine ? 'rounded-2xl rounded-br-lg bg-gradient-to-br from-[#7b43ff] to-[#5d27ff]' : 'rounded-2xl rounded-bl-lg bg-gradient-to-b from-[#161826] to-[#101220] border border-white/[0.055]'}`}
       style={{ padding: mine ? '8px 10px 10px 11px' : '8px 14px 10px 12px' }}>
-      <audio ref={audioRef} src={src} preload="metadata" playsInline
+      <audio ref={audioRef} src={src} preload="metadata" playsInline type={attachment.mimeType ?? 'audio/webm'}
         onTimeUpdate={onTimeUpdate} onLoadedMetadata={onLoadedMetadata} onEnded={onEnded} />
       {/* Play + time */}
       <div className="flex items-center mb-1.5">
