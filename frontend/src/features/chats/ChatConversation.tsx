@@ -122,13 +122,16 @@ function EmojiPicker({
     return () => clearTimeout(t);
   }, []);
 
-  /* If the picker would be near the bottom of the viewport (under the composer),
-     reposition it above the bubble instead */
-  const pickerHeight = 56;
-  const composerArea = 80;
-  const topPos = y + pickerHeight + composerArea > window.innerHeight
-    ? Math.max(8, y - 200)
-    : y - 56;
+  /* Ensure the picker NEVER renders below the composer area */
+  const PICKER_H = 56;
+  const COMPOSER_H = 52; /* footer (48px) + gap */
+  const maxTop = window.innerHeight - PICKER_H - COMPOSER_H;
+  const topPos = Math.min(
+    y + PICKER_H + COMPOSER_H > window.innerHeight
+      ? Math.max(8, y - 200)
+      : y - 56,
+    maxTop,
+  );
 
   return (
     <>
