@@ -786,8 +786,8 @@ export default function ChatConversation({
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><path d="M12 19v3" /></svg>
         </button>
 
-        {/* Text input wrapped in form to suppress autofill */}
-        <form autoComplete="off" className="flex-1 h-9 rounded-xl bg-[#121524] border border-white/[0.055] flex items-center px-3 mr-1.5">
+        {/* Text input — NO form wrapper to keep keyboard stable on mobile */}
+        <div className="flex-1 h-9 rounded-xl bg-[#121524] border border-white/[0.055] flex items-center px-3 mr-1.5">
           <input
             ref={composerInputRef}
             type="text"
@@ -802,7 +802,7 @@ export default function ChatConversation({
             disabled={!canWrite || uploadingAttachment}
             className="w-full bg-transparent border-none outline-none text-[#e5e5ef] text-sm font-inherit placeholder-white/30"
           />
-        </form>
+        </div>
 
         {/* Send */}
         <button type="button" disabled={!canWrite || sending || uploadingAttachment || (!composer.trim() && pendingAttachments.length === 0)}
