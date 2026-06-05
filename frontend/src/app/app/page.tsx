@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ApiError, api } from '@/lib/api-client';
 import { normalizeMediaUrl, resolveMediaUrl } from '@/lib/media-url';
-import { resolveAudioDuration } from '@/lib/audio-duration';
+import { useVoiceClip } from '@/lib/use-voice-clip';
 import { getSocket } from '@/lib/socket-client';
 import { useVoiceRecorder } from '@/lib/use-voice-recorder';
 import { useAuth } from '@/store/auth.store';
@@ -2947,27 +2947,26 @@ function AttachmentPreview({ attachment, onOpenImage }: { attachment: DMAttachme
 
 function VoiceNote({ attachment, src }: { attachment: DMAttachment; src: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const clip = useVoiceClip(src);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const duration = clip.duration;
+  const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.load();
+  }, [clip.src]);
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
-    const onLoaded = () => {
-      resolveAudioDuration(audio, (d) => setDuration(d));
-    };
-    const onTime = () => {
-      if (!audio.duration || !Number.isFinite(audio.duration)) {
-        setProgress(0);
-        return;
-      }
-      setProgress(audio.currentTime / audio.duration);
-    };
+    const onTime = () => setCurrentTime(audio.currentTime);
     const onEnded = () => {
       setIsPlaying(false);
-      setProgress(0);
+      setCurrentTime(0);
       audio.currentTime = 0;
     };
     const onPause = () => setIsPlaying(false);
@@ -2976,14 +2975,12 @@ function VoiceNote({ attachment, src }: { attachment: DMAttachment; src: string 
       setIsPlaying(true);
     };
 
-    audio.addEventListener('loadedmetadata', onLoaded);
     audio.addEventListener('timeupdate', onTime);
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('pause', onPause);
     audio.addEventListener('play', onPlay);
 
     return () => {
-      audio.removeEventListener('loadedmetadata', onLoaded);
       audio.removeEventListener('timeupdate', onTime);
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('pause', onPause);
@@ -3010,9 +3007,7 @@ function VoiceNote({ attachment, src }: { attachment: DMAttachment; src: string 
 
   return (
     <div className="rounded-2xl rounded-bl-lg bg-gradient-to-b from-[#161826] to-[#101220] border border-white/[0.055] px-3 py-2.5 min-w-[220px] max-w-[280px]" onClick={(e) => e.stopPropagation()}>
-      <audio ref={audioRef} preload="metadata" playsInline>
-        <source src={src} type={attachment.mimeType ?? 'audio/webm'} />
-      </audio>
+      <audio ref={audioRef} src={clip.src} preload="metadata" playsInline />
       {/* Play + time + speed */}
       <div className="flex items-center mb-1.5">
         <button type="button" onClick={() => void togglePlay()}
@@ -3025,7 +3020,7 @@ function VoiceNote({ attachment, src }: { attachment: DMAttachment; src: string 
           )}
         </button>
         <span className="text-xs font-medium text-[#9b9bbf]">
-          {formatVoiceDuration(Math.floor(progress * duration || 0))}
+          {formatVoiceDuration(Math.floor(currentTime || 0))}
           <span className="opacity-50 ml-1">/ {formatVoiceDuration(Math.floor(duration))}</span>
         </span>
         <span className="ml-auto text-[11px] font-bold bg-black/55 text-[#bbbbdb] px-2 py-0.5 rounded-md">1x</span>

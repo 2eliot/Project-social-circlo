@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '@/lib/api-client';
 import { getSocket } from '@/lib/socket-client';
 import { resolveMediaUrl } from '@/lib/media-url';
-import { resolveAudioDuration } from '@/lib/audio-duration';
+import { useVoiceClip } from '@/lib/use-voice-clip';
 import { useVoiceRecorder } from '@/lib/use-voice-recorder';
 import { useAuth } from '@/store/auth.store';
 
@@ -839,9 +839,16 @@ function PreserveScroll({ containerRef, loading, messagesLength }: { containerRe
 
 function VoiceBubble({ attachment, src, mine }: { attachment: DMAttachment; src: string; mine: boolean }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const clip = useVoiceClip(src);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(attachment.durationSeconds ?? 0);
+  const duration = clip.duration || (attachment.durationSeconds ?? 0);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.load();
+  }, [clip.src]);
 
   function togglePlay() {
     const audio = audioRef.current;
@@ -855,12 +862,6 @@ function VoiceBubble({ attachment, src, mine }: { attachment: DMAttachment; src:
     if (audioRef.current) setCurrentTime(audioRef.current.currentTime);
   }
 
-  function onLoadedMetadata() {
-    const audio = audioRef.current;
-    if (!audio) return;
-    resolveAudioDuration(audio, (d) => setDuration(d));
-  }
-
   function onEnded() {
     setPlaying(false);
     setCurrentTime(0);
@@ -872,10 +873,8 @@ function VoiceBubble({ attachment, src, mine }: { attachment: DMAttachment; src:
   return (
     <div className={`relative max-w-[75vw] ${mine ? 'rounded-2xl rounded-br-lg bg-gradient-to-br from-[#7b43ff] to-[#5d27ff]' : 'rounded-2xl rounded-bl-lg bg-gradient-to-b from-[#161826] to-[#101220] border border-white/[0.055]'}`}
       style={{ padding: mine ? '8px 10px 10px 11px' : '8px 14px 10px 12px' }}>
-      <audio ref={audioRef} preload="metadata" playsInline
-        onTimeUpdate={onTimeUpdate} onLoadedMetadata={onLoadedMetadata} onEnded={onEnded}>
-        <source src={src} type={attachment.mimeType ?? 'audio/webm'} />
-      </audio>
+      <audio ref={audioRef} src={clip.src} preload="metadata" playsInline
+        onTimeUpdate={onTimeUpdate} onEnded={onEnded} />
       {/* Play + time */}
       <div className="flex items-center mb-1.5">
         <button type="button" onClick={togglePlay} onPointerDown={(e) => e.stopPropagation()}
