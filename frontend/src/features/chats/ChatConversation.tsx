@@ -243,6 +243,7 @@ export default function ChatConversation({
 
   /* --- Refs --- */
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const chatRootRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const composerInputRef = useRef<HTMLInputElement | null>(null);
@@ -251,6 +252,40 @@ export default function ChatConversation({
 
   const canWrite = Boolean(conversation.canReply || conversation.canSendIntro);
   const peerId = conversation.peer.id;
+
+  /* --- Mobile keyboard: keep composer above keyboard (visualViewport) --- */
+  useEffect(() => {
+    const onResize = () => {
+      const vv = window.visualViewport;
+      if (!vv) return;
+      const root = chatRootRef.current;
+      if (!root) return;
+      const keyboardH = window.innerHeight - vv.height;
+      if (keyboardH > 80) {
+        root.style.height = `${vv.height}px`;
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+        }
+      } else {
+        root.style.height = '';
+      }
+    };
+    window.visualViewport?.addEventListener('resize', onResize);
+    onResize();
+    return () => window.visualViewport?.removeEventListener('resize', onResize);
+  }, []);
+
+  /* --- Keep focus after sending so the keyboard stays open --- */
+  const justSentRef = useRef(false);
+  useEffect(() => {
+    if (!sending && justSentRef.current) {
+      justSentRef.current = false;
+      /* Use requestAnimationFrame so it focuses after React commits the re-render */
+      requestAnimationFrame(() => {
+        composerInputRef.current?.focus();
+      });
+    }
+  }, [sending]);
 
   /* --- Check if peer is blocked --- */
   useEffect(() => {
@@ -320,7 +355,7 @@ export default function ChatConversation({
   /* --- Send message --- */
   async function sendMessage() {
     if ((!composer.trim() && pendingAttachments.length === 0) || sending) return;
-    setSending(true); setLocalError(null);
+    setSending(true); justSentRef.current = true; setLocalError(null);
     const content = composer;
     const attachments = [...pendingAttachments];
     const parentId = replyingTo?.id;
@@ -340,8 +375,6 @@ export default function ChatConversation({
       else { setLocalError('No se pudo enviar.'); }
     } finally {
       setSending(false);
-      /* Re-focus the composer input so the user can keep typing without re-clicking */
-      composerInputRef.current?.focus();
     }
   }
 
@@ -440,7 +473,7 @@ export default function ChatConversation({
   const displayError = error || localError;
 
   return (
-    <div className="flex flex-col h-full bg-[#050712] relative overflow-hidden min-h-0">
+    <div ref={chatRootRef} className="flex flex-col h-full bg-[#050712] relative overflow-hidden min-h-0">
 
       <input ref={imageInputRef} type="file" accept="image/*" className="opacity-0 absolute w-0 h-0 overflow-hidden -z-10" onChange={onPickImage} />
 
