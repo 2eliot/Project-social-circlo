@@ -363,8 +363,7 @@ export default function ChatConversation({
       else { setLocalError('No se pudo enviar.'); }
     } finally {
       setSending(false);
-      /* Focus sync after React re-render so the keyboard doesn't wobble */
-      setTimeout(() => composerInputRef.current?.focus(), 0);
+      /* Input stays enabled — no need to re-focus, keyboard never closes */
     }
   }
 
@@ -772,7 +771,7 @@ export default function ChatConversation({
       {/* ===== COMPOSER ===== */}
       <footer className="shrink-0 h-12 bg-[#0e1021]/97 border-t border-[#7349ff]/12 flex items-center px-2 shadow-2xl z-10">
         {/* Gallery */}
-        <button type="button" disabled={!canWrite || sending || uploadingAttachment || voice.isRecording}
+        <button type="button" disabled={!canWrite || uploadingAttachment || voice.isRecording}
           onClick={() => imageInputRef.current?.click()}
           className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#111426] border border-white/[0.035] text-[#c7b5ff] cursor-pointer shrink-0 mr-1.5 disabled:opacity-40"
         >
@@ -780,22 +779,22 @@ export default function ChatConversation({
         </button>
 
         {/* Mic */}
-        <button type="button" disabled={!canWrite || sending || uploadingAttachment}
+        <button type="button" disabled={!canWrite || uploadingAttachment}
           onClick={() => void voice.toggle()}
           className={`flex items-center justify-center w-8 h-8 rounded-xl border cursor-pointer shrink-0 mr-1.5 ${voice.isRecording ? 'bg-red-500/20 border-red-500/30 text-[#ff4444]' : 'bg-[#111426] border-white/[0.035] text-[#c7b5ff]'} disabled:opacity-40`}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><path d="M12 19v3" /></svg>
         </button>
 
-        {/* Text input */}
-        <div className="flex-1 h-9 rounded-xl bg-[#121524] border border-white/[0.055] flex items-center px-3 mr-1.5">
+        {/* Text input wrapped in form to suppress autofill */}
+        <form autoComplete="off" className="flex-1 h-9 rounded-xl bg-[#121524] border border-white/[0.055] flex items-center px-3 mr-1.5">
           <input
             ref={composerInputRef}
             type="text"
             inputMode="text"
-            autoComplete="nope"
+            autoComplete="off"
+            data-1p-ignore
             data-form-type="other"
-            name="chatmsg"
             value={composer}
             onChange={(e) => onComposerChange(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendMessage(); } }}
@@ -803,7 +802,7 @@ export default function ChatConversation({
             disabled={!canWrite || uploadingAttachment}
             className="w-full bg-transparent border-none outline-none text-[#e5e5ef] text-sm font-inherit placeholder-white/30"
           />
-        </div>
+        </form>
 
         {/* Send */}
         <button type="button" disabled={!canWrite || sending || uploadingAttachment || (!composer.trim() && pendingAttachments.length === 0)}
