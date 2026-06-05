@@ -108,11 +108,13 @@ type ReactionMap = Record<string, { emoji: string; count: number; reacted: boole
 function EmojiPicker({
   x,
   y,
+  mine,
   onSelect,
   onClose,
 }: {
   x: number;
   y: number;
+  mine: boolean;
   onSelect: (emoji: string) => void;
   onClose: () => void;
 }) {
@@ -142,9 +144,12 @@ function EmojiPicker({
         onPointerDown={(e) => { if (!isReady.current) e.stopPropagation(); }}
       />
       <div
-        className="fixed z-50 flex gap-1 px-2 py-1.5 rounded-2xl shadow-2xl pointer-events-auto"
+        className="fixed z-50 flex gap-1 px-2 py-1.5 rounded-2xl shadow-2xl pointer-events-auto max-w-[calc(100vw-16px)]"
         style={{
-          left: Math.max(8, Math.min(x - 80, window.innerWidth - 220)),
+          ...(mine
+            ? { left: 'auto', right: Math.max(8, window.innerWidth - x - 10) }
+            : { right: 'auto', left: Math.max(8, Math.min(x - 80, window.innerWidth - 250)) }
+          ),
           top: topPos,
           background: 'rgba(18,21,37,0.97)',
           border: '1px solid rgba(255,255,255,0.08)',
@@ -246,22 +251,6 @@ export default function ChatConversation({
 
   const canWrite = Boolean(conversation.canReply || conversation.canSendIntro);
   const peerId = conversation.peer.id;
-
-  /* --- Auto-focus the input when the conversation opens --- */
-  useEffect(() => {
-    if (canWrite) {
-      /* Small delay to let the DOM settle */
-      const t = setTimeout(() => composerInputRef.current?.focus(), 100);
-      return () => clearTimeout(t);
-    }
-  }, [conversation.id, canWrite]);
-
-  /* --- Keep focus after sending (re-focus after React re-render) --- */
-  useEffect(() => {
-    if (!sending && composer === '' && canWrite) {
-      composerInputRef.current?.focus();
-    }
-  }, [sending, composer, canWrite]);
 
   /* --- Check if peer is blocked --- */
   useEffect(() => {
@@ -565,7 +554,7 @@ export default function ChatConversation({
       )}
 
       {/* ===== MESSAGES ===== */}
-      <div ref={messagesContainerRef} className={`flex-1 px-3 relative z-2 scrollbar-thin ${longPressMenu ? 'overflow-hidden' : 'overflow-y-auto'}`}
+      <div ref={messagesContainerRef} className="flex-1 px-3 relative z-2 scrollbar-thin overflow-y-auto"
         style={{ scrollbarWidth: 'thin' }}>
 
         {/* Date pill */}
@@ -807,6 +796,7 @@ export default function ChatConversation({
         <EmojiPicker
           x={longPressMenu.x}
           y={longPressMenu.y}
+          mine={longPressMenu.mine}
           onSelect={(emoji) => toggleReaction(longPressMenu.messageId, emoji)}
           onClose={() => setLongPressMenu(null)}
         />
