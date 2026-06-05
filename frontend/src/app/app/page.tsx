@@ -2006,6 +2006,25 @@ function FocusedPostView({ postId, onClose, onOpenProfile }: { postId: string; o
                               </button>
                             )}
                           </div>
+
+                          {/* Replies anidados */}
+                          {(comment.replies?.length ?? 0) > 0 && (
+                            <div style={{ marginTop: 6, paddingLeft: 10, borderLeft: '2px solid rgba(77,38,179,.3)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {comment.replies?.map((reply) => (
+                                <div key={reply.id} style={{ fontSize: 12, color: '#c8cce0', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <button type="button" onClick={() => { if (reply.authorId) { onOpenProfile(reply.authorId); onClose(); } }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <img
+                                      src={reply.authorAvatarUrl ? resolveAttachmentUrl(reply.authorAvatarUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(reply.authorName)}&background=4d26b3&color=fff&size=16`}
+                                      alt={reply.authorName}
+                                      style={{ width: 16, height: 16, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                                    />
+                                    <span style={{ fontWeight: 600, color: '#cdbfff' }}>{reply.authorName}: </span>
+                                  </button>
+                                  <span>{reply.body}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -3845,6 +3864,7 @@ function ProfileTab({
   const [myGroups, setMyGroups] = useState<Group[]>([]);
   const [publicGroups, setPublicGroups] = useState<Group[]>([]);
   const [profilePosts, setProfilePosts] = useState<FeedPost[]>([]);
+  const [profileGroups, setProfileGroups] = useState<Group[]>([]);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [loading, setLoading] = useState(true);
   const [postsLoading, setPostsLoading] = useState(true);
@@ -3879,15 +3899,17 @@ function ProfileTab({
           api<GroupsResponse>('/groups'),
         ])
       : Promise.resolve<[null, { mine: Group[]; public: Group[] }]>([null, { mine: [], public: [] }]);
+    const groupsRequest = api<Group[]>(`/users/${targetUserId}/groups`).catch(() => [] as Group[]);
     const followersRequest = api<ProfileRelationshipUser[]>(`/users/${targetUserId}/followers`).catch(() => []);
 
-    Promise.all([profileRequest, ownDataRequest, postsRequest, followersRequest])
-      .then(([profileData, [inviteData, groupsData], postsData, followersData]) => {
+    Promise.all([profileRequest, ownDataRequest, postsRequest, groupsRequest, followersRequest])
+      .then(([profileData, [inviteData, groupsData], postsData, userGroups, followersData]) => {
         setProfile(profileData);
         setUserVoteOnProfile(profileData.userVoteType ?? null);
         setInvite(inviteData);
         setMyGroups(groupsData.mine);
         setPublicGroups(groupsData.public);
+        setProfileGroups(userGroups);
         setProfilePosts(postsData);
         setConnectionsList(followersData || []);
         if (isOwnProfile) {
@@ -4099,12 +4121,12 @@ function ProfileTab({
   const avatarUrl = isOwnProfile ? profile?.avatarUrl ?? user?.avatarUrl ?? null : profile?.avatarUrl ?? null;
   const isOnline = targetUserId ? onlineUserIds.has(targetUserId) : false;
   const invitationUsage = invite ? `${invite.usesCount}/${invite.maxUses}` : '--';
-  const ownedGroups = isOwnProfile ? myGroups.filter((group) => group.ownerId === user?.id) : [];
+  const ownedGroups = profileGroups;
   const groupsCount = ownedGroups.length;
   const roleLabel = (isOwnProfile ? user?.globalRole : profile?.globalRole) ?? 'USER';
   const emailLabel = isOwnProfile ? user?.email ?? 'sin-correo@app.chat' : `${profile?.followersCount ?? 0} seguidores`;
   const profileState = isOwnProfile ? 'Perfil activo y sincronizado' : profile?.followsYou ? 'Este usuario tambien te sigue' : 'Perfil publico y disponible';
-  const showMyGroups = isOwnProfile && ownedGroups.length > 0;
+  const showMyGroups = ownedGroups.length > 0;
   const followersCount = profile?.followersCount ?? 0;
   const followingCount = profile?.followingCount ?? 0;
   const inviteTitle = isOwnProfile ? 'Invitacion' : 'Estado';
@@ -4444,9 +4466,14 @@ function ProfileTab({
                 </div>
                 <div className="flex flex-col gap-0.5 justify-center">
                   <span className="text-[9px] font-extrabold tracking-[0.08em] text-white/30 uppercase leading-none">Reputación</span>
-                  <span className="text-[11px] font-bold text-white/80 leading-tight mt-0.5">
-                    {profile?.reputationScore ?? 0} puntos
-                  </span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[11px] font-bold text-[#34d399] leading-tight">
+                      👍 {profile?.reputationLikes ?? 0}
+                    </span>
+                    <span className="text-[11px] font-bold text-red-400 leading-tight">
+                      👎 {profile?.reputationDislikes ?? 0}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -4457,26 +4484,28 @@ function ProfileTab({
                 <button
                   onClick={() => handleVoteOnProfile(1)}
                   disabled={votingInProgress}
-                  className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
+                  className={`flex items-center gap-1 h-7 px-2 rounded-md transition-colors text-[11px] font-bold ${
                     userVoteOnProfile === 1
                       ? 'bg-[#10b981]/30 text-[#34d399]'
                       : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70'
                   } disabled:opacity-50`}
                   title="Me gusta"
                 >
-                  👍
+                  <span>👍</span>
+                  <span>{profile?.reputationLikes ?? 0}</span>
                 </button>
                 <button
                   onClick={() => handleVoteOnProfile(-1)}
                   disabled={votingInProgress}
-                  className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
+                  className={`flex items-center gap-1 h-7 px-2 rounded-md transition-colors text-[11px] font-bold ${
                     userVoteOnProfile === -1
                       ? 'bg-red-500/30 text-red-400'
                       : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70'
                   } disabled:opacity-50`}
                   title="No me gusta"
                 >
-                  👎
+                  <span>👎</span>
+                  <span>{profile?.reputationDislikes ?? 0}</span>
                 </button>
               </div>
             )}
@@ -4507,7 +4536,7 @@ function ProfileTab({
 
           <div className="mt-2.5">
             <div className="text-[11px] font-bold text-white/60 leading-none">
-              Mis grupos ({groupsCount})
+              {isOwnProfile ? 'Mis grupos' : `Grupos de ${profile?.displayName ?? 'usuario'}`} ({groupsCount})
             </div>
 
             {/* Lista de grupos reales del usuario si existen */}

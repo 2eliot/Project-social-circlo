@@ -416,4 +416,50 @@ export class UsersService {
 
     return onlineFriends.filter((f) => f.online);
   }
+
+  async getUserGroups(viewerId: string, targetUserId: string) {
+    const blockedIds = await this.getBlockedIds(viewerId);
+    const groups = await this.prisma.group.findMany({
+      where: {
+        ownerId: targetUserId,
+        isDeleted: false,
+        members: targetUserId === viewerId
+          ? undefined
+          : { none: { userId: viewerId, isBanned: true } },
+      },
+      include: {
+        owner: { select: { id: true, displayName: true, avatarUrl: true } },
+        channels: { select: { type: true, isEnabled: true } },
+        members: { select: { userId: true, role: true, isBanned: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return groups.map((group) => {
+      const activeMembers = group.members.filter((m) => !m.isBanned);
+      const currentMembership = group.members.find((m) => m.userId === viewerId && !m.isBanned);
+      const enabledChannels = group.channels.filter((c) => c.isEnabled);
+      return {
+        id: group.id,
+        ownerId: group.ownerId,
+        name: group.name,
+        slug: group.slug,
+        description: group.description,
+        iconUrl: group.iconUrl,
+        privacy: group.privacy,
+        createdAt: group.createdAt,
+        updatedAt: group.updatedAt,
+        owner: group.owner,
+        memberCount: activeMembers.length,
+        moderatorsCount: activeMembers.filter((m) => m.role !== 'GROUP_MEMBER').length,
+        currentUserRole: currentMembership?.role ?? null,
+        channelSummary: {
+          total: enabledChannels.length,
+          text: enabledChannels.filter((c) => c.type === 'TEXT').length,
+          voice: enabledChannels.filter((c) => c.type === 'VOICE').length,
+          video: enabledChannels.filter((c) => c.type === 'VIDEO').length,
+        },
+      };
+    });
+  }
 }

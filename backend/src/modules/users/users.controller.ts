@@ -113,4 +113,9 @@ export class UsersController {
   getReputation(@Param('id', ParseUUIDPipe) id: string) {
     return this.reputationService.getReputation(id);
   }
+
+  @Get(':id/groups')
+  getUserGroups(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.service.getUserGroups(user.id, id);
+  }
 }

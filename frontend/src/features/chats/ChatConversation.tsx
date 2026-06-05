@@ -598,7 +598,7 @@ export default function ChatConversation({
       )}
 
       {/* ===== MESSAGES ===== */}
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 relative z-2 scrollbar-thin"
+      <div ref={messagesContainerRef} className={`flex-1 px-3 relative z-2 scrollbar-thin ${longPressMenu ? 'overflow-hidden' : 'overflow-y-auto'}`}
         style={{ scrollbarWidth: 'thin' }}>
 
         {/* Date pill */}
