@@ -936,11 +936,11 @@ function VoiceBubble({ attachment, src, mine }: { attachment: DMAttachment; src:
   return (
     <div className={`relative max-w-[75vw] ${mine ? 'rounded-2xl rounded-br-lg bg-gradient-to-br from-[#7b43ff] to-[#5d27ff]' : 'rounded-2xl rounded-bl-lg bg-gradient-to-b from-[#161826] to-[#101220] border border-white/[0.055]'}`}
       style={{ padding: mine ? '8px 10px 10px 11px' : '8px 14px 10px 12px' }}>
-      <audio ref={audioRef} src={src} preload="metadata"
+      <audio ref={audioRef} src={src} preload="metadata" playsInline
         onTimeUpdate={onTimeUpdate} onLoadedMetadata={onLoadedMetadata} onEnded={onEnded} />
       {/* Play + time */}
       <div className="flex items-center mb-1.5">
-        <button type="button" onClick={togglePlay}
+        <button type="button" onClick={togglePlay} onPointerDown={(e) => e.stopPropagation()}
           className={`flex items-center justify-center w-9 h-9 rounded-full border-none cursor-pointer mr-3 shrink-0 ${mine ? 'bg-white/15 text-white' : 'bg-[#8a4eff] text-white shadow-lg'}`}
           style={!mine ? { background: 'radial-gradient(circle at 35% 35%, #8a4eff, #4e1bd1)' } : {}}>
           {playing ? (
