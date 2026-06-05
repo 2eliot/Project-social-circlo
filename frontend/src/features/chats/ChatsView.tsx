@@ -5,6 +5,7 @@ import { api } from '@/lib/api-client';
 import { getSocket } from '@/lib/socket-client';
 import { useAuth } from '@/store/auth.store';
 import { resolveMediaUrl } from '@/lib/media-url';
+import { resolveAudioDuration } from '@/lib/audio-duration';
 
 /* ------------------------------------------------------------------ */
 /*  Tipos                                                              */
@@ -869,10 +870,10 @@ function VoiceNote({ attachment, src }: { attachment: DMAttachment; src: string 
     if (!audio) return;
 
     const onLoaded = () => {
-      setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
+      resolveAudioDuration(audio, (d) => setDuration(d));
     };
     const onTime = () => {
-      if (!audio.duration) { setProgress(0); return; }
+      if (!audio.duration || !Number.isFinite(audio.duration)) { setProgress(0); return; }
       setProgress(audio.currentTime / audio.duration);
     };
     const onEnded = () => { setIsPlaying(false); setProgress(0); audio.currentTime = 0; };

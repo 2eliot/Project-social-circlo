@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ApiError, api } from '@/lib/api-client';
 import { normalizeMediaUrl, resolveMediaUrl } from '@/lib/media-url';
+import { resolveAudioDuration } from '@/lib/audio-duration';
 import { getSocket } from '@/lib/socket-client';
 import { useVoiceRecorder } from '@/lib/use-voice-recorder';
 import { useAuth } from '@/store/auth.store';
@@ -2955,10 +2956,10 @@ function VoiceNote({ attachment, src }: { attachment: DMAttachment; src: string 
     if (!audio) return;
 
     const onLoaded = () => {
-      setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
+      resolveAudioDuration(audio, (d) => setDuration(d));
     };
     const onTime = () => {
-      if (!audio.duration) {
+      if (!audio.duration || !Number.isFinite(audio.duration)) {
         setProgress(0);
         return;
       }

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '@/lib/api-client';
 import { getSocket } from '@/lib/socket-client';
 import { resolveMediaUrl } from '@/lib/media-url';
+import { resolveAudioDuration } from '@/lib/audio-duration';
 import { useVoiceRecorder } from '@/lib/use-voice-recorder';
 import { useAuth } from '@/store/auth.store';
 
@@ -856,7 +857,8 @@ function VoiceBubble({ attachment, src, mine }: { attachment: DMAttachment; src:
 
   function onLoadedMetadata() {
     const audio = audioRef.current;
-    if (audio && audio.duration && isFinite(audio.duration)) setDuration(audio.duration);
+    if (!audio) return;
+    resolveAudioDuration(audio, (d) => setDuration(d));
   }
 
   function onEnded() {
