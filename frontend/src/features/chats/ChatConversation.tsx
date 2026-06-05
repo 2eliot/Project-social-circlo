@@ -355,6 +355,8 @@ export default function ChatConversation({
       author: replyingTo.author,
     } : undefined;
     setComposer(''); setPendingAttachments([]); setReplyingTo(null);
+    /* Re-focus input synchronously so mobile keyboard never flickers */
+    composerInputRef.current?.focus();
     try {
       await onSendMessage(content, attachments, parentId, parent);
     } catch (err) {
@@ -363,7 +365,6 @@ export default function ChatConversation({
       else { setLocalError('No se pudo enviar.'); }
     } finally {
       setSending(false);
-      /* Input stays enabled — no need to re-focus, keyboard never closes */
     }
   }
 
@@ -798,6 +799,7 @@ export default function ChatConversation({
             value={composer}
             onChange={(e) => onComposerChange(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendMessage(); } }}
+            onPointerDown={(e) => { /* Evitar que el contenedor robe el foco */ e.stopPropagation(); }}
             placeholder={canWrite ? 'Mensaje...' : 'No disponible'}
             disabled={!canWrite || uploadingAttachment}
             className="w-full bg-transparent border-none outline-none text-[#e5e5ef] text-sm font-inherit placeholder-white/30"
@@ -805,8 +807,9 @@ export default function ChatConversation({
         </div>
 
         {/* Send */}
-        <button type="button" disabled={!canWrite || sending || uploadingAttachment || (!composer.trim() && pendingAttachments.length === 0)}
+        <button type="button" tabIndex={-1} disabled={!canWrite || sending || uploadingAttachment || (!composer.trim() && pendingAttachments.length === 0)}
           onClick={() => void sendMessage()}
+          onPointerDown={(e) => { e.preventDefault(); /* Evitar que el botón robe el foco del input en móvil */ }}
           className="flex items-center justify-center w-9 h-9 rounded-full border-none bg-gradient-to-br from-[#8d52ff] to-[#5a18ff] text-white cursor-pointer shrink-0 shadow-[0_0_16px_rgba(116,49,255,0.5)] disabled:opacity-40"
         >
           {sending ? (
