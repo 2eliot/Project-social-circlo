@@ -275,18 +275,6 @@ export default function ChatConversation({
     return () => window.visualViewport?.removeEventListener('resize', onResize);
   }, []);
 
-  /* --- Keep focus after sending so the keyboard stays open --- */
-  const justSentRef = useRef(false);
-  useEffect(() => {
-    if (!sending && justSentRef.current) {
-      justSentRef.current = false;
-      /* Use requestAnimationFrame so it focuses after React commits the re-render */
-      requestAnimationFrame(() => {
-        composerInputRef.current?.focus();
-      });
-    }
-  }, [sending]);
-
   /* --- Check if peer is blocked --- */
   useEffect(() => {
     async function checkBlocked() {
@@ -355,7 +343,7 @@ export default function ChatConversation({
   /* --- Send message --- */
   async function sendMessage() {
     if ((!composer.trim() && pendingAttachments.length === 0) || sending) return;
-    setSending(true); justSentRef.current = true; setLocalError(null);
+    setSending(true); setLocalError(null);
     const content = composer;
     const attachments = [...pendingAttachments];
     const parentId = replyingTo?.id;
@@ -375,6 +363,8 @@ export default function ChatConversation({
       else { setLocalError('No se pudo enviar.'); }
     } finally {
       setSending(false);
+      /* Focus sync after React re-render so the keyboard doesn't wobble */
+      setTimeout(() => composerInputRef.current?.focus(), 0);
     }
   }
 
@@ -806,7 +796,7 @@ export default function ChatConversation({
             onChange={(e) => onComposerChange(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendMessage(); } }}
             placeholder={canWrite ? 'Mensaje...' : 'No disponible'}
-            disabled={!canWrite || sending || uploadingAttachment}
+            disabled={!canWrite || uploadingAttachment}
             className="w-full bg-transparent border-none outline-none text-[#e5e5ef] text-sm font-inherit placeholder-white/30"
           />
         </div>
