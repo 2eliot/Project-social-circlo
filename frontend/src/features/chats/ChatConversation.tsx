@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '@/lib/api-client';
 import { getSocket } from '@/lib/socket-client';
 import { resolveMediaUrl } from '@/lib/media-url';
+import { useVoiceRecorder } from '@/lib/use-voice-recorder';
 import { useAuth } from '@/store/auth.store';
 
 /* ------------------------------------------------------------------ */
@@ -72,28 +73,6 @@ function formatVoiceDuration(totalSeconds: number) {
 
 function resolveAttachmentUrl(url: string) {
   return resolveMediaUrl(url);
-}
-
-function getSupportedVoiceMimeType() {
-  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return '';
-  // audio/mp4 first for iOS Safari; audio/webm for Android/desktop
-  const candidates = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
-  return candidates.find((c) => MediaRecorder.isTypeSupported(c)) ?? '';
-}
-
-function getVoiceFileExtension(mimeType?: string) {
-  if (!mimeType) return 'webm';
-  if (mimeType.includes('mp4')) return 'm4a';
-  if (mimeType.includes('ogg')) return 'ogg';
-  return 'webm';
-}
-
-function getVoiceRecordingErrorMessage(err: unknown) {
-  if (err instanceof DOMException) {
-    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') return 'No diste permiso al micrófono.';
-    if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') return 'No se encontró micrófono.';
-  }
-  return 'No se pudo grabar la nota de voz.';
 }
 
 /* ------------------------------------------------------------------ */
@@ -221,9 +200,13 @@ export default function ChatConversation({
   const [sending, setSending] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<DMAttachment[]>([]);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
-  const [recordingElapsed, setRecordingElapsed] = useState(0);
+  const voice = useVoiceRecorder({
+    endpoint: '/dm/upload',
+    onAttached: (attachment) => {
+      setPendingAttachments((prev) => [...prev, attachment].slice(0, 4));
+    },
+    onError: (msg) => setLocalError(msg),
+  });
   const [replyingTo, setReplyingTo] = useState<DMMessage | null>(null);
   const [peerIsTyping, setPeerIsTyping] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -244,9 +227,6 @@ export default function ChatConversation({
   /* --- Refs --- */
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const recordedChunksRef = useRef<Blob[]>([]);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const typingTimerRef = useRef<number | null>(null);
   const lastTypingEmitRef = useRef<number>(0);
@@ -287,15 +267,6 @@ export default function ChatConversation({
     };
   }, [conversation.id, peerId]);
 
-  /* --- Recording timer --- */
-  useEffect(() => {
-    if (!isRecording || !recordingStartedAt) return;
-    const timer = window.setInterval(() => {
-      setRecordingElapsed(Math.floor((Date.now() - recordingStartedAt) / 1000));
-    }, 250);
-    return () => window.clearInterval(timer);
-  }, [isRecording, recordingStartedAt]);
-
   /* --- Click outside menu --- */
   useEffect(() => {
     if (!showMenu) return;
@@ -322,43 +293,6 @@ export default function ChatConversation({
     if (!file) return;
     void addAttachment(file);
     e.target.value = '';
-  }
-
-  /* --- Voice recording --- */
-  async function toggleVoiceRecording() {
-    if (isRecording) { recorderRef.current?.stop(); setIsRecording(false); return; }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setLocalError('Tu navegador no soporta grabar notas de voz.');
-      return;
-    }
-    try {
-      if (!window.isSecureContext) { setLocalError('Se necesita un contexto seguro (localhost o HTTPS).'); return; }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const [track] = stream.getAudioTracks();
-      if (track) {
-        await track.applyConstraints({ echoCancellation: true, noiseSuppression: true, autoGainControl: true }).catch(() => undefined);
-      }
-      const mimeType = getSupportedVoiceMimeType();
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      recordedChunksRef.current = [];
-      streamRef.current = stream;
-      recorderRef.current = recorder;
-      recorder.ondataavailable = (event) => { if (event.data.size > 0) recordedChunksRef.current.push(event.data); };
-      recorder.onstop = async () => {
-        const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        stream.getTracks().forEach((t) => t.stop());
-        streamRef.current = null; recorderRef.current = null; recordedChunksRef.current = [];
-        setRecordingStartedAt(null); setRecordingElapsed(0);
-        if (blob.size > 0) {
-          const ext = getVoiceFileExtension(blob.type || mimeType);
-          await addAttachment(new File([blob], `voice-${Date.now()}.${ext}`, { type: blob.type || mimeType || 'audio/webm' }));
-        }
-      };
-      recorder.start();
-      setIsRecording(true); setRecordingStartedAt(Date.now()); setRecordingElapsed(0);
-    } catch (err) {
-      setLocalError(getVoiceRecordingErrorMessage(err));
-    }
   }
 
   function removePendingAttachment(index: number) {
@@ -754,7 +688,7 @@ export default function ChatConversation({
       )}
 
       {/* ===== PENDING ATTACHMENTS ===== */}
-      {pendingAttachments.length > 0 && !isRecording && (
+      {pendingAttachments.length > 0 && !voice.isRecording && (
         <div className="flex gap-2 px-3 py-1.5 bg-[#0e1021]/95 rounded-xl border border-[#7349ff]/20 z-9 overflow-x-auto shrink-0 mx-3 mb-1.5 scroll-snap-x">
           {pendingAttachments.map((att, i) => (
             <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-white/5 rounded-lg shrink-0">
@@ -771,10 +705,10 @@ export default function ChatConversation({
       )}
 
       {/* Recording indicator */}
-      {isRecording && (
+      {voice.isRecording && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 rounded-xl border border-red-500/20 text-[#ff6b6b] text-xs font-semibold z-9 shrink-0 mx-3 mb-1.5">
           <span className="w-2 h-2 rounded-full bg-[#ff4444] animate-pulse" />
-          Grabando {formatVoiceDuration(recordingElapsed)}
+          Grabando {formatVoiceDuration(voice.elapsed)}
           <span className="text-white/40 font-normal ml-1">— pulsa el micrófono para detener</span>
         </div>
       )}
@@ -793,7 +727,7 @@ export default function ChatConversation({
       {/* ===== COMPOSER ===== */}
       <footer className="shrink-0 h-12 bg-[#0e1021]/97 border-t border-[#7349ff]/12 flex items-center px-2 shadow-2xl z-10">
         {/* Gallery */}
-        <button type="button" disabled={!canWrite || sending || uploadingAttachment || isRecording}
+        <button type="button" disabled={!canWrite || sending || uploadingAttachment || voice.isRecording}
           onClick={() => imageInputRef.current?.click()}
           className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#111426] border border-white/[0.035] text-[#c7b5ff] cursor-pointer shrink-0 mr-1.5 disabled:opacity-40"
         >
@@ -802,8 +736,8 @@ export default function ChatConversation({
 
         {/* Mic */}
         <button type="button" disabled={!canWrite || sending || uploadingAttachment}
-          onClick={() => void toggleVoiceRecording()}
-          className={`flex items-center justify-center w-8 h-8 rounded-xl border cursor-pointer shrink-0 mr-1.5 ${isRecording ? 'bg-red-500/20 border-red-500/30 text-[#ff4444]' : 'bg-[#111426] border-white/[0.035] text-[#c7b5ff]'} disabled:opacity-40`}
+          onClick={() => void voice.toggle()}
+          className={`flex items-center justify-center w-8 h-8 rounded-xl border cursor-pointer shrink-0 mr-1.5 ${voice.isRecording ? 'bg-red-500/20 border-red-500/30 text-[#ff4444]' : 'bg-[#111426] border-white/[0.035] text-[#c7b5ff]'} disabled:opacity-40`}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><path d="M12 19v3" /></svg>
         </button>

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ApiError, api } from '@/lib/api-client';
 import { normalizeMediaUrl, resolveMediaUrl } from '@/lib/media-url';
 import { getSocket } from '@/lib/socket-client';
+import { useVoiceRecorder } from '@/lib/use-voice-recorder';
 import { useAuth } from '@/store/auth.store';
 import ChatsView from '@/features/chats/ChatsView';
 import ChatConversation from '@/features/chats/ChatConversation';
@@ -904,12 +905,13 @@ function FeedTab({ onOpenProfile, onlineUserIds, onOpenFocusedPost }: { onOpenPr
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const composerInputRef = useRef<HTMLInputElement | null>(null);
   const remainingChars = POST_CONTENT_MAX_LENGTH - composer.length;
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
-  const [recordingElapsed, setRecordingElapsed] = useState(0);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const recordedChunksRef = useRef<Blob[]>([]);
+  const voice = useVoiceRecorder({
+    endpoint: '/posts/upload',
+    onAttached: (attachment) => {
+      setPendingAttachments((current) => [...current, attachment].slice(0, 4));
+    },
+    onError: (msg) => setError(msg),
+  });
 
   // --- Nuevo estado para el feed rediseñado ---
   const [searchQuery, setSearchQuery] = useState('');
@@ -1063,73 +1065,6 @@ function FeedTab({ onOpenProfile, onlineUserIds, onOpenFocusedPost }: { onOpenPr
     if (!file) return;
     await addAttachment(file);
     e.target.value = '';
-  }
-
-  // Timer para contador de grabacion
-  useEffect(() => {
-    if (!isRecording || !recordingStartedAt) return;
-    const interval = setInterval(() => {
-      setRecordingElapsed(Math.floor((Date.now() - recordingStartedAt) / 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [isRecording, recordingStartedAt]);
-
-  async function toggleVoiceRecording() {
-    if (isRecording) {
-      recorderRef.current?.stop();
-      setIsRecording(false);
-      return;
-    }
-
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setError('Tu navegador no soporta grabar notas de voz.');
-      return;
-    }
-
-    try {
-      if (!window.isSecureContext) {
-        setError('La grabacion de voz necesita un contexto seguro. Usa localhost o HTTPS.');
-        return;
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const [track] = stream.getAudioTracks();
-      const settings = track?.getSettings?.();
-      if (track && settings) {
-        await track.applyConstraints({
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        }).catch(() => undefined);
-      }
-      const mimeType = getSupportedVoiceMimeType();
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      recordedChunksRef.current = [];
-      streamRef.current = stream;
-      recorderRef.current = recorder;
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) recordedChunksRef.current.push(event.data);
-      };
-      recorder.onstop = async () => {
-        const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        stream.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-        recorderRef.current = null;
-        recordedChunksRef.current = [];
-        setRecordingStartedAt(null);
-        setRecordingElapsed(0);
-        if (blob.size > 0) {
-          const extension = getVoiceFileExtension(blob.type || mimeType);
-          await addAttachment(new File([blob], `nota-de-voz-${Date.now()}.${extension}`, { type: blob.type || mimeType || 'audio/webm' }));
-        }
-      };
-      recorder.start();
-      setIsRecording(true);
-      setRecordingStartedAt(Date.now());
-      setRecordingElapsed(0);
-    } catch (err) {
-      setError(getVoiceRecordingErrorMessage(err));
-    }
   }
 
   async function publishPost() {
@@ -1438,9 +1373,9 @@ function FeedTab({ onOpenProfile, onlineUserIds, onOpenFocusedPost }: { onOpenPr
           </button>
           <button
             type="button"
-            onClick={() => void toggleVoiceRecording()}
+            onClick={() => void voice.toggle()}
             style={{
-              background: isRecording ? 'rgba(239,68,68,0.2)' : 'none',
+              background: voice.isRecording ? 'rgba(239,68,68,0.2)' : 'none',
               border: 'none',
               cursor: 'pointer',
               padding: 4,
@@ -1449,9 +1384,9 @@ function FeedTab({ onOpenProfile, onlineUserIds, onOpenFocusedPost }: { onOpenPr
               gap: 4,
             }}
           >
-            {isRecording ? (
+            {voice.isRecording ? (
               <>
-                <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600, minWidth: 32 }}>{recordingElapsed}s</span>
+                <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600, minWidth: 32 }}>{voice.elapsed}s</span>
                 <svg viewBox="0 0 24 24" fill="#ef4444" stroke="none" width="18" height="18">
                   <rect x="6" y="6" width="12" height="12" rx="2" />
                 </svg>
@@ -2071,12 +2006,13 @@ function PostComposerPopup({ onClose }: { onClose: () => void }) {
   const [publishing, setPublishing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
-  const [recordingElapsed, setRecordingElapsed] = useState(0);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const recordedChunksRef = useRef<Blob[]>([]);
+  const voice = useVoiceRecorder({
+    endpoint: '/posts/upload',
+    onAttached: (attachment) => {
+      setPendingAttachments((current) => [...current, attachment].slice(0, 4));
+    },
+    onError: (msg) => setError(msg),
+  });
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const remainingChars = POST_CONTENT_MAX_LENGTH - composer.length;
@@ -2110,66 +2046,6 @@ function PostComposerPopup({ onClose }: { onClose: () => void }) {
 
   function removePendingAttachment(index: number) {
     setPendingAttachments((current) => current.filter((_, i) => i !== index));
-  }
-
-  // Timer para grabación
-  useEffect(() => {
-    if (!isRecording || !recordingStartedAt) return;
-    const interval = setInterval(() => {
-      setRecordingElapsed(Math.floor((Date.now() - recordingStartedAt) / 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [isRecording, recordingStartedAt]);
-
-  async function toggleVoiceRecording() {
-    if (isRecording) {
-      recorderRef.current?.stop();
-      setIsRecording(false);
-      return;
-    }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setError('Tu navegador no soporta grabar notas de voz.');
-      return;
-    }
-    try {
-      if (!window.isSecureContext) {
-        setError('La grabación necesita un contexto seguro (localhost o HTTPS).');
-        return;
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const [track] = stream.getAudioTracks();
-      const settings = track?.getSettings?.();
-      if (track && settings) {
-        await track.applyConstraints({ echoCancellation: true, noiseSuppression: true, autoGainControl: true }).catch(() => undefined);
-      }
-      const mimeType = getSupportedVoiceMimeType();
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      recordedChunksRef.current = [];
-      streamRef.current = stream;
-      recorderRef.current = recorder;
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) recordedChunksRef.current.push(event.data);
-      };
-      recorder.onstop = async () => {
-        const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        stream.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-        recorderRef.current = null;
-        recordedChunksRef.current = [];
-        setRecordingStartedAt(null);
-        setRecordingElapsed(0);
-        if (blob.size > 0) {
-          const extension = getVoiceFileExtension(blob.type || mimeType);
-          await addAttachment(new File([blob], `nota-de-voz-${Date.now()}.${extension}`, { type: blob.type || mimeType || 'audio/webm' }));
-        }
-      };
-      recorder.start();
-      setIsRecording(true);
-      setRecordingStartedAt(Date.now());
-      setRecordingElapsed(0);
-    } catch (err) {
-      setError(getVoiceRecordingErrorMessage(err));
-    }
   }
 
   async function publishPost() {
@@ -2266,14 +2142,14 @@ function PostComposerPopup({ onClose }: { onClose: () => void }) {
             </button>
             <button
               type="button"
-              onClick={() => void toggleVoiceRecording()}
+              onClick={() => void voice.toggle()}
               className="post-popup-toolbar-btn"
-              title={isRecording ? 'Detener grabación' : 'Grabar nota de voz'}
-              style={{ color: isRecording ? '#ef4444' : '#3b82f6' }}
+              title={voice.isRecording ? 'Detener grabación' : 'Grabar nota de voz'}
+              style={{ color: voice.isRecording ? '#ef4444' : '#3b82f6' }}
             >
-              {isRecording ? (
+              {voice.isRecording ? (
                 <>
-                  <span className="post-popup-rec-time">{recordingElapsed}s</span>
+                  <span className="post-popup-rec-time">{voice.elapsed}s</span>
                   <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
                     <rect x="6" y="6" width="12" height="12" rx="2" />
                   </svg>
@@ -2336,18 +2212,19 @@ function ChatsTab({
   const [pendingAttachments, setPendingAttachments] = useState<DMAttachment[]>([]);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [imagePopupUrl, setImagePopupUrl] = useState<string | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
-  const [recordingElapsed, setRecordingElapsed] = useState(0);
+  const voice = useVoiceRecorder({
+    endpoint: '/dm/upload',
+    onAttached: (attachment) => {
+      setPendingAttachments((current) => [...current, attachment].slice(0, 4));
+    },
+    onError: (msg) => setError(msg),
+  });
   const [replyingTo, setReplyingTo] = useState<DMMessage | null>(null);
   const [messageActionMenu, setMessageActionMenu] = useState<MessageActionMenuState | null>(null);
   const [swipingMessageId, setSwipingMessageId] = useState<string | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [peerIsTyping, setPeerIsTyping] = useState(false);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const recordedChunksRef = useRef<Blob[]>([]);
   const swipeStartRef = useRef<{ messageId: string; startX: number } | null>(null);
   const suppressMenuRef = useRef(false);
   const longPressTimerRef = useRef<number | null>(null);
@@ -2442,24 +2319,6 @@ function ChatsTab({
   }, [selectedConversationId, refreshToken]);
 
   useEffect(() => {
-    return () => {
-      if (longPressTimerRef.current !== null) {
-        window.clearTimeout(longPressTimerRef.current);
-      }
-      recorderRef.current?.stop();
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isRecording || !recordingStartedAt) return;
-    const timer = window.setInterval(() => {
-      setRecordingElapsed(Math.floor((Date.now() - recordingStartedAt) / 1000));
-    }, 250);
-    return () => window.clearInterval(timer);
-  }, [isRecording, recordingStartedAt]);
-
-  useEffect(() => {
     if (!activeConversation) return;
     const socket = getSocket('/social');
     const peerId = activeConversation.peer.id;
@@ -2543,64 +2402,6 @@ function ChatsTab({
     if (!file) return;
     await addAttachment(file);
     e.target.value = '';
-  }
-
-  async function toggleVoiceRecording() {
-    if (isRecording) {
-      recorderRef.current?.stop();
-      setIsRecording(false);
-      return;
-    }
-
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setError('Tu navegador no soporta grabar notas de voz.');
-      return;
-    }
-
-    try {
-      if (!window.isSecureContext) {
-        setError('La grabacion de voz necesita un contexto seguro. Usa localhost o HTTPS.');
-        return;
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const [track] = stream.getAudioTracks();
-      const settings = track?.getSettings?.();
-      if (track && settings) {
-        await track.applyConstraints({
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        }).catch(() => undefined);
-      }
-      const mimeType = getSupportedVoiceMimeType();
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      recordedChunksRef.current = [];
-      streamRef.current = stream;
-      recorderRef.current = recorder;
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) recordedChunksRef.current.push(event.data);
-      };
-      recorder.onstop = async () => {
-        const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        stream.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-        recorderRef.current = null;
-        recordedChunksRef.current = [];
-        setRecordingStartedAt(null);
-        setRecordingElapsed(0);
-        if (blob.size > 0) {
-          const extension = getVoiceFileExtension(blob.type || mimeType);
-          await addAttachment(new File([blob], `nota-de-voz-${Date.now()}.${extension}`, { type: blob.type || mimeType || 'audio/webm' }));
-        }
-      };
-      recorder.start();
-      setIsRecording(true);
-      setRecordingStartedAt(Date.now());
-      setRecordingElapsed(0);
-    } catch (err) {
-      setError(getVoiceRecordingErrorMessage(err));
-    }
   }
 
   function removePendingAttachment(index: number) {
