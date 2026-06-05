@@ -247,6 +247,22 @@ export default function ChatConversation({
   const canWrite = Boolean(conversation.canReply || conversation.canSendIntro);
   const peerId = conversation.peer.id;
 
+  /* --- Auto-focus the input when the conversation opens --- */
+  useEffect(() => {
+    if (canWrite) {
+      /* Small delay to let the DOM settle */
+      const t = setTimeout(() => composerInputRef.current?.focus(), 100);
+      return () => clearTimeout(t);
+    }
+  }, [conversation.id, canWrite]);
+
+  /* --- Keep focus after sending (re-focus after React re-render) --- */
+  useEffect(() => {
+    if (!sending && composer === '' && canWrite) {
+      composerInputRef.current?.focus();
+    }
+  }, [sending, composer, canWrite]);
+
   /* --- Check if peer is blocked --- */
   useEffect(() => {
     async function checkBlocked() {
