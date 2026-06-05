@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../../common/guards/auth.guards';
 import { CurrentUser, AuthUser } from '../../common/decorators/auth.decorators';
 import { ImageService } from '../../common/pipes/image.service';
 import { PostsService } from './posts.service';
+import { convertAudioForPlayback } from '../../common/audio-converter';
 
 @Controller('posts')
 @UseGuards(JwtAuthGuard)
@@ -32,7 +33,7 @@ export class PostsController {
       return { attachment: null };
     }
 
-    // Si es audio, guardar raw
+    // Si es audio, guardar raw y convertir para compatibilidad
     if (file.mimetype.startsWith('audio/')) {
       const { writeFile, mkdir } = require('fs/promises');
       const { join } = require('path');
@@ -42,13 +43,23 @@ export class PostsController {
       const filename = `${randomUUID()}${ext}`;
       const dir = join(process.cwd(), 'uploads', 'posts');
       await mkdir(dir, { recursive: true });
-      await writeFile(join(dir, filename), file.buffer);
+      const fullPath = join(dir, filename);
+      await writeFile(fullPath, file.buffer);
+
+      // Convertir fMP4 a WebM para compatibilidad cross-browser
+      let finalFilename = filename;
+      const webmFilename = filename.replace(/\.(m4a|mp4)$/i, '.webm');
+      if (webmFilename !== filename) {
+        await convertAudioForPlayback(fullPath);
+        finalFilename = webmFilename;
+      }
+
       return {
         attachment: {
           kind: 'voice',
-          url: `/uploads/posts/${filename}`,
-          mimeType: file.mimetype,
-          fileName: file.originalname,
+          url: `/uploads/posts/${finalFilename}`,
+          mimeType: 'audio/webm;codecs=opus',
+          fileName: finalFilename,
           size: file.size,
         },
       };
