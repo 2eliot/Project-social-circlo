@@ -315,15 +315,18 @@ export class DirectMessagesService {
         const bodyText = message.content
           ? message.content.substring(0, 120)
           : 'Te envió un archivo';
+        const authorAvatar = message.author?.avatarUrl ?? null;
         for (const sub of subscriptions) {
           this.pushNotifications.sendPushNotification(sub, {
             title: authorName,
             body: bodyText,
+            image: authorAvatar || undefined,
             data: {
               type: 'dm',
               conversationId,
               messageId: message.id,
               authorId: userId,
+              url: `/app/dm/${conversationId}`,
             },
             tag: `dm-${conversationId}`,
           }).catch((err) => this.logger.error(`Push send error: ${err.message}`));

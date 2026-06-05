@@ -32,7 +32,15 @@ export class PushNotificationsService {
 
   async sendPushNotification(
     subscription: PushSubscription,
-    payload: { title: string; body: string; icon?: string; badge?: string; data?: Record<string, unknown>; tag?: string },
+    payload: {
+      title: string;
+      body: string;
+      icon?: string;
+      badge?: string;
+      image?: string;
+      data?: Record<string, unknown>;
+      tag?: string;
+    },
   ): Promise<boolean> {
     try {
       const pushSubscription = {
@@ -48,11 +56,14 @@ export class PushNotificationsService {
         JSON.stringify({
           title: payload.title,
           body: payload.body,
-          icon: payload.icon || '/icons/icon-192x192.png',
-          badge: payload.badge || '/icons/icon-192x192.png',
+          icon: payload.icon || '/icons/icon.svg',
+          badge: payload.badge || '/icons/icon.svg',
+          image: payload.image || undefined,
           data: payload.data || {},
-          tag: payload.tag || 'default',
+          tag: payload.tag || 'dm',
           vibrate: [200, 100, 200],
+          requireInteraction: true,
+          timestamp: Date.now(),
         }),
       );
 

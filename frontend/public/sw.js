@@ -127,12 +127,15 @@ self.addEventListener('push', (event) => {
 	const title = data.title || 'Social Circle';
 	const options = {
 		body: data.body || '',
-		icon: '/icons/icon.svg',
-		badge: '/icons/icon.svg',
+		icon: data.icon || '/icons/icon.svg',
+		badge: data.badge || '/icons/icon.svg',
+		image: data.image || undefined,
 		data: data.data || {},
 		actions: data.actions || [],
-		vibrate: [200, 100, 200],
-		requireInteraction: true,
+		vibrate: data.vibrate || [200, 100, 200],
+		requireInteraction: data.requireInteraction !== false,
+		timestamp: data.timestamp || Date.now(),
+		tag: data.tag || 'dm',
 	};
 
 	event.waitUntil(self.registration.showNotification(title, options));
