@@ -43,6 +43,12 @@ async function bootstrap() {
       if (path.endsWith('.webm')) {
         res.setHeader('Content-Type', 'audio/webm');
       }
+      if (path.endsWith('.m4a') || path.endsWith('.mp4')) {
+        res.setHeader('Content-Type', 'audio/mp4');
+      }
+      if (path.endsWith('.ogg')) {
+        res.setHeader('Content-Type', 'audio/ogg');
+      }
     },
   }));
 
