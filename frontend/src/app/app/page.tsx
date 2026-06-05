@@ -300,8 +300,18 @@ export default function AppHome() {
     }
   }
 
+  async function refreshUnreadDmsCount() {
+    try {
+      const payload = await api<{ count: number }>('/dm/unread-count');
+      setUnreadDmsCount(payload.count);
+    } catch {
+      /* keep current count */
+    }
+  }
+
   useEffect(() => {
     void refreshPendingChatsCount();
+    void refreshUnreadDmsCount();
   }, []);
 
   useEffect(() => {
@@ -344,18 +354,21 @@ export default function AppHome() {
       if (tabRef.current !== 'chats' || selectedConvRef.current !== payload.conversationId) {
         setUnreadDmsCount((c) => c + 1);
       }
-      const preview = getConversationPreview({
-        content: payload.content ?? '',
-        createdAt: new Date().toISOString(),
-        authorId: payload.authorId,
-        attachments: payload.attachments,
-      }) || 'Te llego un mensaje nuevo';
-      setLiveDmNotice({
-        conversationId: payload.conversationId,
-        authorDisplayName: payload.authorDisplayName ?? 'Nuevo mensaje',
-        authorAvatarUrl: payload.authorAvatarUrl ?? null,
-        preview,
-      });
+      /* Solo mostrar popup si NO estamos en la pestaña chats */
+      if (tabRef.current !== 'chats') {
+        const preview = getConversationPreview({
+          content: payload.content ?? '',
+          createdAt: new Date().toISOString(),
+          authorId: payload.authorId,
+          attachments: payload.attachments,
+        }) || 'Te llego un mensaje nuevo';
+        setLiveDmNotice({
+          conversationId: payload.conversationId,
+          authorDisplayName: payload.authorDisplayName ?? 'Nuevo mensaje',
+          authorAvatarUrl: payload.authorAvatarUrl ?? null,
+          preview,
+        });
+      }
     };
 
     const onNotification = (payload: NotificationItem) => {
@@ -371,9 +384,18 @@ export default function AppHome() {
 
     socket.on('dm_message_new', onDmMessage);
     socket.on('notification_new', onNotification);
+
+    /* Refrescar contadores al reconectar */
+    const onConnect = () => {
+      void refreshPendingChatsCount();
+      void refreshUnreadDmsCount();
+    };
+    socket.on('connect', onConnect);
+
     return () => {
       socket.off('dm_message_new', onDmMessage);
       socket.off('notification_new', onNotification);
+      socket.off('connect', onConnect);
     };
   }, [user?.id]);
 

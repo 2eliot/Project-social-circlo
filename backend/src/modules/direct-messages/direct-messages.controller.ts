@@ -20,6 +20,11 @@ export class DirectMessagesController {
     return this.service.listConversations(user.id);
   }
 
+  @Get('unread-count')
+  unreadCount(@CurrentUser() user: AuthUser) {
+    return this.service.unreadCount(user.id);
+  }
+
   @Get(':conversationId')
   getConversation(@CurrentUser() user: AuthUser, @Param('conversationId', ParseUUIDPipe) conversationId: string) {
     return this.service.getConversation(user.id, conversationId);

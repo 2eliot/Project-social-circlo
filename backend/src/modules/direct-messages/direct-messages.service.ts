@@ -374,6 +374,42 @@ export class DirectMessagesService {
     return { ok: true };
   }
 
+  async unreadCount(userId: string) {
+    const blockedRows = await this.prisma.userBlock.findMany({
+      where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+      select: { blockerId: true, blockedId: true },
+    });
+    const blockedIds = blockedRows.map((row) => (row.blockerId === userId ? row.blockedId : row.blockerId));
+
+    const conversations = await this.prisma.directConversation.findMany({
+      where: {
+        OR: [{ userAId: userId }, { userBId: userId }],
+        status: 'ACCEPTED',
+      },
+      include: {
+        messages: {
+          where: { deletedAt: null, status: 'PUBLISHED', hiddenFor: { none: { userId } } },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { authorId: true },
+        },
+      },
+    });
+
+    let count = 0;
+    for (const conv of conversations) {
+      const peerId = conv.userAId === userId ? conv.userBId : conv.userAId;
+      if (blockedIds.includes(peerId)) continue;
+      if (conv.userAId === userId && conv.userAHiddenAt) continue;
+      if (conv.userBId === userId && conv.userBHiddenAt) continue;
+      const lastMessage = conv.messages[0];
+      if (lastMessage && lastMessage.authorId !== userId) {
+        count++;
+      }
+    }
+    return { count };
+  }
+
   private async assertParticipant(userId: string, conversationId: string) {
     const conv = await this.prisma.directConversation.findUnique({ where: { id: conversationId } });
     if (!conv || (conv.userAId !== userId && conv.userBId !== userId)) {
