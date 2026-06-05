@@ -793,7 +793,9 @@ export default function ChatConversation({
             ref={composerInputRef}
             type="text"
             inputMode="text"
-            autoComplete="off"
+            autoComplete="nope"
+            data-form-type="other"
+            name="chatmsg"
             value={composer}
             onChange={(e) => onComposerChange(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendMessage(); } }}
