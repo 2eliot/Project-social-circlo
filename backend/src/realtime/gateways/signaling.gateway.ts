@@ -84,7 +84,9 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
   }
 
   private closeSocketResources(socket: SignalingSocket) {
-    if (!socket.data) return;
+    // Socket.IO default socket.data is {} — check consumers is a Map before
+    // iterating, in case handleDisconnect fires before handleConnection finishes.
+    if (!socket.data || !(socket.data.consumers instanceof Map)) return;
     for (const consumer of socket.data.consumers.values()) {
       try { consumer.close(); } catch { /* ignore */ }
     }
