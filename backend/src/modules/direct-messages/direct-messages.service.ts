@@ -1,13 +1,19 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/database/prisma.module';
 import { RealtimeEventsService } from '../../realtime/realtime-events.service';
+import { PresenceService } from '../../infrastructure/redis/redis.module';
+import { PushNotificationsService } from '../push-notifications/push-notifications.service';
 
 @Injectable()
 export class DirectMessagesService {
+  private readonly logger = new Logger(DirectMessagesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtimeEvents: RealtimeEventsService,
+    private readonly presence: PresenceService,
+    private readonly pushNotifications: PushNotificationsService,
   ) {}
 
   private async assertNotBlocked(meId: string, peerId: string) {
@@ -297,6 +303,35 @@ export class DirectMessagesService {
       parentId: parentMessageId,
       parent: message.parent,
     });
+
+    // Send push notification if peer is offline
+    const peerOnline = await this.presence.isOnline(peerId);
+    if (!peerOnline) {
+      try {
+        const subscriptions = await this.prisma.pushSubscription.findMany({
+          where: { userId: peerId },
+        });
+        const authorName = message.author?.displayName ?? 'Usuario';
+        const bodyText = message.content
+          ? message.content.substring(0, 120)
+          : 'Te envió un archivo';
+        for (const sub of subscriptions) {
+          this.pushNotifications.sendPushNotification(sub, {
+            title: authorName,
+            body: bodyText,
+            data: {
+              type: 'dm',
+              conversationId,
+              messageId: message.id,
+              authorId: userId,
+            },
+            tag: `dm-${conversationId}`,
+          }).catch((err) => this.logger.error(`Push send error: ${err.message}`));
+        }
+      } catch (err: any) {
+        this.logger.error(`Failed to send push notifications: ${err.message}`);
+      }
+    }
 
     return message;
   }

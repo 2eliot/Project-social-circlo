@@ -314,6 +314,18 @@ export default function AppHome() {
     void refreshUnreadDmsCount();
   }, []);
 
+  /* Refrescar contadores cuando la app vuelve a primer plano (ej. desde multitarea) */
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshPendingChatsCount();
+        void refreshUnreadDmsCount();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
   useEffect(() => {
     const nextProfileUserId = searchParams.get('profileUserId');
     if (nextProfileUserId) {

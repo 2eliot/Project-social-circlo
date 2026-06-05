@@ -48,6 +48,7 @@ model User {
   user_notifications_user_notifications_user_idTousers       user_notifications[]  @relation("user_notifications_user_idTousers")
   reputationReceived                                         UserReputation[]      @relation("TargetReputation")
   reputationVotes                                            UserReputation[]      @relation("VoterReputation")
+  pushSubscriptions                                          PushSubscription[]
 
   @@index([globalRole])
   @@map("users")
@@ -331,6 +332,21 @@ model user_notifications {
 
   @@index([user_id, created_at(sort: Desc)], map: "idx_user_notifications_user_created")
   @@index([user_id, is_read], map: "idx_user_notifications_user_unread")
+}
+
+model PushSubscription {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  endpoint  String   @db.Text
+  p256dh    String   @db.Text
+  auth      String   @db.Text
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, endpoint])
+  @@index([userId])
+  @@map("push_subscriptions")
 }
 
 enum GlobalRole {
