@@ -908,22 +908,26 @@ function VoiceBubble({ attachment, src, mine }: { attachment: DMAttachment; src:
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(attachment.durationSeconds ?? 0);
 
-  useEffect(() => {
-    const audio = new Audio(src);
-    audioRef.current = audio;
-    audio.preload = 'metadata';
-    audio.onloadedmetadata = () => { if (audio.duration && isFinite(audio.duration)) setDuration(audio.duration); };
-    audio.ontimeupdate = () => setCurrentTime(audio.currentTime);
-    audio.onended = () => { setPlaying(false); setCurrentTime(0); };
-    return () => { audio.pause(); audioRef.current = null; };
-  }, [src]);
-
   function togglePlay() {
     const audio = audioRef.current;
     if (!audio) return;
     if (playing) { audio.pause(); setPlaying(false); return; }
     setPlaying(true);
-    audio.play().catch(() => setPlaying(false));
+    audio.play().catch(() => { setPlaying(false); });
+  }
+
+  function onTimeUpdate() {
+    if (audioRef.current) setCurrentTime(audioRef.current.currentTime);
+  }
+
+  function onLoadedMetadata() {
+    const audio = audioRef.current;
+    if (audio && audio.duration && isFinite(audio.duration)) setDuration(audio.duration);
+  }
+
+  function onEnded() {
+    setPlaying(false);
+    setCurrentTime(0);
   }
 
   const progress = duration > 0 ? currentTime / duration : 0;
@@ -932,6 +936,8 @@ function VoiceBubble({ attachment, src, mine }: { attachment: DMAttachment; src:
   return (
     <div className={`relative max-w-[75vw] ${mine ? 'rounded-2xl rounded-br-lg bg-gradient-to-br from-[#7b43ff] to-[#5d27ff]' : 'rounded-2xl rounded-bl-lg bg-gradient-to-b from-[#161826] to-[#101220] border border-white/[0.055]'}`}
       style={{ padding: mine ? '8px 10px 10px 11px' : '8px 14px 10px 12px' }}>
+      <audio ref={audioRef} src={src} preload="metadata"
+        onTimeUpdate={onTimeUpdate} onLoadedMetadata={onLoadedMetadata} onEnded={onEnded} />
       {/* Play + time */}
       <div className="flex items-center mb-1.5">
         <button type="button" onClick={togglePlay}
