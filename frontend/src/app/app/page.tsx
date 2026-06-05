@@ -473,7 +473,7 @@ export default function AppHome() {
       {liveDmNotice ? (
         <button
           type="button"
-          className="mx-auto mt-3 flex w-[min(392px,calc(100%-42px))] items-center gap-3 rounded-[22px] border border-[#8fffe7]/16 bg-[rgba(18,24,34,.88)] px-3 py-3 text-left shadow-[0_16px_32px_rgba(0,0,0,.3)] backdrop-blur-[18px]"
+          className="fixed left-1/2 -translate-x-1/2 top-[72px] z-50 flex w-[min(392px,calc(100%-42px))] items-center gap-3 rounded-[22px] border border-[#8fffe7]/16 bg-[rgba(18,24,34,.88)] px-3 py-3 text-left shadow-[0_16px_32px_rgba(0,0,0,.3)] backdrop-blur-[18px]"
           onClick={() => {
             handleOpenConversation(liveDmNotice.conversationId);
             setLiveDmNotice(null);
@@ -491,7 +491,7 @@ export default function AppHome() {
       {liveInteractionNotice ? (
         <button
           type="button"
-          className="mx-auto mt-3 flex w-[min(392px,calc(100%-42px))] items-center gap-3 rounded-[22px] border border-[#ffe08c]/16 bg-[rgba(28,24,18,.88)] px-3 py-3 text-left shadow-[0_16px_32px_rgba(0,0,0,.3)] backdrop-blur-[18px]"
+          className="fixed left-1/2 -translate-x-1/2 top-[72px] z-50 flex w-[min(392px,calc(100%-42px))] items-center gap-3 rounded-[22px] border border-[#ffe08c]/16 bg-[rgba(28,24,18,.88)] px-3 py-3 text-left shadow-[0_16px_32px_rgba(0,0,0,.3)] backdrop-blur-[18px]"
           onClick={() => {
             setTab('feed');
             setLiveInteractionNotice(null);

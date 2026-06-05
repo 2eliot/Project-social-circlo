@@ -122,6 +122,14 @@ function EmojiPicker({
     return () => clearTimeout(t);
   }, []);
 
+  /* If the picker would be near the bottom of the viewport (under the composer),
+     reposition it above the bubble instead */
+  const pickerHeight = 56;
+  const composerArea = 80;
+  const topPos = y + pickerHeight + composerArea > window.innerHeight
+    ? Math.max(8, y - 200)
+    : y - 56;
+
   return (
     <>
       {/* Transparent backdrop — ignores taps for the first 300ms so the finger-up doesn't close it */}
@@ -134,7 +142,7 @@ function EmojiPicker({
         className="fixed z-50 flex gap-1 px-2 py-1.5 rounded-2xl shadow-2xl pointer-events-auto"
         style={{
           left: Math.max(8, Math.min(x - 80, window.innerWidth - 220)),
-          top: y - 56,
+          top: topPos,
           background: 'rgba(18,21,37,0.97)',
           border: '1px solid rgba(255,255,255,0.08)',
           backdropFilter: 'blur(12px)',
@@ -229,6 +237,7 @@ export default function ChatConversation({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const composerInputRef = useRef<HTMLInputElement | null>(null);
   const typingTimerRef = useRef<number | null>(null);
   const lastTypingEmitRef = useRef<number>(0);
 
@@ -321,7 +330,11 @@ export default function ChatConversation({
       setComposer(content); setPendingAttachments(attachments); setReplyingTo(replyingTo);
       if (err instanceof ApiError && err.status === 403) { setLocalError('No puedes enviar más mensajes.'); }
       else { setLocalError('No se pudo enviar.'); }
-    } finally { setSending(false); }
+    } finally {
+      setSending(false);
+      /* Re-focus the composer input so the user can keep typing without re-clicking */
+      composerInputRef.current?.focus();
+    }
   }
 
   function onComposerChange(value: string) {
@@ -746,6 +759,7 @@ export default function ChatConversation({
         {/* Text input */}
         <div className="flex-1 h-9 rounded-xl bg-[#121524] border border-white/[0.055] flex items-center px-3 mr-1.5">
           <input
+            ref={composerInputRef}
             type="text"
             value={composer}
             onChange={(e) => onComposerChange(e.target.value)}
