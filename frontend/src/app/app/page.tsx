@@ -467,8 +467,9 @@ export default function AppHome() {
   function handleSelectTab(nextTab: Tab) {
     setTab(nextTab);
     if (nextTab === 'chats') {
+      // Al entrar a chats, ya "viste" todo — limpiar ambos badges
       setUnreadDmsCount(0);
-      void refreshPendingChatsCount();
+      setPendingChatsCount(0);
     }
     if (nextTab === 'profile') {
       setProfileUserId(user?.id ?? null);
@@ -491,8 +492,9 @@ export default function AppHome() {
     router.push('/app?tab=chats');
     setSelectedConversationId(conversationId);
     setConversationRefreshToken((current) => current + 1);
-    void refreshPendingChatsCount();
+    // Al abrir una conversación directamente, ya "viste" todo
     setUnreadDmsCount(0);
+    setPendingChatsCount(0);
   }
 
   function handleConversationChanged() {

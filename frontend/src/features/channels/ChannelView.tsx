@@ -1082,7 +1082,7 @@ function ChannelEmojiPicker({
     ? undefined
     : Math.max(8, Math.min(x - 80, maxRight));
   const rightPos = mine
-    ? Math.max(8, window.innerWidth - x - 10)
+    ? Math.min(Math.max(8, window.innerWidth - x - 10), maxRight)
     : undefined;
 
   function handleDelete() {
