@@ -80,7 +80,6 @@ export class ImageService {
       // Aplicar optimización según formato
       switch (outputFormat) {
         case 'jpeg':
-        case 'jpg':
           pipeline = pipeline.jpeg({ quality, mozjpeg: true });
           break;
         case 'png':
