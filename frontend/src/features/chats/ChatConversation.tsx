@@ -124,8 +124,9 @@ function EmojiPicker({
     return () => clearTimeout(t);
   }, []);
 
-  /* Ensure the picker NEVER renders below the composer area */
+  /* Ensure the picker NEVER renders below the composer area or off-screen */
   const PICKER_H = 56;
+  const PICKER_W = 250; /* 5 emojis × 40px + gaps + padding */
   const COMPOSER_H = 52; /* footer (48px) + gap */
   const maxTop = window.innerHeight - PICKER_H - COMPOSER_H;
   const topPos = Math.min(
@@ -134,6 +135,15 @@ function EmojiPicker({
       : y - 56,
     maxTop,
   );
+
+  /* Keep picker fully inside the viewport horizontally */
+  const maxRight = window.innerWidth - PICKER_W - 8;
+  const leftPos = mine
+    ? undefined
+    : Math.max(8, Math.min(x - 80, maxRight));
+  const rightPos = mine
+    ? Math.max(8, window.innerWidth - x - 10)
+    : undefined;
 
   return (
     <>
@@ -147,8 +157,8 @@ function EmojiPicker({
         className="fixed z-50 flex gap-1 px-2 py-1.5 rounded-2xl shadow-2xl pointer-events-auto max-w-[calc(100vw-16px)]"
         style={{
           ...(mine
-            ? { left: 'auto', right: Math.max(8, window.innerWidth - x - 10) }
-            : { right: 'auto', left: Math.max(8, Math.min(x - 80, window.innerWidth - 250)) }
+            ? { left: 'auto', right: rightPos }
+            : { right: 'auto', left: leftPos }
           ),
           top: topPos,
           background: 'rgba(18,21,37,0.97)',

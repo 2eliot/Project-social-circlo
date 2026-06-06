@@ -18,10 +18,10 @@ export interface ImageProcessOptions {
   maxWidth?: number;
   /** Maximum height (default: 1080) */
   maxHeight?: number;
-  /** Quality 1-100 (default: 80) */
+  /** Quality 1-100 (default: 85) */
   quality?: number;
-  /** Output format */
-  format?: 'jpeg' | 'webp' | 'avif';
+  /** Output format (default: 'webp' for best quality/size) */
+  format?: 'jpeg' | 'webp' | 'avif' | 'png';
 }
 
 @Injectable()
@@ -44,7 +44,7 @@ export class ImageService {
 
     const maxWidth = options.maxWidth ?? 1920;
     const maxHeight = options.maxHeight ?? 1080;
-    const quality = options.quality ?? 80;
+    const quality = options.quality ?? 85;
 
     try {
       const image = sharp(file.buffer);
@@ -66,7 +66,7 @@ export class ImageService {
       }
 
       // Determinar formato de salida
-      const outputFormat = options.format || metadata.format || 'jpeg';
+      const outputFormat = options.format || 'webp';
       const ext = outputFormat === 'jpeg' ? '.jpg' : `.${outputFormat}`;
       const filename = `${randomUUID()}${ext}`;
       const mimeMap: Record<string, string> = {

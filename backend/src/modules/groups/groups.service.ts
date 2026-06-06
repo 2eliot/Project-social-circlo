@@ -539,16 +539,22 @@ export class GroupsService implements OnModuleInit {
     }
 
     if (input.action === 'BAN' || input.action === 'PERMABAN') {
-      await this.prisma.groupMember.update({
+      if (memberUserId === group.ownerId) {
+        throw new ForbiddenException('Cannot ban the group owner');
+      }
+
+      // Delete membership completely — no "ghost" members
+      await this.prisma.groupMember.delete({
         where: { groupId_userId: { groupId, userId: memberUserId } },
-        data: { isBanned: true },
       });
     }
 
     if (input.action === 'UNBAN') {
-      await this.prisma.groupMember.update({
+      // Re-insert membership on unban (since BAN now deletes it)
+      await this.prisma.groupMember.upsert({
         where: { groupId_userId: { groupId, userId: memberUserId } },
-        data: { isBanned: false, role: 'GROUP_MEMBER', joinedAt: new Date() },
+        create: { groupId, userId: memberUserId, role: 'GROUP_MEMBER', isBanned: false },
+        update: { isBanned: false, role: 'GROUP_MEMBER', joinedAt: new Date() },
       });
     }
 

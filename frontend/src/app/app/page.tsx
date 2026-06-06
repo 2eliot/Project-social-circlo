@@ -319,7 +319,7 @@ export default function AppHome() {
     const onVisibility = () => {
       if (document.visibilityState === 'visible') {
         void refreshPendingChatsCount();
-        void refreshUnreadDmsCount();
+        /* No refrescar unreadDmsCount — el backend no trackea "leídos" y volvería a marcar viejos */
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
@@ -400,7 +400,6 @@ export default function AppHome() {
     /* Refrescar contadores al reconectar */
     const onConnect = () => {
       void refreshPendingChatsCount();
-      void refreshUnreadDmsCount();
     };
     socket.on('connect', onConnect);
 
