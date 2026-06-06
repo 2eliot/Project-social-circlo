@@ -3,6 +3,10 @@
 @tailwind utilities;
 
 html, body { height: 100%; }
+/* Use dynamic viewport height on mobile so keyboard doesn't push content out */
+@supports (height: 100dvh) {
+  html, body { height: 100dvh; }
+}
 body {
   background: #060713;
   color: #e5e7eb;

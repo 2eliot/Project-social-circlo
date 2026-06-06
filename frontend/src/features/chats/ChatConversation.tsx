@@ -253,7 +253,7 @@ export default function ChatConversation({
   const canWrite = Boolean(conversation.canReply || conversation.canSendIntro);
   const peerId = conversation.peer.id;
 
-  /* --- Mobile keyboard: keep composer above keyboard (visualViewport) --- */
+  /* --- Mobile keyboard: keep composer flush with keyboard top --- */
   useEffect(() => {
     const onResize = () => {
       const vv = window.visualViewport;
@@ -262,7 +262,10 @@ export default function ChatConversation({
       if (!root) return;
       const keyboardH = window.innerHeight - vv.height;
       if (keyboardH > 80) {
-        root.style.height = `${vv.height}px`;
+        // Available height = visual viewport height minus root's visual offset from top
+        const rootTop = root.getBoundingClientRect().top;
+        const availableH = Math.max(0, vv.height - rootTop);
+        root.style.height = `${availableH}px`;
         if (messagesContainerRef.current) {
           messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
         }
