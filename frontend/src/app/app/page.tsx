@@ -310,16 +310,15 @@ export default function AppHome() {
   }
 
   useEffect(() => {
-    void refreshPendingChatsCount();
-    void refreshUnreadDmsCount();
+    // No refrescar del backend — pendingChatsCount y unreadDmsCount solo se
+    // incrementan por eventos socket en tiempo real y se limpian al ver los chats.
   }, []);
 
   /* Refrescar contadores cuando la app vuelve a primer plano (ej. desde multitarea) */
   useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState === 'visible') {
-        void refreshPendingChatsCount();
-        /* No refrescar unreadDmsCount — el backend no trackea "leídos" y volvería a marcar viejos */
+        // No refrescar counts del backend — solo socket events los incrementan
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
@@ -358,13 +357,14 @@ export default function AppHome() {
       attachments?: DMAttachment[];
     }) => {
       if (!payload || payload.authorId === user.id) return;
-      void refreshPendingChatsCount();
-      /* Solo refrescar si NO estamos en la pestaña chats (ChatsTab/ChatsView manejan por socket) */
+      /* Incrementar contadores solo si NO estamos viendo esa conversación */
+      if (tabRef.current !== 'chats' || selectedConvRef.current !== payload.conversationId) {
+        setPendingChatsCount((c) => c + 1);
+        setUnreadDmsCount((c) => c + 1);
+      }
+      /* Refrescar lista de chats si no estamos en la pestaña chats */
       if (tabRef.current !== 'chats') {
         setConversationRefreshToken((current) => current + 1);
-      }
-      if (tabRef.current !== 'chats' || selectedConvRef.current !== payload.conversationId) {
-        setUnreadDmsCount((c) => c + 1);
       }
       /* Solo mostrar popup si NO estamos en la pestaña chats */
       if (tabRef.current !== 'chats') {
@@ -399,7 +399,7 @@ export default function AppHome() {
 
     /* Refrescar contadores al reconectar */
     const onConnect = () => {
-      void refreshPendingChatsCount();
+      // No refrescar del backend — solo socket events incrementan los contadores
     };
     socket.on('connect', onConnect);
 
