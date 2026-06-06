@@ -27,13 +27,6 @@ type GroupMemberRole = 'GROUP_ADMIN' | 'GROUP_MODERATOR' | 'GROUP_MEMBER';
 
 type MessageAttachment = { kind?: string; url?: string; fileName?: string | null; mimeType?: string | null; size?: number | null };
 
-const QUICK_EMOJIS = ['😀', '😂', '🔥', '💯', '🎉', '🙏', '😎', '❤️'];
-const STICKER_LIBRARY: Array<{ id: string; label: string; url: string }> = [
-  { id: 'burst-heart', label: 'Heart', url: '/stickers/burst-heart.svg' },
-  { id: 'cosmic-cat', label: 'Cat', url: '/stickers/cosmic-cat.svg' },
-  { id: 'wow-star', label: 'Star', url: '/stickers/wow-star.svg' },
-];
-
 type VoiceHeroMember = { id: string; displayName: string; avatarUrl: string | null; micMuted: boolean; isSpeaker: boolean; isSelf: boolean };
 
 export function ChannelView({ channel, minimal = false, showComposer = true, showVoiceControls = false, canToggleVoice = false, voiceEnabled = true, voiceBusy = false, onToggleVoice, canJoinVoice = false, voiceJoined = false, voiceJoinBusy = false, voiceRequestPending = false, onVoiceJoinAction, voiceChannelId, onMicMutedChange, memberRoles, canManageMembers = false, onToggleMemberMenu, onOpenProfile, voiceHeroMembers, canAssignRoles = false, bannerUrl, isMember = true, joinBusy = false, onJoinGroup, onLeaveGroup }: { channel: Channel; minimal?: boolean; showComposer?: boolean; showVoiceControls?: boolean; canToggleVoice?: boolean; voiceEnabled?: boolean; voiceBusy?: boolean; onToggleVoice?: () => void; canJoinVoice?: boolean; voiceJoined?: boolean; voiceJoinBusy?: boolean; voiceRequestPending?: boolean; onVoiceJoinAction?: () => void; voiceChannelId?: string; onMicMutedChange?: (muted: boolean) => void; memberRoles?: Record<string, GroupMemberRole>; canManageMembers?: boolean; onToggleMemberMenu?: (memberId: string) => void; onOpenProfile?: (userId: string) => void; voiceHeroMembers?: VoiceHeroMember[]; canAssignRoles?: boolean; bannerUrl?: string | null; isMember?: boolean; joinBusy?: boolean; onJoinGroup?: () => void; onLeaveGroup?: () => void }) {
@@ -53,8 +46,6 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
   const [micMuted, setMicMuted] = useState(true);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
-  const [emojiOpen, setEmojiOpen] = useState(false);
-  const [stickerOpen, setStickerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [swipingMessageId, setSwipingMessageId] = useState<string | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
@@ -338,8 +329,6 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
     setInput('');
     setReplyingTo(null);
     setPendingAttachments([]);
-    setEmojiOpen(false);
-    setStickerOpen(false);
   }
 
   const isAdminOrCoA = user?.id ? (memberRoles?.[user.id] === 'GROUP_ADMIN' || memberRoles?.[user.id] === 'GROUP_MODERATOR') : false;
@@ -733,24 +722,6 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
             </button>
           ) : null}
 
-          {/* Emoji */}
-          <button type="button" disabled={uploading}
-            onClick={() => { setEmojiOpen((c) => !c); setStickerOpen(false); }}
-            className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#111426] border border-white/[0.035] text-[#c7b5ff] cursor-pointer shrink-0 mr-1.5 disabled:opacity-40"
-          >
-            <span className="text-[15px]">🙂</span>
-          </button>
-
-          {/* Sticker */}
-          <button type="button" disabled={uploading}
-            onClick={() => { setStickerOpen((c) => !c); setEmojiOpen(false); }}
-            className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#111426] border border-white/[0.035] text-[#c7b5ff] cursor-pointer shrink-0 mr-1.5 disabled:opacity-40"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14 2 9.27l6.91-1.01L12 2z" />
-            </svg>
-          </button>
-
           {/* Text input */}
           <div className="flex-1 h-9 rounded-xl bg-[#121524] border border-white/[0.055] flex items-center px-3 mr-1.5">
             <input
@@ -780,31 +751,6 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
           </button>
         </footer>
       ) : null}
-
-      {/* ===== EMOJI PANEL ===== */}
-      {emojiOpen && (
-        <div className="flex flex-wrap gap-2 px-3 py-2 bg-[#0e1021]/95 rounded-xl border border-white/[0.05] z-9 shrink-0 mx-3 mb-1.5">
-          {QUICK_EMOJIS.map((emoji) => (
-            <button key={emoji} type="button" onClick={() => { setInput((c) => c + emoji); setEmojiOpen(false); }}
-              className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-sm hover:bg-white/10">
-              {emoji}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* ===== STICKER PANEL ===== */}
-      {stickerOpen && (
-        <div className="flex gap-2 px-3 py-2 bg-[#0e1021]/95 rounded-xl border border-white/[0.05] z-9 shrink-0 mx-3 mb-1.5 overflow-x-auto scroll-snap-x">
-          {STICKER_LIBRARY.map((sticker) => (
-            <button key={sticker.id} type="button"
-              onClick={() => { setPendingAttachments((c) => [...c, { kind: 'sticker', url: sticker.url, fileName: sticker.label }].slice(0, 4)); setStickerOpen(false); }}
-              className="overflow-hidden rounded-[14px] border border-white/10 bg-white/5 shrink-0">
-              <img src={sticker.url} alt={sticker.label} className="h-[72px] w-[72px] object-cover" />
-            </button>
-          ))}
-        </div>
-      )}
 
       {uploading ? <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-white/40 px-3 pb-1 shrink-0">Subiendo imagen...</div> : null}
 
