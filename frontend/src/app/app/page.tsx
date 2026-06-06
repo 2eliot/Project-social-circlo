@@ -109,7 +109,7 @@ type Group = {
   iconUrl?: string | null;
   bannerUrl?: string | null;
   ownerId: string;
-  owner?: { id: string; displayName: string; avatarUrl?: string | null };
+  owner?: { id: string; displayName: string; avatarUrl?: string | null; reputationLikes?: number; reputationDislikes?: number };
   memberCount?: number;
   bannedCount?: number;
   moderatorsCount?: number;
@@ -469,6 +469,7 @@ export default function AppHome() {
     setTab(nextTab);
     if (nextTab === 'chats') {
       setUnreadDmsCount(0);
+      void refreshPendingChatsCount();
     }
     if (nextTab === 'profile') {
       setProfileUserId(user?.id ?? null);
@@ -768,21 +769,23 @@ function TopBar({ onOpenProfile, currentTab, onlineUserIds }: { onOpenProfile: (
           <div className="greeting-active">{activeFriendsCount > 0 ? `${activeFriendsCount} amigos activos ahora` : 'Conectado'}</div>
         </div>
       </div>
-      <div className="app-topbar-actions">
-        <button className="icon-btn relative" aria-label="Notificaciones" onClick={() => void toggleNotifications()}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
-            <path d="M12 4a4 4 0 00-4 4v2.4c0 .72-.2 1.42-.58 2.03L6 15h12l-1.42-2.57a4.04 4.04 0 01-.58-2.03V8a4 4 0 00-4-4z" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M10 18a2 2 0 004 0" strokeLinecap="round" />
-          </svg>
-          {unreadNotifications > 0 ? <span className="absolute -right-0.5 -top-0.5 min-w-[16px] rounded-full bg-[#4d26b3] px-1 py-0.5 text-[9px] font-bold leading-none text-white">{Math.min(99, unreadNotifications)}</span> : null}
-        </button>
-        <button className="icon-btn" aria-label="Buscar" onClick={() => setOpen(true)}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
-            <circle cx="11" cy="11" r="7" />
-            <path d="M21 21l-4.3-4.3" strokeLinecap="round" />
-          </svg>
-        </button>
-      </div>
+      {currentTab !== 'groups' ? (
+        <div className="app-topbar-actions">
+          <button className="icon-btn relative" aria-label="Notificaciones" onClick={() => void toggleNotifications()}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
+              <path d="M12 4a4 4 0 00-4 4v2.4c0 .72-.2 1.42-.58 2.03L6 15h12l-1.42-2.57a4.04 4.04 0 01-.58-2.03V8a4 4 0 00-4-4z" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M10 18a2 2 0 004 0" strokeLinecap="round" />
+            </svg>
+            {unreadNotifications > 0 ? <span className="absolute -right-0.5 -top-0.5 min-w-[16px] rounded-full bg-[#4d26b3] px-1 py-0.5 text-[9px] font-bold leading-none text-white">{Math.min(99, unreadNotifications)}</span> : null}
+          </button>
+          <button className="icon-btn" aria-label="Buscar" onClick={() => setOpen(true)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M21 21l-4.3-4.3" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+      ) : null}
 
       {notificationsOpen ? (
         <div className="absolute right-3 top-full mt-2 z-50 w-[min(320px,calc(100vw-32px))] max-h-[300px] overflow-y-auto rounded-2xl border border-white/10 bg-[#0e1126]/95 p-2 shadow-2xl backdrop-blur">
@@ -3167,7 +3170,7 @@ function GroupsTab({
   const user = useAuth((state) => state.user);
   const [mine, setMine] = useState<Group[]>([]);
   const [publicGroups, setPublicGroups] = useState<Group[]>([]);
-  const [groupView, setGroupView] = useState<'mine' | 'public'>('mine');
+  const [groupView, setGroupView] = useState<'mine' | 'public'>('public');
   const [createComposerOpen, setCreateComposerOpen] = useState(false);
   const [name, setName] = useState('');
   const [privacy, setPrivacy] = useState<GroupPrivacy>('PRIVATE');
@@ -3462,26 +3465,6 @@ function GroupsTab({
               key={group.id}
               group={group}
               ownerDisplayName={getGroupOwnerLabel(group, user?.displayName)}
-              action={
-                groupView === 'mine' ? (
-                  <div className="flex gap-2">
-                    <Link href={`/app/groups/${group.id}`} className="primary w-full text-center py-3 text-sm">
-                      Abrir
-                    </Link>
-                    {group.ownerId === user?.id ? (
-                      <button className="icon-btn" onClick={() => beginEdit(group)} aria-label={`Editar ${group.name}`}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
-                          <path d="M4 20h4l10-10a2.1 2.1 0 10-4-4L4 16v4z" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </button>
-                    ) : null}
-                  </div>
-                ) : (
-                  <button type="button" className="primary w-full" disabled={joiningId === group.id} onClick={() => void joinGroup(group.id)}>
-                    {joiningId === group.id ? 'Uniendo...' : 'Unirme'}
-                  </button>
-                )
-              }
             />
           ))}
         </div>
@@ -3513,37 +3496,102 @@ function GroupTile({
   ownerDisplayName?: string;
 }) {
   const memberCount = group.memberCount ?? 0;
-  return (
+  const voiceActivity = group.channelSummary?.voice ?? 0;
+  const videoActivity = group.channelSummary?.video ?? 0;
+  const hasActivity = voiceActivity > 0 || videoActivity > 0;
+  const isCinema = videoActivity > 0;
+  const bgUrl = group.iconUrl || group.bannerUrl;
+
+  const card = (
     <div className={`group-card ${featured ? 'group-card--featured' : ''}`}>
-      <div className="group-card__media">
-        {group.iconUrl ? <img src={resolveAttachmentUrl(group.iconUrl)} alt={group.name} className="h-full w-full object-cover" /> : null}
-        <div className="group-card__overlay" />
-        <div className="group-card__halo" />
-      </div>
-      <div className="group-card__content">
-        <div className="group-card__topline">
-          <span className="group-card__privacy">{formatPrivacy(group.privacy)}</span>
-          <span className="group-card__viewers"><EyeTinyIcon /> {memberCount}</span>
+      {/* ── background ── */}
+      {bgUrl ? (
+        <div className="group-card__bg">
+          <img src={resolveMediaUrl(bgUrl)} alt="" />
+          <div className="group-card__bg-overlay" />
         </div>
-        <div className="group-card__body">
-          <div className="group-card__title">{group.name}</div>
-          <div className="group-card__creator">Por: {ownerDisplayName ?? 'admin del grupo'}</div>
-          <div className="group-card__slug">#{group.slug}</div>
-          <div className="group-card__meta">
-            <span>{group.channelSummary?.voice ?? 0} voz</span>
-            <span>{group.channelSummary?.video ?? 0} video</span>
-            <span>{formatGroupRole(group.currentUserRole)}</span>
+      ) : (
+        <div className="group-card__bg">
+          <div className="group-card__bg-overlay" style={{ background: 'linear-gradient(to top, #060713 0%, #0e1126 55%, #141821 100%)' }} />
+        </div>
+      )}
+
+      {/* ── header (privacy + members) ── */}
+      <div className="group-card__header">
+        <span className="group-card__badge group-card__badge--privacy">
+          <ShieldTinyIcon />
+          {formatPrivacy(group.privacy)}
+        </span>
+        <span className="group-card__badge group-card__badge--members">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="h-3 w-3">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="1.8" />
+            <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          {memberCount}
+        </span>
+      </div>
+
+      {/* ── body (title + active status) ── */}
+      <div className="group-card__body">
+        <div className="group-card__title">{group.name}</div>
+        <div className="group-card__active">
+          <span className={`group-card__active-dot ${hasActivity ? '' : 'group-card__active-dot--idle'}`} />
+          {hasActivity
+            ? `${voiceActivity + videoActivity} activo${voiceActivity + videoActivity !== 1 ? 's' : ''} ahora`
+            : 'Sin actividad'}
+        </div>
+      </div>
+
+      {/* ── spacer ── */}
+      <div className="group-card__spacer" />
+
+      {/* ── footer (creator + activity badge) ── */}
+      <div className="group-card__footer">
+        <div className="group-card__creator">
+          <div className="group-card__creator-avatar">
+            {group.owner?.avatarUrl ? (
+              <img src={resolveMediaUrl(group.owner.avatarUrl)} alt="" />
+            ) : (
+              <div className="h-full w-full flex items-center justify-center bg-[#3b228e] text-[11px] font-bold text-white uppercase">
+                {(group.owner?.displayName ?? group.name).charAt(0)}
+              </div>
+            )}
+          </div>
+          <div className="group-card__creator-info">
+            <span className="group-card__creator-name">{ownerDisplayName ?? group.owner?.displayName ?? 'admin'}</span>
+            {group.owner?.reputationLikes !== undefined || group.owner?.reputationDislikes !== undefined ? (
+              <div className="group-card__reputation">
+                <span className="group-card__reputation-label">Rep.</span>
+                <span className="group-card__reputation-likes">👍 {group.owner?.reputationLikes ?? 0}</span>
+                <span className="group-card__reputation-divider">/</span>
+                <span className="group-card__reputation-dislikes">👎 {group.owner?.reputationDislikes ?? 0}</span>
+              </div>
+            ) : null}
           </div>
         </div>
-        <div className="group-card__footer">
-          <div className="group-card__signal">
-            <CrownTinyIcon />
-            <span>{featured ? 'Destacado' : `${group.moderatorsCount ?? 0} staff`}</span>
+
+        {hasActivity ? (
+          <div className={`group-card__activity ${isCinema ? 'group-card__activity--cinema' : ''}`}>
+            {isCinema ? <VideoTinyIcon /> : <MicTinyIcon />}
+            <span>{isCinema ? 'Cine' : 'Voz activa'}</span>
           </div>
-          <div className="group-card__actions">{action ?? <div className="text-xs text-white/45">Abrir grupo</div>}</div>
-        </div>
+        ) : null}
       </div>
+
+      {/* ── action buttons ── */}
+      {action ? (
+        <div className="group-card__actions" onClick={(e) => e.stopPropagation()}>
+          {action}
+        </div>
+      ) : null}
     </div>
+  );
+
+  return (
+    <Link href={`/app/groups/${group.id}`} className="block" style={{ textDecoration: 'none', color: 'inherit' }}>
+      {card}
+    </Link>
   );
 }
 
@@ -3618,7 +3666,7 @@ function VideoTinyIcon() {
 
 function ShieldTinyIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="h-3.5 w-3.5">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="h-3 w-3">
       <path d="M12 3 5.5 5.8v5.7c0 4.2 2.7 7.8 6.5 9.5 3.8-1.7 6.5-5.3 6.5-9.5V5.8L12 3Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );

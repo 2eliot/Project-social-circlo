@@ -66,6 +66,13 @@ export class CbacGuard implements CanActivate {
     const groupId: string | undefined = req.params?.groupId ?? req.body?.groupId;
     if (!groupId) throw new ForbiddenException('Missing group context');
 
+    // Owners always bypass the group role check (they own the group).
+    const group = await this.prisma.group.findFirst({
+      where: { id: groupId, isDeleted: false },
+      select: { ownerId: true },
+    });
+    if (group && group.ownerId === user.id) return true;
+
     const membership = await this.prisma.groupMember.findUnique({
       where: { groupId_userId: { groupId, userId: user.id } },
       select: { role: true, isBanned: true },

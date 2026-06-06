@@ -6,6 +6,8 @@ import type { AuthUser } from '../../common/decorators/auth.decorators';
 import { MessagesService } from '../messages/messages.service';
 import { RealtimeEventsService } from '../../realtime/realtime-events.service';
 
+type GroupOwner = { id: string; displayName: string; avatarUrl: string | null; reputationLikes?: number; reputationDislikes?: number };
+
 type GroupAuditLogRow = {
   id: string;
   action: string;
@@ -109,7 +111,7 @@ export class GroupsService implements OnModuleInit {
       privacy: GroupPrivacy;
       createdAt: Date;
       updatedAt: Date;
-      owner?: { id: string; displayName: string; avatarUrl: string | null };
+      owner?: GroupOwner;
       channels?: Array<{ type: ChannelType; isEnabled: boolean }>;
       members?: Array<{ userId: string; role: GroupRole; isBanned: boolean }>;
     },
@@ -157,7 +159,7 @@ export class GroupsService implements OnModuleInit {
       privacy: GroupPrivacy;
       createdAt: Date;
       updatedAt: Date;
-      owner: { id: string; displayName: string; avatarUrl: string | null };
+      owner: GroupOwner;
       channels: Array<{ id: string; name: string; type: ChannelType; isEnabled: boolean; position: number; sfuRoomId: string | null }>;
       members: Array<{
         userId: string;
@@ -228,7 +230,8 @@ export class GroupsService implements OnModuleInit {
       orderBy: { createdAt: 'desc' },
     });
 
-    return groups.map((group) => this.summarizeGroup(group, userId));
+    const summarized = groups.map((group) => this.summarizeGroup(group, userId));
+    return this.attachOwnerReputation(summarized);
   }
 
   async list(userId: string) {
@@ -249,10 +252,37 @@ export class GroupsService implements OnModuleInit {
       }),
     ]);
 
+    const publicSummarized = publicGroups.map((group) => this.summarizeGroup(group, userId));
     return {
       mine,
-      public: publicGroups.map((group) => this.summarizeGroup(group, userId)),
+      public: await this.attachOwnerReputation(publicSummarized),
     };
+  }
+
+  /** Batch-fetch reputation for all owner IDs and merge into each group's owner */
+  private async attachOwnerReputation<T extends { owner?: { id: string } | null }>(groups: T[]): Promise<T[]> {
+    const ownerIds = [...new Set(groups.map((g) => g.owner?.id).filter(Boolean))] as string[];
+    if (ownerIds.length === 0) return groups;
+
+    const reputationMap = new Map<string, { likes: number; dislikes: number }>();
+    await Promise.all(
+      ownerIds.map(async (ownerId) => {
+        const votes = await this.prisma.$queryRawUnsafe(
+          `SELECT vote_type FROM user_reputation WHERE target_id = $1::uuid`,
+          ownerId,
+        ) as Array<{ vote_type: number }>;
+        const likes = votes.filter((v) => v.vote_type === 1).length;
+        const dislikes = votes.filter((v) => v.vote_type === -1).length;
+        reputationMap.set(ownerId, { likes, dislikes });
+      }),
+    );
+
+    return groups.map((g) => {
+      if (!g.owner) return g;
+      const rep = reputationMap.get(g.owner.id);
+      if (!rep) return g;
+      return { ...g, owner: { ...g.owner, reputationLikes: rep.likes, reputationDislikes: rep.dislikes } };
+    });
   }
 
   async update(
@@ -263,7 +293,7 @@ export class GroupsService implements OnModuleInit {
     const [group, actorMembership] = await Promise.all([
       this.prisma.group.findFirst({
         where: { id: groupId, isDeleted: false },
-        select: { ownerId: true },
+        select: { ownerId: true, name: true, description: true, iconUrl: true, bannerUrl: true, privacy: true },
       }),
       this.prisma.groupMember.findUnique({
         where: { groupId_userId: { groupId, userId } },
@@ -274,6 +304,8 @@ export class GroupsService implements OnModuleInit {
     if (!this.canManageGroupSettings({ actorId: userId, ownerId: group.ownerId, actorMembership })) {
       throw new ForbiddenException('Only admins or CoA can edit this group');
     }
+
+    const oldGroup = { name: group.name, description: group.description, iconUrl: group.iconUrl, bannerUrl: group.bannerUrl, privacy: group.privacy };
 
     const updated = await this.prisma.group.update({
       where: { id: groupId },
@@ -286,6 +318,35 @@ export class GroupsService implements OnModuleInit {
       action: 'GROUP_UPDATED',
       metadata: patch,
     });
+
+    // System messages for visible changes
+    const actor = await this.prisma.user.findUnique({ where: { id: userId }, select: { displayName: true } });
+    const actorName = actor?.displayName ?? 'Un admin';
+
+    if (patch.bannerUrl !== undefined && patch.bannerUrl !== oldGroup.bannerUrl) {
+      if (patch.bannerUrl === null) {
+        await this.createSystemMessage(groupId, `${actorName} ha eliminado la imagen de fondo del grupo.`);
+      } else {
+        await this.createSystemMessage(groupId, `${actorName} ha cambiado la imagen de fondo del grupo.`);
+      }
+    }
+    if (patch.iconUrl !== undefined && patch.iconUrl !== oldGroup.iconUrl) {
+      if (patch.iconUrl === null) {
+        await this.createSystemMessage(groupId, `${actorName} ha eliminado el ícono del grupo.`);
+      } else {
+        await this.createSystemMessage(groupId, `${actorName} ha cambiado el ícono del grupo.`);
+      }
+    }
+    if (patch.name !== undefined && patch.name !== oldGroup.name) {
+      await this.createSystemMessage(groupId, `${actorName} cambió el nombre del grupo a "${patch.name}".`);
+    }
+    if (patch.description !== undefined && patch.description !== oldGroup.description) {
+      await this.createSystemMessage(groupId, `${actorName} ha actualizado la descripción del grupo.`);
+    }
+    if (patch.privacy !== undefined && patch.privacy !== oldGroup.privacy) {
+      const labels: Record<string, string> = { PUBLIC_INVITE: 'público', PRIVATE: 'privado', SECRET: 'secreto' };
+      await this.createSystemMessage(groupId, `${actorName} cambió la privacidad del grupo a ${labels[patch.privacy] ?? patch.privacy}.`);
+    }
 
     return updated;
   }
@@ -381,7 +442,7 @@ export class GroupsService implements OnModuleInit {
     const membership = await this.prisma.groupMember.upsert({
       where: { groupId_userId: { groupId, userId } },
       create: { groupId, userId, role: 'GROUP_MEMBER' },
-      update: { isBanned: false, role: 'GROUP_MEMBER', joinedAt: new Date() },
+      update: { isBanned: false, joinedAt: new Date() },
     });
 
     await this.logAudit({
@@ -393,6 +454,46 @@ export class GroupsService implements OnModuleInit {
     await this.createSystemMessage(groupId, `${user?.displayName ?? 'Alguien'} se ha unido al grupo.`);
 
     return membership;
+  }
+
+  async leaveGroup(actor: AuthUser, groupId: string) {
+    const [group, membership] = await Promise.all([
+      this.prisma.group.findFirst({
+        where: { id: groupId, isDeleted: false },
+        select: { id: true, ownerId: true },
+      }),
+      this.prisma.groupMember.findUnique({
+        where: { groupId_userId: { groupId, userId: actor.id } },
+        select: { role: true },
+      }),
+    ]);
+
+    if (!group) throw new NotFoundException();
+    if (group.ownerId === actor.id) {
+      throw new ForbiddenException('El dueño del grupo no puede abandonarlo. Elimina el grupo o transfiere la propiedad.');
+    }
+    if (!membership) throw new NotFoundException('No eres miembro de este grupo');
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: actor.id },
+      select: { displayName: true },
+    });
+
+    await this.prisma.groupMember.delete({
+      where: { groupId_userId: { groupId, userId: actor.id } },
+    });
+
+    await this.logAudit({
+      groupId,
+      actorUserId: actor.id,
+      targetUserId: actor.id,
+      action: 'MEMBER_LEFT',
+      metadata: {},
+    });
+
+    await this.createSystemMessage(groupId, `${user?.displayName ?? 'Alguien'} ha abandonado el grupo.`);
+
+    return { ok: true };
   }
 
   async moderateMember(
@@ -420,9 +521,10 @@ export class GroupsService implements OnModuleInit {
     if (!targetMembership) throw new NotFoundException('Member not found');
     if (actor.id === memberUserId) throw new ForbiddenException('You cannot moderate yourself');
 
+    const isOwner = group.ownerId === actor.id;
     const isGlobalModerator = actor.globalRole === 'SUPER_ADMIN' || actor.globalRole === 'GLOBAL_MODERATOR';
 
-    if (!isGlobalModerator) {
+    if (!isOwner && !isGlobalModerator) {
       if (!actorMembership || actorMembership.isBanned) {
         throw new ForbiddenException('Not allowed to moderate members in this group');
       }
@@ -525,7 +627,8 @@ export class GroupsService implements OnModuleInit {
     if (!targetMembership) throw new NotFoundException('Member not found');
     if (actor.id === memberUserId) throw new ForbiddenException('You cannot change your own role');
 
-    if (!actorMembership || actorMembership.isBanned || actorMembership.role !== 'GROUP_ADMIN') {
+    const isOwner = group.ownerId === actor.id;
+    if (!isOwner && (!actorMembership || actorMembership.isBanned || actorMembership.role !== 'GROUP_ADMIN')) {
       throw new ForbiddenException('Only group admins can assign roles');
     }
 
@@ -553,7 +656,9 @@ export class GroupsService implements OnModuleInit {
 
     await this.createSystemMessage(
       groupId,
-      input.role === 'GROUP_MODERATOR'
+      input.role === 'GROUP_ADMIN'
+        ? `${targetUser?.displayName ?? 'Un usuario'} ahora es Admin del grupo.`
+        : input.role === 'GROUP_MODERATOR'
         ? `${targetUser?.displayName ?? 'Un usuario'} ahora es CoA del grupo.`
         : `${targetUser?.displayName ?? 'Un usuario'} ahora es miembro del grupo.`,
     );
@@ -563,5 +668,50 @@ export class GroupsService implements OnModuleInit {
 
   async softDelete(groupId: string) {
     await this.prisma.group.update({ where: { id: groupId }, data: { isDeleted: true } });
+  }
+
+  /** Permanently delete a group and all its data:
+   *  - ModerationLog entries referencing this group
+   *  - Group itself (cascades to GroupMember, Channel, Message via Channel, group_audit_logs)
+   *  - Uploaded files (icon, banner) are left on disk for simplicity; can be cleaned by a cron later.
+   */
+  async hardDelete(groupId: string) {
+    // Clean up ModerationLog rows that reference this group (no cascade)
+    await this.prisma.moderationLog.deleteMany({ where: { groupId } });
+
+    // Delete the group — cascades to channels → messages, members, audit_logs
+    await this.prisma.group.delete({ where: { id: groupId } });
+  }
+
+  /** Returns whether a user is a member of the group that owns a given channel. */
+  async isChannelMember(userId: string, channelId: string): Promise<{ isMember: boolean; groupPrivacy: GroupPrivacy | null; groupId: string | null }> {
+    const channel = await this.prisma.channel.findUnique({
+      where: { id: channelId },
+      select: {
+        groupId: true,
+        group: { select: { privacy: true } },
+      },
+    });
+    if (!channel) return { isMember: false, groupPrivacy: null, groupId: null };
+
+    const membership = await this.prisma.groupMember.findUnique({
+      where: { groupId_userId: { groupId: channel.groupId, userId } },
+      select: { isBanned: true },
+    });
+
+    return {
+      isMember: !!membership && !membership.isBanned,
+      groupPrivacy: channel.group.privacy,
+      groupId: channel.groupId,
+    };
+  }
+
+  async getMemberRole(userId: string, groupId: string): Promise<GroupRole | null> {
+    const membership = await this.prisma.groupMember.findUnique({
+      where: { groupId_userId: { groupId, userId } },
+      select: { role: true, isBanned: true },
+    });
+    if (!membership || membership.isBanned) return null;
+    return membership.role;
   }
 }

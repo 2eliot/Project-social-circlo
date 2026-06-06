@@ -188,6 +188,22 @@ export class MessagesService {
     if (updated.count === 0) throw new ForbiddenException();
   }
 
+  async getMessageAuthor(messageId: string, createdAt: Date) {
+    const msg = await this.prisma.message.findUnique({
+      where: { id_createdAt: { id: messageId, createdAt } },
+      select: { authorId: true, channelId: true, author: { select: { displayName: true } } },
+    });
+    return msg;
+  }
+
+  async getUserDisplayName(userId: string): Promise<string> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { displayName: true },
+    });
+    return user?.displayName ?? 'usuario';
+  }
+
   async softDelete(messageId: string, createdAt: Date) {
     await this.prisma.message.update({
       where: { id_createdAt: { id: messageId, createdAt } },

@@ -181,9 +181,8 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
   @SubscribeMessage('listen_voice')
   async listenVoice(@ConnectedSocket() socket: SignalingSocket, @MessageBody() body: { channelId: string }) {
     const access = await this.getChannelAccess(body.channelId, socket.data.user.id);
-    if (!access.channel.isEnabled && !access.canManage) {
-      throw new WsException('Voice channel disabled');
-    }
+    // Listen-only is always allowed — keeps the online counter accurate even when
+    // the channel is disabled. isEnabled only gates speaking, not passive listening.
 
     // Already a speaker in the same channel? Nothing to do (speakers also consume).
     if (socket.data.channelId === body.channelId && !socket.data.voiceListenOnly) {
@@ -372,16 +371,23 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
     });
     if (!channel) throw new WsException('Channel not found');
 
+    // Owners always have full access regardless of membership role.
+    const group = await this.prisma.group.findFirst({
+      where: { id: channel.groupId, isDeleted: false },
+      select: { ownerId: true },
+    });
+    const isOwner = group?.ownerId === userId;
+
     const membership = await this.prisma.groupMember.findUnique({
       where: { groupId_userId: { groupId: channel.groupId, userId } },
       select: { role: true, isBanned: true },
     });
-    if (!membership || membership.isBanned) throw new WsException('Forbidden');
+    if (!isOwner && (!membership || membership.isBanned)) throw new WsException('Forbidden');
 
     return {
       channel,
-      membership,
-      canManage: membership.role === 'GROUP_ADMIN' || membership.role === 'GROUP_MODERATOR',
+      membership: membership ?? { role: 'GROUP_MEMBER' as const, isBanned: false },
+      canManage: isOwner || membership?.role === 'GROUP_ADMIN' || membership?.role === 'GROUP_MODERATOR',
     };
   }
 
@@ -428,6 +434,7 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
       pendingRequests: pendingIds
         .map((id) => userMap.get(id))
         .filter(Boolean),
+      totalActive: Array.from(new Set(participantSockets.map((s) => s.data.user.id))).length,
     };
   }
 

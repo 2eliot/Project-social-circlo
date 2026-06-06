@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ChatGateway } from './gateways/chat.gateway';
@@ -10,11 +10,13 @@ import { RealtimeEventsService } from './realtime-events.service';
 import { WsAuthService } from './ws-auth.service';
 import { MessagesModule } from '../modules/messages/messages.module';
 import { ModerationModule } from '../modules/moderation/moderation.module';
+import { GroupsModule } from '../modules/groups/groups.module';
 
 @Module({
   imports: [
     MessagesModule,
     ModerationModule,
+    forwardRef(() => GroupsModule),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

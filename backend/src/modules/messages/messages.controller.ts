@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, ParseUUIDPipe, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Request } from 'express';
 import { MessagesService } from './messages.service';
+import { GroupsService } from '../groups/groups.service';
 import { JwtAuthGuard } from '../../common/guards/auth.guards';
 import { CurrentUser, AuthUser } from '../../common/decorators/auth.decorators';
 import { ImageService } from '../../common/pipes/image.service';
@@ -13,6 +14,7 @@ export class MessagesController {
   constructor(
     private readonly service: MessagesService,
     private readonly imageService: ImageService,
+    private readonly groupsService: GroupsService,
   ) {}
 
   @Get()
@@ -40,8 +42,8 @@ export class MessagesController {
     const result = await this.imageService.processAndSave(file, {
       subDir: 'channels',
       maxWidth: 1920,
-      maxHeight: 1080,
-      quality: 80,
+      maxHeight: 1920,
+      quality: 88,
     });
 
     if (!result) {
@@ -60,11 +62,15 @@ export class MessagesController {
   }
 
   @Post()
-  create(
+  async create(
     @CurrentUser() user: AuthUser,
     @Param('channelId', ParseUUIDPipe) channelId: string,
     @Body() body: { content?: string; attachments?: any[]; parentId?: string },
   ) {
+    const { isMember } = await this.groupsService.isChannelMember(user.id, channelId);
+    if (!isMember) {
+      throw new ForbiddenException('Debes unirte al grupo para enviar mensajes.');
+    }
     return this.service.create({
       authorId: user.id,
       channelId,

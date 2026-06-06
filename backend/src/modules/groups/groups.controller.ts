@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Patch,
   Param,
@@ -128,12 +129,34 @@ export class GroupsController {
     return this.service.join(user.id, groupId);
   }
 
+  @Post(':groupId/leave')
+  async leave(@CurrentUser() user: AuthUser, @Param('groupId', ParseUUIDPipe) groupId: string) {
+    await this.service.leaveGroup(user, groupId);
+    return { ok: true };
+  }
+
   @Delete(':groupId')
   @UseGuards(CbacGuard, RbacGuard)
   @GroupRoles('GROUP_ADMIN')
   @Roles('SUPER_ADMIN', 'GLOBAL_MODERATOR', 'USER')
   async remove(@Param('groupId', ParseUUIDPipe) groupId: string) {
     await this.service.softDelete(groupId);
+    return { ok: true };
+  }
+
+  @Post(':groupId/hard-delete')
+  @UseGuards(CbacGuard, RbacGuard)
+  @GroupRoles('GROUP_ADMIN')
+  @Roles('SUPER_ADMIN', 'GLOBAL_MODERATOR', 'USER')
+  async hardDelete(
+    @CurrentUser() user: AuthUser,
+    @Param('groupId', ParseUUIDPipe) groupId: string,
+    @Body() body: { confirm: string },
+  ) {
+    if (body.confirm !== 'ELIMINAR PERMANENTEMENTE') {
+      throw new ForbiddenException('Debes escribir "ELIMINAR PERMANENTEMENTE" para confirmar');
+    }
+    await this.service.hardDelete(groupId);
     return { ok: true };
   }
 }

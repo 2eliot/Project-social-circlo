@@ -13,6 +13,7 @@ import { Server, Socket } from 'socket.io';
 import { WsAuthService, SocketUser } from '../ws-auth.service';
 import { MessagesService } from '../../modules/messages/messages.service';
 import { ModerationService } from '../../modules/moderation/moderation.service';
+import { GroupsService } from '../../modules/groups/groups.service';
 import { PresenceService, RateLimiterService } from '../../infrastructure/redis/redis.module';
 import { RealtimeEventsService } from '../realtime-events.service';
 
@@ -29,6 +30,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly auth: WsAuthService,
     private readonly messages: MessagesService,
     private readonly moderation: ModerationService,
+    private readonly groups: GroupsService,
     private readonly presence: PresenceService,
     private readonly rate: RateLimiterService,
     private readonly realtimeEvents: RealtimeEventsService,
@@ -58,9 +60,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('join_channel')
   async joinChannel(@ConnectedSocket() socket: AuthedSocket, @MessageBody() body: { channelId: string }) {
-    // TODO: verify membership via service before joining; omitted for brevity.
+    const user = socket.data.user;
+    const { isMember, groupPrivacy } = await this.groups.isChannelMember(user.id, body.channelId);
+
+    // Allow non-members to view public groups only (spectator mode)
+    if (!isMember && groupPrivacy !== 'PUBLIC_INVITE') {
+      throw new WsException('Debes unirte al grupo para ver este canal.');
+    }
+
     await socket.join(`channel:${body.channelId}`);
-    return { ok: true };
+    // Store spectator flag on socket so sendMessage can reject writes
+    (socket as any).__spectator = !isMember;
+    return { ok: true, isMember };
   }
 
   @SubscribeMessage('leave_channel')
@@ -87,6 +98,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() body: { channelId: string; content: string; attachments?: any[]; parentId?: string },
   ) {
     const user = socket.data.user;
+
+    // Block spectators from sending messages
+    if ((socket as any).__spectator) {
+      throw new WsException('Debes unirte al grupo para enviar mensajes.');
+    }
+
+    // Double-check membership in case spectator flag wasn't set
+    const { isMember } = await this.groups.isChannelMember(user.id, body.channelId);
+    if (!isMember) {
+      throw new WsException('Debes unirte al grupo para enviar mensajes.');
+    }
+
     const allowed = await this.rate.allow(`msg:${user.id}`, 30, 10); // 30/10s
     if (!allowed) throw new WsException('Rate limit exceeded');
 
@@ -128,8 +151,58 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() socket: AuthedSocket,
     @MessageBody() body: { id: string; createdAt: string; channelId: string },
   ) {
-    await this.messages.softDelete(body.id, new Date(body.createdAt));
-    this.server.to(`channel:${body.channelId}`).emit('message_deleted', body);
+    const userId = socket.data.user.id;
+    const createdAt = new Date(body.createdAt);
+
+    // Get message author info
+    const msg = await this.messages.getMessageAuthor(body.id, createdAt);
+    if (!msg) throw new WsException('Mensaje no encontrado.');
+
+    // Authorization: owner can delete own, admin/CoA can delete any
+    if (msg.authorId !== userId) {
+      // Not the author — check if user is admin or CoA of the group
+      const { groupId } = await this.groups.isChannelMember(userId, body.channelId);
+      if (!groupId) throw new WsException('No tienes permiso para eliminar este mensaje.');
+
+      const role = await this.groups.getMemberRole(userId, groupId);
+      if (role !== 'GROUP_ADMIN' && role !== 'GROUP_MODERATOR') {
+        throw new WsException('No tienes permiso para eliminar este mensaje.');
+      }
+    }
+
+    // Determine if this is a self-delete or mod-delete
+    const isModDelete = msg.authorId !== userId && msg.authorId !== null;
+
+    await this.messages.softDelete(body.id, createdAt);
+
+    // Look up the deleter's display name & role
+    const deleterName = await this.messages.getUserDisplayName(userId);
+    const targetName = msg.author?.displayName ?? 'usuario';
+
+    // Build system message text and persist to DB so it survives refreshes
+    let sysContent: string;
+    if (isModDelete) {
+      let roleLabel = 'Mod';
+      if (msg.channelId) {
+        const { groupId } = await this.groups.isChannelMember(userId, msg.channelId);
+        if (groupId) {
+          const role = await this.groups.getMemberRole(userId, groupId);
+          if (role === 'GROUP_ADMIN') roleLabel = 'Admin';
+          else if (role === 'GROUP_MODERATOR') roleLabel = 'CoA';
+        }
+      }
+      sysContent = `${deleterName} (${roleLabel}) eliminó el mensaje de ${targetName}`;
+    } else {
+      sysContent = `${deleterName} eliminó su mensaje`;
+    }
+
+    // Persist the system message to the database
+    const sysMsg = await this.messages.createSystem(body.channelId, sysContent);
+
+    // Emit deletion + the real system message
+    this.server.to(`channel:${body.channelId}`).emit('message_deleted', { id: body.id, channelId: body.channelId });
+    this.server.to(`channel:${body.channelId}`).emit('message_new', sysMsg);
+
     return { ok: true };
   }
 

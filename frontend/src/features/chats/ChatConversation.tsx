@@ -868,10 +868,15 @@ function PreserveScroll({ containerRef, loading, messagesLength }: { containerRe
     const container = containerRef.current;
     if (!container) return;
 
+    // Skip when there are no messages yet — don't consume firstLoad
+    if (messagesLength === 0) return;
+
     if (firstLoad.current && !loading) {
       /* Initial load: scroll to bottom (recent messages near form) */
       firstLoad.current = false;
-      container.scrollTop = container.scrollHeight;
+      requestAnimationFrame(() => {
+        if (container) container.scrollTop = container.scrollHeight;
+      });
       return;
     }
 
