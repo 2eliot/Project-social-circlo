@@ -83,12 +83,39 @@ export class DirectMessagesService {
     });
 
     if (existing && existing.status !== 'REJECTED') {
-      /* Un-hide if the current user had hidden this conversation */
+      /* Si el usuario había ocultado (eliminado) la conversación, al reabrir
+         desde el perfil se reinicia como una nueva solicitud PENDING */
       const isUserA = existing.userAId === meId;
       if ((isUserA && existing.userAHiddenAt) || (!isUserA && existing.userBHiddenAt)) {
-        const updated = await this.prisma.directConversation.update({
+        /* Ocultar mensajes antiguos para quien reinicia, así puede enviar intro */
+        const oldMessages = await this.prisma.directMessage.findMany({
+          where: {
+            conversationId: existing.id,
+            deletedAt: null,
+            status: 'PUBLISHED',
+            hiddenFor: { none: { userId: meId } },
+          },
+          select: { id: true },
+        });
+        await this.prisma.$transaction([
+          this.prisma.directConversation.update({
+            where: { id: existing.id },
+            data: {
+              initiatorId: meId,
+              status: 'PENDING',
+              acceptedAt: null,
+              rejectedAt: null,
+              ...(isUserA ? { userAHiddenAt: null } : { userBHiddenAt: null }),
+            },
+          }),
+          ...oldMessages.map((msg) =>
+            this.prisma.directMessageHidden.create({
+              data: { messageId: msg.id, userId: meId },
+            }),
+          ),
+        ]);
+        const updated = await this.prisma.directConversation.findUnique({
           where: { id: existing.id },
-          data: isUserA ? { userAHiddenAt: null } : { userBHiddenAt: null },
           include: {
             userA: { select: { id: true, displayName: true, avatarUrl: true } },
             userB: { select: { id: true, displayName: true, avatarUrl: true } },
@@ -99,7 +126,7 @@ export class DirectMessagesService {
               select: { id: true, content: true, createdAt: true, authorId: true, attachments: true },
             },
           },
-        });
+        })!;
         return this.serializeConversation(meId, updated);
       }
       return this.serializeConversation(meId, existing);
