@@ -99,7 +99,8 @@ export default function GroupPage() {
   voiceJoinedRef.current = voiceJoined;
   const handleVoiceLeaveRef = useRef(handleVoiceLeave);
   handleVoiceLeaveRef.current = handleVoiceLeave;
-  const voiceReconnectAsSpeakerRef = useRef(false);
+  // Flag: after reconnect (HMR or full refresh), upgrade from listener to speaker
+  const voiceNeedsUpgradeRef = useRef(false);
 
   // ── Global voice store sync ──
   const voiceStoreSetActive = useVoiceStore((s) => s.setActive);
@@ -348,6 +349,9 @@ export default function GroupPage() {
       setVoiceTotalActive(state.totalActive ?? (state.participants ?? []).length);
       const joined = Boolean(state.participants?.some((item) => item.id === user.id));
       const requested = Boolean(state.pendingRequests?.some((item) => item.id === user.id));
+      // If the server says we're joined but we have no SFU connection (page refresh),
+      // flag for auto-upgrade after the listen-only effect establishes a connection.
+      if (joined && !voiceJoined) voiceNeedsUpgradeRef.current = true;
       setVoiceJoined(joined);
       setVoiceRequestPending(requested && !joined);
     };
@@ -398,14 +402,12 @@ export default function GroupPage() {
       const storeState = useVoiceStore.getState();
       if (storeState.isActive && storeState.activeGroupId === groupId) {
         // HMR / remount: the Zustand store survived but the SFU connection did not.
-        // Restore UI-only state and force a reconnect via the listen-only effect.
+        // Restore UI state and flag for auto-upgrade after listen-only reconnects.
         setLocalMicMuted(storeState.isMuted);
+        setVoiceJoined(storeState.isJoined);
         if (storeState.isJoined) {
-          voiceReconnectAsSpeakerRef.current = true;
+          voiceNeedsUpgradeRef.current = true;
         }
-        // Do NOT restore voiceJoined=true — that would block the listen-only
-        // reconnect effect. Set false so the effect fires and reconnects.
-        setVoiceJoined(false);
         return; // re-render will re-run this effect with correct values
       }
     }
@@ -511,10 +513,13 @@ export default function GroupPage() {
   // Auto-subscribe in listen-only mode so every group member hears the voice
   // channel without explicitly joining as a speaker. When the user later clicks
   // "join", the speaker connection replaces this passive one.
+  //
+  // IMPORTANT: voiceJoined is NOT a dependency. If it were, the socket reporting
+  // "user is joined" would re-run this effect → cancel the in-flight listener
+  // connection → user stuck with voiceJoined=true & sfuRef=null (race condition).
   useEffect(() => {
     if (!voiceChannel) return;
-    if (voiceJoined) return; // already connected as speaker
-    if (sfuRef.current) return; // already have a connection
+    if (sfuRef.current) return; // already have a connection (any type)
     let cancelled = false;
     const sfu = new SfuClient(voiceChannel.id);
     sfu
@@ -529,10 +534,10 @@ export default function GroupPage() {
         voiceStoreSetActive(voiceChannel.id, currentGroup?.id ?? '', currentGroup?.name ?? '');
         voiceStoreSetIsActive(true);
 
-        // After HMR restore: if the user was speaking before, auto-upgrade
-        if (voiceReconnectAsSpeakerRef.current) {
-          voiceReconnectAsSpeakerRef.current = false;
-          // Disconnect listener, create fresh speaker client
+        // Auto-upgrade to speaker if needed (HMR restore OR page refresh where
+        // the server still has us as a voice participant).
+        if (voiceNeedsUpgradeRef.current) {
+          voiceNeedsUpgradeRef.current = false;
           sfu
             .disconnect()
             .catch(() => undefined)
@@ -551,7 +556,7 @@ export default function GroupPage() {
               });
             })
             .catch((err) => {
-              console.warn('[group] auto-speaker-reconnect failed', err);
+              console.warn('[group] auto-upgrade to speaker failed', err);
             });
         }
       })
@@ -561,7 +566,7 @@ export default function GroupPage() {
     return () => {
       cancelled = true;
     };
-  }, [voiceChannel?.id, voiceChannel?.isEnabled, voiceJoined, currentGroup?.id, currentGroup?.name, voiceStoreSetActive, voiceStoreSetIsActive]);
+  }, [voiceChannel?.id, voiceChannel?.isEnabled, currentGroup?.id, currentGroup?.name, voiceStoreSetActive, voiceStoreSetIsActive]);
 
   if (!currentGroup) return <p className="p-6 opacity-70">Cargando…</p>;
 
