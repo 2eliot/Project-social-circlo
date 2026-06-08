@@ -287,6 +287,7 @@ export default function AppHome() {
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const tabRef = useRef<Tab>('feed');
   const selectedConvRef = useRef<string | null>(null);
+  const appShellRef = useRef<HTMLDivElement | null>(null);
   // Lazy-mount + keep-alive: tabs se montan al visitarlos por primera vez y se conservan vía display:none
   const [visitedTabs, setVisitedTabs] = useState<Set<Tab>>(new Set<Tab>(['feed']));
   // Trackea si la vista de detalle del chat (ChatsTab) ya fue montada para keep-alive
@@ -294,6 +295,52 @@ export default function AppHome() {
 
   useEffect(() => { tabRef.current = tab; }, [tab]);
   useEffect(() => { selectedConvRef.current = selectedConversationId; }, [selectedConversationId]);
+
+  /* ── Keyboard-aware: ajusta CSS var --app-keyboard-h para footer + padding ── */
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    let prevKeyboardH = 0;
+    const onResize = () => {
+      const keyboardH = Math.max(0, window.innerHeight - vv.height - (vv.offsetTop ?? 0));
+      // Solo reaccionar si el cambio es significativo (>30px)
+      if (Math.abs(keyboardH - prevKeyboardH) < 30) return;
+      prevKeyboardH = keyboardH;
+      const shell = appShellRef.current;
+      if (!shell) return;
+
+      if (keyboardH > 80) {
+        // Teclado visible: ajustar CSS var y bloquear scroll del viewport
+        shell.style.setProperty('--app-keyboard-h', `${keyboardH}px`);
+        // iOS: prevenir que el viewport se desplace
+        document.body.style.position = 'fixed';
+        document.body.style.width = '100%';
+        document.body.style.top = `-${vv.offsetTop ?? 0}px`;
+      } else {
+        shell.style.setProperty('--app-keyboard-h', '0px');
+        // Restaurar scroll position
+        const scrollY = document.body.style.top;
+        document.body.style.position = '';
+        document.body.style.width = '';
+        document.body.style.top = '';
+        if (scrollY) {
+          window.scrollTo(0, Math.abs(parseInt(scrollY, 10) || 0));
+        }
+      }
+    };
+
+    vv.addEventListener('resize', onResize);
+    vv.addEventListener('scroll', onResize);
+    return () => {
+      vv.removeEventListener('resize', onResize);
+      vv.removeEventListener('scroll', onResize);
+      // Cleanup: restore body
+      document.body.style.position = '';
+      document.body.style.width = '';
+      document.body.style.top = '';
+    };
+  }, []);
 
   async function refreshPendingChatsCount() {
     try {
@@ -538,7 +585,7 @@ export default function AppHome() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" ref={appShellRef}>
       {tab === 'groups' ? <TopBar onOpenProfile={handleOpenProfile} currentTab={tab} onlineUserIds={onlineUserIds} /> : null}
 
       {liveDmNotice ? (
@@ -581,12 +628,12 @@ export default function AppHome() {
       <main className="app-content">
         {/* ── Keep-alive: cada tab se monta al visitarlo y se preserva con display:none ── */}
         {visitedTabs.has('feed') && (
-          <div style={{ display: tab === 'feed' ? undefined : 'none' }}>
+          <div className="h-full overflow-y-auto" style={{ display: tab === 'feed' ? undefined : 'none' }}>
             <FeedTab onOpenProfile={handleOpenProfile} onlineUserIds={onlineUserIds} onOpenFocusedPost={(id) => setFocusedPostId(id)} />
           </div>
         )}
         {visitedTabs.has('chats') && (
-          <div style={{ display: tab === 'chats' && !selectedConversationId ? undefined : 'none' }}>
+          <div className="h-full overflow-y-auto" style={{ display: tab === 'chats' && !selectedConversationId ? undefined : 'none' }}>
             <ChatsView
               selectedConversationId={selectedConversationId}
               refreshToken={conversationRefreshToken}
@@ -598,7 +645,7 @@ export default function AppHome() {
           </div>
         )}
         {(visitedTabs.has('chats') || chatsDetailVisited) && (
-          <div style={{ display: tab === 'chats' && selectedConversationId ? undefined : 'none' }}>
+          <div className="h-full overflow-y-auto" style={{ display: tab === 'chats' && selectedConversationId ? undefined : 'none' }}>
             <ChatsTab
               selectedConversationId={selectedConversationId}
               refreshToken={conversationRefreshToken}
@@ -610,7 +657,7 @@ export default function AppHome() {
           </div>
         )}
         {visitedTabs.has('groups') && (
-          <div style={{ display: tab === 'groups' ? undefined : 'none' }}>
+          <div className="h-full overflow-y-auto" style={{ display: tab === 'groups' ? undefined : 'none' }}>
             <GroupsTab
               openCreatorOnMount={openGroupCreatorOnTabChange}
               onCreatorOpened={() => setOpenGroupCreatorOnTabChange(false)}
@@ -618,7 +665,7 @@ export default function AppHome() {
           </div>
         )}
         {visitedTabs.has('profile') && (
-          <div style={{ display: tab === 'profile' ? undefined : 'none' }}>
+          <div className="h-full overflow-y-auto" style={{ display: tab === 'profile' ? undefined : 'none' }}>
             <ProfileTab
               viewedUserId={profileUserId}
               onOpenChats={() => setTab('chats')}

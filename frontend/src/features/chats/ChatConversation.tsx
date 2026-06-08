@@ -270,11 +270,13 @@ export default function ChatConversation({
       if (!vv) return;
       const root = chatRootRef.current;
       if (!root) return;
-      const keyboardH = window.innerHeight - vv.height;
+      const keyboardH = Math.max(0, window.innerHeight - vv.height - (vv.offsetTop ?? 0));
       if (keyboardH > 80) {
         // Available height = visual viewport height minus root's visual offset from top
+        // Also subtract bottom nav height (~68px) so composer stays above it
         const rootTop = root.getBoundingClientRect().top;
-        const availableH = Math.max(0, vv.height - rootTop);
+        const navH = 68; // bottom-nav: 48px min-height + 6px padding + 14px bottom
+        const availableH = Math.max(0, vv.height - rootTop - navH);
         root.style.height = `${availableH}px`;
         if (messagesContainerRef.current) {
           messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;

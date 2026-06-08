@@ -94,7 +94,8 @@ button.primary:disabled { opacity: .5; cursor: not-allowed; }
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  /* --app-keyboard-h se ajusta vía JS (visualViewport) cuando el teclado se abre/cierra */
+  padding-bottom: calc(96px + env(safe-area-inset-bottom) + var(--app-keyboard-h, 0px));
 }
 
 /* Top bar - nuevo diseño con avatar, saludo e iconos */
@@ -727,7 +728,8 @@ button.primary:disabled { opacity: .5; cursor: not-allowed; }
 /* Bottom nav - 5 tabs con FAB central */
 .bottom-nav {
   position: fixed; left: 0; right: 0; margin: 0 auto;
-  bottom: calc(14px + env(safe-area-inset-bottom));
+  /* --app-keyboard-h se ajusta vía JS (visualViewport) cuando el teclado se abre/cierra */
+  bottom: calc(14px + env(safe-area-inset-bottom) + var(--app-keyboard-h, 0px));
   width: min(392px, calc(100% - 42px));
   display: grid; grid-template-columns: repeat(5, 1fr);
   padding: 6px 8px;
@@ -807,7 +809,7 @@ button.primary:disabled { opacity: .5; cursor: not-allowed; }
 .feed-compose-fab {
   position: fixed;
   right: max(18px, calc(50vw - 222px));
-  bottom: calc(108px + env(safe-area-inset-bottom));
+  bottom: calc(108px + env(safe-area-inset-bottom) + var(--app-keyboard-h, 0px));
   width: 58px;
   height: 58px;
   border-radius: 22px;
