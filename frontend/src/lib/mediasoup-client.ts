@@ -27,7 +27,10 @@ export class SfuClient {
   /** Callback: fires when local mic speech activity changes */
   public onSpeakingChange?: (isSpeaking: boolean) => void;
 
-  constructor(public readonly channelId: string) {}
+  constructor(
+    public readonly channelId: string,
+    private readonly userId?: string,
+  ) {}
 
   /** Join the voice channel as a speaker (can publish + consume). */
   async connect() {
@@ -85,7 +88,16 @@ export class SfuClient {
     if (this.audioProducer && !this.audioProducer.closed) return;
     console.log('[SfuClient] publishMic() requesting getUserMedia');
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    // echoCancellation evita que el micrófono capte el audio de los altavoces,
+    // previniendo eco. noiseSuppression y autoGainControl mejoran calidad de voz.
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: false,
+    });
     const track = stream.getAudioTracks()[0];
     console.log('[SfuClient] got mic track:', track.label, 'enabled=', track.enabled);
     this.audioProducer = await this.sendTransport.produce({
@@ -150,6 +162,11 @@ export class SfuClient {
     console.log('[SfuClient] consumeAudio producerId=', producerId, 'userId=', userId);
     if (!this.recvTransport || !this.device.loaded) { console.warn('[SfuClient] recvTransport or device not ready'); return; }
     if (this.consumers.has(producerId)) return; // already consuming
+    // No consumir el propio audio del usuario — evitaría eco/doble voz
+    if (this.userId && userId === this.userId) {
+      console.log('[SfuClient] skipping own producer', producerId);
+      return;
+    }
 
     const socket = getSocket('/sfu');
     try {

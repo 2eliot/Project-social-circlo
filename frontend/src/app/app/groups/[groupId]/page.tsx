@@ -395,7 +395,7 @@ export default function GroupPage() {
       try {
         await sfuRef.current?.disconnect().catch(() => undefined);
         sfuRef.current = null;
-        const sfu = new SfuClient(voiceChannel.id);
+        const sfu = new SfuClient(voiceChannel.id, user?.id);
         await sfu.connect();
         sfuRef.current = sfu;
         setVoiceJoined(true);
@@ -562,7 +562,7 @@ export default function GroupPage() {
     if (!voiceChannel || !voiceChannel.isEnabled) return;
     if (sfuRef.current) return; // already have a connection (any type)
     let cancelled = false;
-    const sfu = new SfuClient(voiceChannel.id);
+    const sfu = new SfuClient(voiceChannel.id, user?.id);
     sfu
       .connectListenOnly()
       .then(() => {
@@ -584,7 +584,7 @@ export default function GroupPage() {
             .catch(() => undefined)
             .then(() => {
               if (cancelled) return;
-              const speakerSfu = new SfuClient(voiceChannel.id);
+              const speakerSfu = new SfuClient(voiceChannel.id, user?.id);
               return speakerSfu.connect().then(() => {
                 if (cancelled) {
                   void speakerSfu.disconnect();
@@ -666,7 +666,7 @@ export default function GroupPage() {
         setLocalMicMuted(true);
         voiceStoreSetJoined(false);
         try {
-          const listener = new SfuClient(voiceChannel.id);
+          const listener = new SfuClient(voiceChannel.id, user?.id);
           await listener.connectListenOnly();
           sfuRef.current = listener;
         } catch (err) {
@@ -692,7 +692,7 @@ export default function GroupPage() {
       }
       await sfuRef.current?.disconnect().catch(() => undefined);
       sfuRef.current = null;
-      const sfu = new SfuClient(voiceChannel.id);
+      const sfu = new SfuClient(voiceChannel.id, user?.id);
       await sfu.connect();
       sfuRef.current = sfu;
       setVoiceJoined(true);
