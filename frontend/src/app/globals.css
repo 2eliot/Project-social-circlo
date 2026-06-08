@@ -93,7 +93,8 @@ button.primary:disabled { opacity: .5; cursor: not-allowed; }
 .app-content {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   /* --app-keyboard-h se ajusta vía JS (visualViewport) cuando el teclado se abre/cierra */
   padding-bottom: calc(96px + env(safe-area-inset-bottom) + var(--app-keyboard-h, 0px));
 }

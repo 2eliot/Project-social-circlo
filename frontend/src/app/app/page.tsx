@@ -628,12 +628,12 @@ export default function AppHome() {
       <main className="app-content">
         {/* ── Keep-alive: cada tab se monta al visitarlo y se preserva con display:none ── */}
         {visitedTabs.has('feed') && (
-          <div className="h-full overflow-y-auto" style={{ display: tab === 'feed' ? undefined : 'none' }}>
+          <div className="flex-1 min-h-0 overflow-y-auto" style={{ display: tab === 'feed' ? undefined : 'none' }}>
             <FeedTab onOpenProfile={handleOpenProfile} onlineUserIds={onlineUserIds} onOpenFocusedPost={(id) => setFocusedPostId(id)} />
           </div>
         )}
         {visitedTabs.has('chats') && (
-          <div className="h-full overflow-y-auto" style={{ display: tab === 'chats' && !selectedConversationId ? undefined : 'none' }}>
+          <div className="flex-1 min-h-0 overflow-y-auto" style={{ display: tab === 'chats' && !selectedConversationId ? undefined : 'none' }}>
             <ChatsView
               selectedConversationId={selectedConversationId}
               refreshToken={conversationRefreshToken}
@@ -645,7 +645,7 @@ export default function AppHome() {
           </div>
         )}
         {(visitedTabs.has('chats') || chatsDetailVisited) && (
-          <div className="h-full overflow-y-auto" style={{ display: tab === 'chats' && selectedConversationId ? undefined : 'none' }}>
+          <div className="flex-1 min-h-0 overflow-y-auto" style={{ display: tab === 'chats' && selectedConversationId ? undefined : 'none' }}>
             <ChatsTab
               selectedConversationId={selectedConversationId}
               refreshToken={conversationRefreshToken}
@@ -657,7 +657,7 @@ export default function AppHome() {
           </div>
         )}
         {visitedTabs.has('groups') && (
-          <div className="h-full overflow-y-auto" style={{ display: tab === 'groups' ? undefined : 'none' }}>
+          <div className="flex-1 min-h-0 overflow-y-auto" style={{ display: tab === 'groups' ? undefined : 'none' }}>
             <GroupsTab
               openCreatorOnMount={openGroupCreatorOnTabChange}
               onCreatorOpened={() => setOpenGroupCreatorOnTabChange(false)}
@@ -665,7 +665,7 @@ export default function AppHome() {
           </div>
         )}
         {visitedTabs.has('profile') && (
-          <div className="h-full overflow-y-auto" style={{ display: tab === 'profile' ? undefined : 'none' }}>
+          <div className="flex-1 min-h-0 overflow-y-auto" style={{ display: tab === 'profile' ? undefined : 'none' }}>
             <ProfileTab
               viewedUserId={profileUserId}
               onOpenChats={() => setTab('chats')}
