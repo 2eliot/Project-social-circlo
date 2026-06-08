@@ -7,11 +7,12 @@ const UPLOADS_CACHE = `${CACHE_PREFIX}-uploads-${CACHE_VERSION}`;
 
 /* ───── INSTALL ───── */
 self.addEventListener('install', (event) => {
-	self.skipWaiting();
+	self.skipWaiting(); // Forzar al SW entrante a activarse ya
 });
 
 /* ───── ACTIVATE ───── */
 self.addEventListener('activate', (event) => {
+	event.waitUntil(clients.claim()); // Tomar el control de los clientes de inmediato
 	event.waitUntil(
 		(async () => {
 			const keys = await caches.keys();
@@ -20,7 +21,6 @@ self.addEventListener('activate', (event) => {
 					.filter((k) => k.startsWith(CACHE_PREFIX) && k !== NAV_CACHE && k !== STATIC_CACHE && k !== UPLOADS_CACHE)
 					.map((k) => caches.delete(k)),
 			);
-			await self.clients.claim();
 		})(),
 	);
 });
@@ -133,8 +133,20 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const relativeUrl = event.notification.data?.url || '/app';
-  const fullUrl = new URL(relativeUrl, self.location.origin).href;
+  const rawUrl = event.notification.data?.url || '/app';
+
+  // Construir URL segura con el constructor nativo para evitar escapado roto
+  let destino;
+  try {
+    destino = new URL(rawUrl, self.location.origin);
+  } catch {
+    // Si viene rota, abrir solo /app y pasar el rawUrl como data para que el cliente lo resuelva
+    destino = new URL('/app', self.location.origin);
+    destino.searchParams.set('_notif_route', encodeURIComponent(rawUrl));
+  }
+
+  const fullUrl = destino.href;
+  const relativeUrl = destino.pathname + destino.search;
 
   event.waitUntil(
     (async () => {
@@ -166,20 +178,19 @@ self.addEventListener('notificationclick', (event) => {
         }
       }
 
-      // 3) Último recurso: registrar el cliente y esperar a que se conecte
-      //    (ocurre cuando la app se abre desde 0 en mobile)
-      const openClient = await self.clients.openWindow('/');
-      if (openClient) {
-        // Dar tiempo a que la app se inicialice
+      // 3) Último recurso: abrir / y pasar ruta por postMessage
+      const freshClient = await self.clients.openWindow('/');
+      if (freshClient) {
         await new Promise((r) => setTimeout(r, 1500));
         try {
-          openClient.postMessage({ type: 'NOTIFICATION_CLICK', url: relativeUrl });
+          freshClient.postMessage({ type: 'NOTIFICATION_CLICK', url: relativeUrl });
         } catch {
           // Si postMessage falla, la app leerá sessionStorage al hidratarse
         }
       }
     })(),
   );
+});
 async function staleWhileRevalidate(request, cacheName) {
 	const cache = await caches.open(cacheName);
 	const cached = await cache.match(request);

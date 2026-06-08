@@ -48,9 +48,14 @@ export function AuthSessionSync() {
     } catch { /* ignore */ }
 
     if (redirectTo && pathname !== redirectTo) {
+      // Validar que sea una ruta interna válida (empieza con /)
+      if (redirectTo.startsWith('/')) {
+        window.sessionStorage.removeItem(REDIRECT_KEY);
+        router.replace(redirectTo);
+        return;
+      }
+      // Ruta inválida — limpiar y caer a fallback seguro
       window.sessionStorage.removeItem(REDIRECT_KEY);
-      router.replace(redirectTo);
-      return;
     }
 
     if (pathname === '/' || pathname === '/login' || pathname === '/register') {
