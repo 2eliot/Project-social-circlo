@@ -296,7 +296,7 @@ export default function AppHome() {
   useEffect(() => { tabRef.current = tab; }, [tab]);
   useEffect(() => { selectedConvRef.current = selectedConversationId; }, [selectedConversationId]);
 
-  /* ── Keyboard-aware: ajusta CSS var --app-keyboard-h para footer + padding ── */
+  /* ── Keyboard-aware: bloquea scroll del body cuando el teclado está visible ── */
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
@@ -304,21 +304,15 @@ export default function AppHome() {
     let prevKeyboardH = 0;
     const onResize = () => {
       const keyboardH = Math.max(0, window.innerHeight - vv.height - (vv.offsetTop ?? 0));
-      // Solo reaccionar si el cambio es significativo (>30px)
       if (Math.abs(keyboardH - prevKeyboardH) < 30) return;
       prevKeyboardH = keyboardH;
-      const shell = appShellRef.current;
-      if (!shell) return;
 
       if (keyboardH > 80) {
-        // Teclado visible: ajustar CSS var y bloquear scroll del viewport
-        shell.style.setProperty('--app-keyboard-h', `${keyboardH}px`);
-        // iOS: prevenir que el viewport se desplace
+        // Prevenir que el viewport se desplace
         document.body.style.position = 'fixed';
         document.body.style.width = '100%';
         document.body.style.top = `-${vv.offsetTop ?? 0}px`;
       } else {
-        shell.style.setProperty('--app-keyboard-h', '0px');
         // Restaurar scroll position
         const scrollY = document.body.style.top;
         document.body.style.position = '';
