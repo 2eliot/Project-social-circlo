@@ -671,7 +671,7 @@ export default function AppHome() {
         </button>
       ) : null}
 
-      <main className="app-content">
+      <main className="app-content" style={{ paddingBottom: (tab === 'chats' && selectedConversationId) ? '0px' : undefined }}>
         {/* ── Keep-alive: cada tab se monta al visitarlo y se preserva con display:none ── */}
         {visitedTabs.has('feed') && (
           <div className="flex-1 min-h-0 overflow-y-auto" style={{ display: tab === 'feed' ? undefined : 'none' }}>
@@ -728,7 +728,9 @@ export default function AppHome() {
         )}
       </main>
 
-      <BottomNav tab={tab} setTab={handleSelectTab} pendingChatsCount={pendingChatsCount} pendingRequestsCount={pendingRequestsCount} unreadDmsCount={unreadDmsCount} onCreatePost={() => setShowPostPopup(true)} />
+      {!(tab === 'chats' && selectedConversationId) && (
+        <BottomNav tab={tab} setTab={handleSelectTab} pendingChatsCount={pendingChatsCount} pendingRequestsCount={pendingRequestsCount} unreadDmsCount={unreadDmsCount} onCreatePost={() => setShowPostPopup(true)} />
+      )}
 
       {/* Popup para crear post */}
       {showPostPopup ? <PostComposerPopup onClose={() => setShowPostPopup(false)} /> : null}
