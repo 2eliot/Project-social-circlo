@@ -26,6 +26,8 @@ interface VoiceState {
   requestPending: boolean;
   /** Callback to leave — set by the group page so the overlay can trigger leave */
   onLeaveRequested: (() => void) | null;
+  /** Callback to toggle mic — set by the group page so the overlay can mute/unmute the real mic */
+  onMicToggled: ((muted: boolean) => void) | null;
 
   // Actions
   setActive: (channelId: string, groupId: string, groupName: string) => void;
@@ -35,6 +37,7 @@ interface VoiceState {
   updateParticipant: (userId: string, updates: Partial<VoiceParticipant>) => void;
   setRequestPending: (pending: boolean) => void;
   setOnLeaveRequested: (fn: (() => void) | null) => void;
+  setOnMicToggled: (fn: ((muted: boolean) => void) | null) => void;
   /** Clean up all state */
   clear: () => void;
 }
@@ -48,6 +51,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   participants: [],
   requestPending: false,
   onLeaveRequested: null,
+  onMicToggled: null,
 
   setActive: (channelId, groupId, groupName) =>
     set({
@@ -73,6 +77,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
 
   setOnLeaveRequested: (fn) => set({ onLeaveRequested: fn }),
 
+  setOnMicToggled: (fn) => set({ onMicToggled: fn }),
+
   clear: () =>
     set({
       activeChannelId: null,
@@ -83,5 +89,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       participants: [],
       requestPending: false,
       onLeaveRequested: null,
+      onMicToggled: null,
     }),
 }));

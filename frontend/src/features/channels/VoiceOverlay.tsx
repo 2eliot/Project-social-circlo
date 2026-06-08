@@ -83,7 +83,9 @@ export function VoiceOverlay() {
     // Update store immediately so the bubble UI reflects the change
     const newMuted = !isMuted;
     useVoiceStore.getState().setMuted(newMuted);
-    // Also dispatch event for the group page (when mounted) to control SFU mic
+    // Primary: invoke the store callback (works even when group page is unmounted)
+    useVoiceStore.getState().onMicToggled?.(newMuted);
+    // Fallback: also dispatch event for the group page (when mounted)
     window.dispatchEvent(new CustomEvent('voice:toggleMute', { detail: { muted: newMuted } }));
   };
 

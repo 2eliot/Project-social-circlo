@@ -92,6 +92,11 @@ export default function GroupPage() {
   const iconInputRef = useRef<HTMLInputElement | null>(null);
   const sfuRef = useRef<SfuClient | null>(null);
   const voiceRestoredRef = useRef(false);
+  // Stable refs so the mic callback in the Zustand store always reads the latest values
+  const micChangeRef = useRef(handleMicMutedChange);
+  micChangeRef.current = handleMicMutedChange;
+  const voiceJoinedRef = useRef(voiceJoined);
+  voiceJoinedRef.current = voiceJoined;
 
   // ── Global voice store sync ──
   const voiceStoreSetActive = useVoiceStore((s) => s.setActive);
@@ -100,6 +105,7 @@ export default function GroupPage() {
   const voiceStoreSetParticipants = useVoiceStore((s) => s.setParticipants);
   const voiceStoreSetRequestPending = useVoiceStore((s) => s.setRequestPending);
   const voiceStoreClear = useVoiceStore((s) => s.clear);
+  const voiceStoreSetOnMicToggled = useVoiceStore((s) => s.setOnMicToggled);
 
   async function loadGroup() {
     const nextGroup = await api<GroupDetail>(`/groups/${groupId}`);
@@ -427,6 +433,16 @@ export default function GroupPage() {
     window.addEventListener('voice:toggleMute', onToggleMute);
     return () => window.removeEventListener('voice:toggleMute', onToggleMute);
   }, [localMicMuted, voiceJoined]);
+
+  // ── Register mic-toggle callback in Zustand store so VoiceOverlay can control
+  //     the real SFU mic even when the group page is unmounted ──
+  useEffect(() => {
+    voiceStoreSetOnMicToggled((muted: boolean) => {
+      if (!voiceJoinedRef.current) return;
+      micChangeRef.current(muted);
+    });
+    return () => { voiceStoreSetOnMicToggled(null); };
+  }, [voiceStoreSetOnMicToggled]);
 
   // ── Speaking detection sync for the local user ──
   useEffect(() => {
