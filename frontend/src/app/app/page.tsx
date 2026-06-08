@@ -330,6 +330,18 @@ export default function AppHome() {
   }, []);
 
   useEffect(() => {
+    const nextDmId = searchParams.get('dm');
+    if (nextDmId) {
+      setSelectedConversationId(nextDmId);
+      setTab('chats');
+      setVisitedTabs((prev) => {
+        const next = new Set(prev);
+        next.add('chats');
+        return next;
+      });
+      return;
+    }
+
     const nextProfileUserId = searchParams.get('profileUserId');
     if (nextProfileUserId) {
       setProfileUserId(nextProfileUserId);
@@ -2667,7 +2679,7 @@ function ChatsTab({
     const canWrite = Boolean(activeConversation && (activeConversation.canReply || activeConversation.canSendIntro));
 
     return (
-      <section className={selectedConversationId ? 'flex flex-col h-[calc(100dvh-96px)] overflow-hidden' : ''}>
+      <section className={selectedConversationId ? 'flex flex-col h-full overflow-hidden min-h-0' : ''}>
         {!selectedConversationId && <h1 className="section-title">Chats</h1>}
 
         {!selectedConversationId ? (
@@ -3600,9 +3612,11 @@ function GroupTile({
             {group.owner?.reputationLikes !== undefined || group.owner?.reputationDislikes !== undefined ? (
               <div className="group-card__reputation">
                 <span className="group-card__reputation-label">Rep.</span>
-                <span className="group-card__reputation-likes">👍 {group.owner?.reputationLikes ?? 0}</span>
-                <span className="group-card__reputation-divider">/</span>
-                <span className="group-card__reputation-dislikes">👎 {group.owner?.reputationDislikes ?? 0}</span>
+                <div className="group-card__reputation-row">
+                  <span className="group-card__reputation-likes">👍 {group.owner?.reputationLikes ?? 0}</span>
+                  <span className="group-card__reputation-divider">/</span>
+                  <span className="group-card__reputation-dislikes">👎 {group.owner?.reputationDislikes ?? 0}</span>
+                </div>
               </div>
             ) : null}
           </div>
@@ -4074,7 +4088,7 @@ function ProfileTab({
       <div className="relative mx-auto max-w-[356px] pt-1 flex flex-col gap-2.5">
         
         {/* TARJETA 1: PERFIL */}
-        <div className="relative rounded-[26px] border border-white/[0.04] bg-[#0c0d19]/90 px-4 pb-4 pt-4 shadow-[0_12px_32px_rgba(0,0,0,.3)] backdrop-blur-[12px]">
+        <div className="relative z-20 rounded-[26px] border border-white/[0.04] bg-[#0c0d19]/90 px-4 pb-4 pt-4 shadow-[0_12px_32px_rgba(0,0,0,.3)] backdrop-blur-[12px]">
           
           {/* Botones de acción arriba a la derecha (Compartir y Opciones) */}
           <div className="absolute right-3.5 top-3.5 flex items-center gap-1.5">

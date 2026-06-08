@@ -168,47 +168,4 @@ async function staleWhileRevalidate(request, cacheName) {
 	return cached || fetchPromise;
 }
 
-/* ───── PUSH NOTIFICATIONS ───── */
-self.addEventListener('push', (event) => {
-	if (!event.data) return;
 
-	let data;
-	try {
-		data = event.data.json();
-	} catch {
-		data = { title: 'Social Circle', body: event.data.text() };
-	}
-
-	const title = data.title || 'Social Circle';
-	const options = {
-		body: data.body || '',
-		icon: data.icon || '/icons/icon.svg',
-		badge: data.badge || '/icons/icon.svg',
-		image: data.image || undefined,
-		data: data.data || {},
-		actions: data.actions || [],
-		vibrate: data.vibrate || [200, 100, 200],
-		requireInteraction: data.requireInteraction !== false,
-		timestamp: data.timestamp || Date.now(),
-		tag: data.tag || 'dm',
-	};
-
-	event.waitUntil(self.registration.showNotification(title, options));
-});
-
-self.addEventListener('notificationclick', (event) => {
-	event.notification.close();
-
-	const urlToOpen = event.notification.data?.url || '/app';
-
-	event.waitUntil(
-		self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-			for (const client of clients) {
-				if (client.url.includes(urlToOpen) && 'focus' in client) {
-					return client.focus();
-				}
-			}
-			return self.clients.openWindow(urlToOpen);
-		}),
-	);
-});

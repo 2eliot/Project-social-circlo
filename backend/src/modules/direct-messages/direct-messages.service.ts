@@ -326,7 +326,7 @@ export class DirectMessagesService {
               conversationId,
               messageId: message.id,
               authorId: userId,
-              url: `/app/dm/${conversationId}`,
+              url: `/app?dm=${conversationId}&tab=chats`,
             },
             tag: `dm-${conversationId}`,
           }).catch((err) => this.logger.error(`Push send error: ${err.message}`));
