@@ -176,10 +176,18 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
       if (!root) return;
       const keyboardH = Math.max(0, window.innerHeight - vv.height - (vv.offsetTop ?? 0));
       if (keyboardH > 80) {
-        // Prevent body-level scrolling when keyboard is open
+        // Lockear todo el viewport: body + html + overscroll
         document.body.style.position = 'fixed';
         document.body.style.width = '100%';
         document.body.style.top = `-${vv.offsetTop ?? 0}px`;
+        document.body.style.overscrollBehavior = 'none';
+        document.documentElement.style.overscrollBehavior = 'none';
+
+        // Bloquear mensajes para que no hagan overscroll y revelen el fondo
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.style.overscrollBehavior = 'contain';
+        }
+
         // Available height = visual viewport height minus root's visual offset from top
         const rootTop = root.getBoundingClientRect().top;
         const availableH = Math.max(0, vv.height - rootTop);
@@ -189,11 +197,17 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
         }
       } else {
         root.style.height = '';
+        // Restaurar mensajes
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.style.overscrollBehavior = '';
+        }
         // Restore body scroll
         const scrollY = document.body.style.top;
         document.body.style.position = '';
         document.body.style.width = '';
         document.body.style.top = '';
+        document.body.style.overscrollBehavior = '';
+        document.documentElement.style.overscrollBehavior = '';
         if (scrollY) {
           window.scrollTo(0, Math.abs(parseInt(scrollY, 10) || 0));
         }
@@ -203,10 +217,12 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
     onResize();
     return () => {
       window.visualViewport?.removeEventListener('resize', onResize);
-      // Cleanup body
+      // Cleanup body + html
       document.body.style.position = '';
       document.body.style.width = '';
       document.body.style.top = '';
+      document.body.style.overscrollBehavior = '';
+      document.documentElement.style.overscrollBehavior = '';
     };
   }, []);
 

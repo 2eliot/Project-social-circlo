@@ -312,12 +312,16 @@ export default function AppHome() {
         document.body.style.position = 'fixed';
         document.body.style.width = '100%';
         document.body.style.top = `-${vv.offsetTop ?? 0}px`;
+        document.body.style.overscrollBehavior = 'none';
+        document.documentElement.style.overscrollBehavior = 'none';
       } else {
         // Restaurar scroll position
         const scrollY = document.body.style.top;
         document.body.style.position = '';
         document.body.style.width = '';
         document.body.style.top = '';
+        document.body.style.overscrollBehavior = '';
+        document.documentElement.style.overscrollBehavior = '';
         if (scrollY) {
           window.scrollTo(0, Math.abs(parseInt(scrollY, 10) || 0));
         }
@@ -329,10 +333,12 @@ export default function AppHome() {
     return () => {
       vv.removeEventListener('resize', onResize);
       vv.removeEventListener('scroll', onResize);
-      // Cleanup: restore body
+      // Cleanup: restore body + html
       document.body.style.position = '';
       document.body.style.width = '';
       document.body.style.top = '';
+      document.body.style.overscrollBehavior = '';
+      document.documentElement.style.overscrollBehavior = '';
     };
   }, []);
 
