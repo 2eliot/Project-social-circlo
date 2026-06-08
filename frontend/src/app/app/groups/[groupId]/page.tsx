@@ -559,7 +559,7 @@ export default function GroupPage() {
   // "user is joined" would re-run this effect → cancel the in-flight listener
   // connection → user stuck with voiceJoined=true & sfuRef=null (race condition).
   useEffect(() => {
-    if (!voiceChannel) return;
+    if (!voiceChannel || !voiceChannel.isEnabled) return;
     if (sfuRef.current) return; // already have a connection (any type)
     let cancelled = false;
     const sfu = new SfuClient(voiceChannel.id);
