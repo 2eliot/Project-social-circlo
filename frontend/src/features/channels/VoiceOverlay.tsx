@@ -28,8 +28,8 @@ export function VoiceOverlay() {
   const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
   const bubbleRef = useRef<HTMLDivElement | null>(null);
 
-  // Visible only when there's an active voice channel AND we're NOT on that group's page
-  const isVisible = !!activeChannelId && pathname !== `/app/groups/${activeGroupId}`;
+  // Visible only when: channel is active, user has joined as speaker, AND we're NOT on that group's page
+  const isVisible = !!activeChannelId && isJoined && pathname !== `/app/groups/${activeGroupId}`;
 
   // ── Drag handling ──
   const onPointerDown = useCallback((e: React.PointerEvent) => {
