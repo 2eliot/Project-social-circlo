@@ -113,26 +113,6 @@ export default function GroupPage() {
   const voiceStoreSetOnLeaveRequested = useVoiceStore((s) => s.setOnLeaveRequested);
   const voiceStoreSetIsActive = useVoiceStore((s) => s.setIsActive);
 
-  // ── Persist voice speaker state to sessionStorage so a full page refresh
-  //     (F5) can restore the user as speaker instead of reconnecting as
-  //     listen-only (which would hide the avatar in the voice container).
-  useEffect(() => {
-    const onBeforeUnload = () => {
-      if (voiceChannel?.id && voiceJoined) {
-        try {
-          sessionStorage.setItem('voice_restore', JSON.stringify({
-            channelId: voiceChannel.id,
-            groupId,
-            isSpeaker: true,
-            isMuted: localMicMuted,
-            timestamp: Date.now(),
-          }));
-        } catch { /* quota exceeded — ignore */ }
-      }
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, [voiceChannel?.id, voiceJoined, localMicMuted, groupId]);
 
   async function loadGroup() {
     const nextGroup = await api<GroupDetail>(`/groups/${groupId}`);
@@ -246,6 +226,28 @@ export default function GroupPage() {
 
   const currentGroup = group;
   const voiceChannel = currentGroup?.channels.find((channel) => channel.type === 'VOICE' || channel.type === 'VIDEO') ?? null;
+
+  // ── Persist voice speaker state to sessionStorage so a full page refresh
+  //     (F5) can restore the user as speaker instead of reconnecting as
+  //     listen-only (which would hide the avatar in the voice container).
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      if (voiceChannel?.id && voiceJoined) {
+        try {
+          sessionStorage.setItem('voice_restore', JSON.stringify({
+            channelId: voiceChannel.id,
+            groupId,
+            isSpeaker: true,
+            isMuted: localMicMuted,
+            timestamp: Date.now(),
+          }));
+        } catch { /* quota exceeded — ignore */ }
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [voiceChannel?.id, voiceJoined, localMicMuted, groupId]);
+
   const textChannel = currentGroup?.channels.find((channel) => channel.type === 'TEXT') ?? null;
   const currentMembership = currentGroup?.members.find((member) => member.userId === user?.id) ?? null;
   const canManageChannels =
