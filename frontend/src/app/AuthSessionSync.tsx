@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/store/auth.store';
 
 const REDIRECT_KEY = 'appchat.redirect_to';
@@ -9,7 +9,6 @@ const REDIRECT_KEY = 'appchat.redirect_to';
 export function AuthSessionSync({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { user, hydrated, hydrate } = useAuth();
 
   const [isWaitingNotification, setIsWaitingNotification] = useState(false);
@@ -20,10 +19,11 @@ export function AuthSessionSync({ children }: { children: React.ReactNode }) {
 
   // Detectar si venimos de un inicio en frío por notificación push
   useEffect(() => {
-    if (searchParams.get('from_notification') === 'true') {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('from_notification') === 'true') {
       setIsWaitingNotification(true);
     }
-  }, [searchParams]);
+  }, []);
 
   useEffect(() => {
     const syncSession = () => {
