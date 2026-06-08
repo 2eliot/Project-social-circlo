@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useVoiceStore } from '@/store/voice.store';
 
 /**
@@ -12,6 +12,7 @@ import { useVoiceStore } from '@/store/voice.store';
  */
 export function VoiceOverlay() {
   const router = useRouter();
+  const pathname = usePathname();
   const {
     activeChannelId,
     activeGroupId,
@@ -19,7 +20,7 @@ export function VoiceOverlay() {
     isJoined,
     isMuted,
     participants,
-    onLeaveRequested,
+    clear: voiceStoreClear,
   } = useVoiceStore();
 
   const [position, setPosition] = useState({ x: 16, y: 120 });
@@ -27,7 +28,8 @@ export function VoiceOverlay() {
   const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
   const bubbleRef = useRef<HTMLDivElement | null>(null);
 
-  const isVisible = !!activeChannelId;
+  // Visible only when there's an active voice channel AND we're NOT on that group's page
+  const isVisible = !!activeChannelId && pathname !== `/app/groups/${activeGroupId}`;
 
   // ── Drag handling ──
   const onPointerDown = useCallback((e: React.PointerEvent) => {
@@ -82,7 +84,10 @@ export function VoiceOverlay() {
 
   // ── Handle leave ──
   const handleLeave = () => {
-    onLeaveRequested?.();
+    // Notify the group page to disconnect SFU (if still mounted)
+    window.dispatchEvent(new CustomEvent('voice:leaveRequested'));
+    // Clean store immediately (hides overlay)
+    voiceStoreClear();
   };
 
   // ── Handle mute/unmute via the store callback ──

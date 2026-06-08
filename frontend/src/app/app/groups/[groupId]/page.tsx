@@ -98,7 +98,6 @@ export default function GroupPage() {
   const voiceStoreSetMuted = useVoiceStore((s) => s.setMuted);
   const voiceStoreSetParticipants = useVoiceStore((s) => s.setParticipants);
   const voiceStoreSetRequestPending = useVoiceStore((s) => s.setRequestPending);
-  const voiceStoreSetOnLeave = useVoiceStore((s) => s.setOnLeaveRequested);
   const voiceStoreClear = useVoiceStore((s) => s.clear);
 
   async function loadGroup() {
@@ -396,13 +395,14 @@ export default function GroupPage() {
     }
   }, [voiceChannel?.id, voiceChannel?.isEnabled, voiceParticipants, voiceJoined, localMicMuted, voiceRequestPending, currentGroup?.name, user?.id, voiceStoreSetActive, voiceStoreSetJoined, voiceStoreSetMuted, voiceStoreSetRequestPending, voiceStoreSetParticipants]);
 
-  // ── Register leave callback so VoiceOverlay can trigger leave ──
+  // ── Listen for leave request from VoiceOverlay ──
   useEffect(() => {
-    voiceStoreSetOnLeave(() => {
+    const onLeaveRequested = () => {
       void handleVoiceLeave();
-    });
-    return () => { voiceStoreSetOnLeave(null); };
-  }, [voiceStoreSetOnLeave, voiceChannel?.id]);
+    };
+    window.addEventListener('voice:leaveRequested', onLeaveRequested);
+    return () => window.removeEventListener('voice:leaveRequested', onLeaveRequested);
+  }, [voiceChannel?.id]);
 
   // ── Listen for mute toggle from VoiceOverlay ──
   useEffect(() => {
