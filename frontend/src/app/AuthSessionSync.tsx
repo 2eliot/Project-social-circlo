@@ -38,6 +38,14 @@ export function AuthSessionSync({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!hydrated) return;
 
+    // Páginas públicas que no requieren auth
+    const publicPages = ['/login', '/register'];
+    if (publicPages.includes(pathname)) {
+      // Si ya está logueado en una página pública, ir al feed
+      if (user) router.replace('/app');
+      return;
+    }
+
     if (!user) {
       // Guardar ruta actual antes de redirigir al login
       try {
@@ -72,8 +80,8 @@ export function AuthSessionSync({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Si está en raíz o login (sin dm), ir al feed
-    if (pathname === '/' || pathname === '/login' || pathname === '/register') {
+    // Si está en raíz (sin dm), ir al feed
+    if (pathname === '/') {
       router.replace('/app');
     }
   }, [hydrated, user, pathname, router]);
