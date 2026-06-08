@@ -84,10 +84,11 @@ export class DirectMessagesService {
 
     if (existing && existing.status !== 'REJECTED') {
       /* Si el usuario había ocultado (eliminado) la conversación, al reabrir
-         desde el perfil se reinicia como una nueva solicitud PENDING */
+         desde el perfil se desoculta y se ocultan los mensajes antiguos para él.
+         Se conserva el estado original (ACCEPTED o PENDING) para que
+         ambos puedan seguir chateando sin bloqueos. */
       const isUserA = existing.userAId === meId;
       if ((isUserA && existing.userAHiddenAt) || (!isUserA && existing.userBHiddenAt)) {
-        /* Ocultar mensajes antiguos para quien reinicia, así puede enviar intro */
         const oldMessages = await this.prisma.directMessage.findMany({
           where: {
             conversationId: existing.id,
@@ -102,8 +103,8 @@ export class DirectMessagesService {
             where: { id: existing.id },
             data: {
               initiatorId: meId,
-              status: 'PENDING',
-              acceptedAt: null,
+              status: existing.status,
+              acceptedAt: existing.status === 'ACCEPTED' ? existing.acceptedAt : null,
               rejectedAt: null,
               ...(isUserA ? { userAHiddenAt: null } : { userBHiddenAt: null }),
             },
