@@ -99,6 +99,7 @@ export default function GroupPage() {
   voiceJoinedRef.current = voiceJoined;
   const handleVoiceLeaveRef = useRef(handleVoiceLeave);
   handleVoiceLeaveRef.current = handleVoiceLeave;
+  const voiceReconnectAsSpeakerRef = useRef(false);
 
   // ── Global voice store sync ──
   const voiceStoreSetActive = useVoiceStore((s) => s.setActive);
@@ -396,8 +397,15 @@ export default function GroupPage() {
       voiceRestoredRef.current = true;
       const storeState = useVoiceStore.getState();
       if (storeState.isActive && storeState.activeGroupId === groupId) {
-        setVoiceJoined(storeState.isJoined);
+        // HMR / remount: the Zustand store survived but the SFU connection did not.
+        // Restore UI-only state and force a reconnect via the listen-only effect.
         setLocalMicMuted(storeState.isMuted);
+        if (storeState.isJoined) {
+          voiceReconnectAsSpeakerRef.current = true;
+        }
+        // Do NOT restore voiceJoined=true — that would block the listen-only
+        // reconnect effect. Set false so the effect fires and reconnects.
+        setVoiceJoined(false);
         return; // re-render will re-run this effect with correct values
       }
     }
@@ -434,7 +442,9 @@ export default function GroupPage() {
     voiceStoreSetOnLeaveRequested(() => {
       handleVoiceLeaveRef.current();
     });
-    return () => { voiceStoreSetOnLeaveRequested(null); };
+    // NO cleanup — the callback MUST survive unmount because the VoiceOverlay
+    // bubble is only visible when this page is unmounted.
+    // On re-mount the effect re-runs and overwrites with the new callback.
   }, [voiceStoreSetOnLeaveRequested]);
 
   // ── Listen for mute toggle from VoiceOverlay (fallback for when page IS mounted) ──
@@ -455,7 +465,9 @@ export default function GroupPage() {
       if (!voiceJoinedRef.current) return;
       micChangeRef.current(muted);
     });
-    return () => { voiceStoreSetOnMicToggled(null); };
+    // NO cleanup — the callback MUST survive unmount because the VoiceOverlay
+    // bubble is only visible when this page is unmounted.
+    // On re-mount the effect re-runs and overwrites with the new callback.
   }, [voiceStoreSetOnMicToggled]);
 
   // ── Speaking detection sync for the local user ──
@@ -516,6 +528,32 @@ export default function GroupPage() {
         // Mark voice as active so the overlay stays visible when user navigates away
         voiceStoreSetActive(voiceChannel.id, currentGroup?.id ?? '', currentGroup?.name ?? '');
         voiceStoreSetIsActive(true);
+
+        // After HMR restore: if the user was speaking before, auto-upgrade
+        if (voiceReconnectAsSpeakerRef.current) {
+          voiceReconnectAsSpeakerRef.current = false;
+          // Disconnect listener, create fresh speaker client
+          sfu
+            .disconnect()
+            .catch(() => undefined)
+            .then(() => {
+              if (cancelled) return;
+              const speakerSfu = new SfuClient(voiceChannel.id);
+              return speakerSfu.connect().then(() => {
+                if (cancelled) {
+                  void speakerSfu.disconnect();
+                  return;
+                }
+                sfuRef.current = speakerSfu;
+                setVoiceJoined(true);
+                setVoiceRequestPending(false);
+                setLocalMicMuted(true);
+              });
+            })
+            .catch((err) => {
+              console.warn('[group] auto-speaker-reconnect failed', err);
+            });
+        }
       })
       .catch((err) => {
         console.warn('[group] listen-only connect failed', err);
