@@ -91,6 +91,7 @@ export default function GroupPage() {
   const [groupForm, setGroupForm] = useState({ name: '', description: '', privacy: 'PRIVATE' as GroupDetail['privacy'], iconUrl: null as string | null, bannerUrl: null as string | null });
   const iconInputRef = useRef<HTMLInputElement | null>(null);
   const sfuRef = useRef<SfuClient | null>(null);
+  const voiceRestoredRef = useRef(false);
 
   // ── Global voice store sync ──
   const voiceStoreSetActive = useVoiceStore((s) => s.setActive);
@@ -375,33 +376,36 @@ export default function GroupPage() {
     };
   }, [localMicMuted, user?.id, voiceChannel?.id, voiceJoined]);
 
-  // ── Restore voice state from store on mount (prevents drops on HMR / app update) ──
+  // ── Sync voice state to global store (handles HMR/remount restore internally) ──
   useEffect(() => {
-    const storeState = useVoiceStore.getState();
-    if (storeState.isJoined && storeState.activeChannelId === voiceChannel?.id) {
-      setVoiceJoined(true);
-      setLocalMicMuted(storeState.isMuted);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!voiceChannel?.isEnabled) return;
 
-  // ── Sync voice state to global store for VoiceOverlay ──
-  useEffect(() => {
-    if (voiceChannel?.isEnabled && voiceParticipants.length >= 0) {
-      voiceStoreSetActive(voiceChannel.id, currentGroup?.id ?? '', currentGroup?.name ?? '');
-      voiceStoreSetJoined(voiceJoined);
-      voiceStoreSetMuted(localMicMuted);
-      voiceStoreSetRequestPending(voiceRequestPending);
-      voiceStoreSetParticipants(
-        voiceParticipants.map((p) => ({
-          id: p.id,
-          displayName: p.displayName,
-          avatarUrl: p.avatarUrl ?? null,
-          micMuted: p.micMuted,
-          isSpeaking: p.id !== user?.id ? false : (!localMicMuted && voiceJoined),
-          isSelf: p.id === user?.id,
-        })),
-      );
+    // On first run after mount/remount, check if the store still has live voice state.
+    // If so, restore local state from the store instead of overwriting with defaults.
+    if (!voiceRestoredRef.current) {
+      voiceRestoredRef.current = true;
+      const storeState = useVoiceStore.getState();
+      if (storeState.isJoined && storeState.activeGroupId === groupId) {
+        setVoiceJoined(true);
+        setLocalMicMuted(storeState.isMuted);
+        return; // re-render will re-run this effect with correct values
+      }
     }
+
+    voiceStoreSetActive(voiceChannel.id, currentGroup?.id ?? '', currentGroup?.name ?? '');
+    voiceStoreSetJoined(voiceJoined);
+    voiceStoreSetMuted(localMicMuted);
+    voiceStoreSetRequestPending(voiceRequestPending);
+    voiceStoreSetParticipants(
+      voiceParticipants.map((p) => ({
+        id: p.id,
+        displayName: p.displayName,
+        avatarUrl: p.avatarUrl ?? null,
+        micMuted: p.micMuted,
+        isSpeaking: p.id !== user?.id ? false : (!localMicMuted && voiceJoined),
+        isSelf: p.id === user?.id,
+      })),
+    );
   }, [voiceChannel?.id, voiceChannel?.isEnabled, voiceParticipants, voiceJoined, localMicMuted, voiceRequestPending, currentGroup?.name, user?.id, voiceStoreSetActive, voiceStoreSetJoined, voiceStoreSetMuted, voiceStoreSetRequestPending, voiceStoreSetParticipants]);
 
   // ── Listen for leave request from VoiceOverlay ──
