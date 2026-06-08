@@ -130,29 +130,19 @@ self.addEventListener('push', (event) => {
 });
 
 /* ───── NOTIFICATION CLICK ───── */
-let pendingDMRoute = null;
-
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const rawUrl = event.notification.data?.url || '/app';
-
-  // Construir URL segura con el constructor nativo para evitar escapado roto
-  let destino;
-  try {
-    destino = new URL(rawUrl, self.location.origin);
-  } catch {
-    destino = new URL('/app', self.location.origin);
-    destino.searchParams.set('_notif_route', encodeURIComponent(rawUrl));
-  }
-
-  const targetUrl = destino.pathname + destino.search;
+  const conversationId = event.notification.data?.conversationId;
+  const targetUrl = conversationId
+    ? `/app?tab=chats&dm=${conversationId}`
+    : '/app';
 
   event.waitUntil(
     (async () => {
       const windowClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
 
-      // 1) App ya abierta → navegar directo (el router de Next.js está vivo)
+      // 1) App ya abierta → enfocar y navegar
       for (const client of windowClients) {
         if (client.url.startsWith(self.location.origin) && 'focus' in client) {
           try {
@@ -166,30 +156,10 @@ self.addEventListener('notificationclick', (event) => {
         }
       }
 
-      // 2) COLD START: la app está cerrada.
-      //    Guardamos la ruta y abrimos con flag from_notification.
-      //    El cliente avisará con READY_FOR_DM cuando esté hidratado.
-      pendingDMRoute = targetUrl;
-
-      try {
-        await self.clients.openWindow('/?from_notification=true');
-      } catch {
-        pendingDMRoute = null;
-      }
+      // 2) COLD START: abrir directo a /app con los parámetros que el frontend ya sabe leer
+      await self.clients.openWindow(targetUrl);
     })(),
   );
-});
-
-/* ───── CLIENT READY HANDSHAKE ───── */
-self.addEventListener('message', (event) => {
-  if (event.data?.type === 'READY_FOR_DM' && pendingDMRoute) {
-    const url = pendingDMRoute;
-    pendingDMRoute = null;
-    event.source.postMessage({
-      type: 'NAVIGATE_TO_NOTIFICATION',
-      url
-    });
-  }
 });
 async function staleWhileRevalidate(request, cacheName) {
 	const cache = await caches.open(cacheName);
