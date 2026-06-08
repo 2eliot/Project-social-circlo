@@ -188,6 +188,12 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
           messagesContainerRef.current.style.overscrollBehavior = 'contain';
         }
 
+        // Bloquear scroll en root y su wrapper padre para que no se escape nada
+        root.style.overflowY = 'hidden';
+        if (root.parentElement) {
+          root.parentElement.style.overflowY = 'hidden';
+        }
+
         // Available height = visual viewport height minus root's visual offset from top
         const rootTop = root.getBoundingClientRect().top;
         const availableH = Math.max(0, vv.height - rootTop);
@@ -197,6 +203,10 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
         }
       } else {
         root.style.height = '';
+        root.style.overflowY = '';
+        if (root.parentElement) {
+          root.parentElement.style.overflowY = '';
+        }
         // Restaurar mensajes
         if (messagesContainerRef.current) {
           messagesContainerRef.current.style.overscrollBehavior = '';
@@ -217,12 +227,19 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
     onResize();
     return () => {
       window.visualViewport?.removeEventListener('resize', onResize);
-      // Cleanup body + html
+      // Cleanup body + html + root + wrapper
       document.body.style.position = '';
       document.body.style.width = '';
       document.body.style.top = '';
       document.body.style.overscrollBehavior = '';
       document.documentElement.style.overscrollBehavior = '';
+      const rootClean = chatRootRef.current;
+      if (rootClean) {
+        rootClean.style.overflowY = '';
+        if (rootClean.parentElement) {
+          rootClean.parentElement.style.overflowY = '';
+        }
+      }
     };
   }, []);
 
