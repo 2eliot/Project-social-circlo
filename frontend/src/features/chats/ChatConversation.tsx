@@ -272,6 +272,10 @@ export default function ChatConversation({
       if (!root) return;
       const keyboardH = Math.max(0, window.innerHeight - vv.height - (vv.offsetTop ?? 0));
       if (keyboardH > 80) {
+        // Prevent body-level scrolling when keyboard is open
+        document.body.style.position = 'fixed';
+        document.body.style.width = '100%';
+        document.body.style.top = `-${vv.offsetTop ?? 0}px`;
         // Available height = visual viewport height minus root's visual offset from top
         // Also subtract bottom nav height (~68px) so composer stays above it
         const rootTop = root.getBoundingClientRect().top;
@@ -283,11 +287,25 @@ export default function ChatConversation({
         }
       } else {
         root.style.height = '';
+        // Restore body scroll
+        const scrollY = document.body.style.top;
+        document.body.style.position = '';
+        document.body.style.width = '';
+        document.body.style.top = '';
+        if (scrollY) {
+          window.scrollTo(0, Math.abs(parseInt(scrollY, 10) || 0));
+        }
       }
     };
     window.visualViewport?.addEventListener('resize', onResize);
     onResize();
-    return () => window.visualViewport?.removeEventListener('resize', onResize);
+    return () => {
+      window.visualViewport?.removeEventListener('resize', onResize);
+      // Cleanup body
+      document.body.style.position = '';
+      document.body.style.width = '';
+      document.body.style.top = '';
+    };
   }, []);
 
   /* --- Check if peer is blocked --- */
