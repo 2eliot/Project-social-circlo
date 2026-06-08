@@ -287,6 +287,10 @@ export default function AppHome() {
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const tabRef = useRef<Tab>('feed');
   const selectedConvRef = useRef<string | null>(null);
+  // Lazy-mount + keep-alive: tabs se montan al visitarlos por primera vez y se conservan vía display:none
+  const [visitedTabs, setVisitedTabs] = useState<Set<Tab>>(new Set<Tab>(['feed']));
+  // Trackea si la vista de detalle del chat (ChatsTab) ya fue montada para keep-alive
+  const [chatsDetailVisited, setChatsDetailVisited] = useState(false);
 
   useEffect(() => { tabRef.current = tab; }, [tab]);
   useEffect(() => { selectedConvRef.current = selectedConversationId; }, [selectedConversationId]);
@@ -466,6 +470,12 @@ export default function AppHome() {
 
   function handleSelectTab(nextTab: Tab) {
     setTab(nextTab);
+    setVisitedTabs((prev) => {
+      if (prev.has(nextTab)) return prev;
+      const next = new Set(prev);
+      next.add(nextTab);
+      return next;
+    });
     if (nextTab === 'chats') {
       // Al entrar a chats, ya "viste" todo — limpiar ambos badges
       setUnreadDmsCount(0);
@@ -484,6 +494,7 @@ export default function AppHome() {
   function handleSelectConversation(conversationId: string | null) {
     setLiveDmNotice(null);
     setSelectedConversationId(conversationId);
+    if (conversationId) setChatsDetailVisited(true);
   }
 
   function handleOpenConversation(conversationId: string) {
@@ -491,6 +502,7 @@ export default function AppHome() {
     setTab('chats');
     router.push('/app?tab=chats');
     setSelectedConversationId(conversationId);
+    setChatsDetailVisited(true);
     setConversationRefreshToken((current) => current + 1);
     // Al abrir una conversación directamente, ya "viste" todo
     setUnreadDmsCount(0);
@@ -543,18 +555,14 @@ export default function AppHome() {
       ) : null}
 
       <main className="app-content">
-        {tab === 'feed' ? <FeedTab onOpenProfile={handleOpenProfile} onlineUserIds={onlineUserIds} onOpenFocusedPost={(id) => setFocusedPostId(id)} /> : null}
-        {tab === 'chats' ? (
-          selectedConversationId ? (
-            <ChatsTab
-              selectedConversationId={selectedConversationId}
-              refreshToken={conversationRefreshToken}
-              onSelectConversation={handleSelectConversation}
-              onOpenProfile={handleOpenProfile}
-              onConversationChanged={handleConversationChanged}
-              onlineUserIds={onlineUserIds}
-            />
-          ) : (
+        {/* ── Keep-alive: cada tab se monta al visitarlo y se preserva con display:none ── */}
+        {visitedTabs.has('feed') && (
+          <div style={{ display: tab === 'feed' ? undefined : 'none' }}>
+            <FeedTab onOpenProfile={handleOpenProfile} onlineUserIds={onlineUserIds} onOpenFocusedPost={(id) => setFocusedPostId(id)} />
+          </div>
+        )}
+        {visitedTabs.has('chats') && (
+          <div style={{ display: tab === 'chats' && !selectedConversationId ? undefined : 'none' }}>
             <ChatsView
               selectedConversationId={selectedConversationId}
               refreshToken={conversationRefreshToken}
@@ -563,28 +571,44 @@ export default function AppHome() {
               onConversationChanged={handleConversationChanged}
               unreadDmsCount={unreadDmsCount}
             />
-          )
-        ) : null}
-        {tab === 'groups' ? (
-          <GroupsTab
-            openCreatorOnMount={openGroupCreatorOnTabChange}
-            onCreatorOpened={() => setOpenGroupCreatorOnTabChange(false)}
-          />
-        ) : null}
-        {tab === 'profile' ? (
-          <ProfileTab
-            viewedUserId={profileUserId}
-            onOpenChats={() => setTab('chats')}
-            onOpenConversation={handleOpenConversation}
-            onRelationshipChanged={() => void refreshPendingChatsCount()}
-            onOpenProfile={handleOpenProfile}
-            onOpenGroupCreator={() => {
-              setOpenGroupCreatorOnTabChange(true);
-              setTab('groups');
-            }}
-            onlineUserIds={onlineUserIds}
-          />
-        ) : null}
+          </div>
+        )}
+        {(visitedTabs.has('chats') || chatsDetailVisited) && (
+          <div style={{ display: tab === 'chats' && selectedConversationId ? undefined : 'none' }}>
+            <ChatsTab
+              selectedConversationId={selectedConversationId}
+              refreshToken={conversationRefreshToken}
+              onSelectConversation={handleSelectConversation}
+              onOpenProfile={handleOpenProfile}
+              onConversationChanged={handleConversationChanged}
+              onlineUserIds={onlineUserIds}
+            />
+          </div>
+        )}
+        {visitedTabs.has('groups') && (
+          <div style={{ display: tab === 'groups' ? undefined : 'none' }}>
+            <GroupsTab
+              openCreatorOnMount={openGroupCreatorOnTabChange}
+              onCreatorOpened={() => setOpenGroupCreatorOnTabChange(false)}
+            />
+          </div>
+        )}
+        {visitedTabs.has('profile') && (
+          <div style={{ display: tab === 'profile' ? undefined : 'none' }}>
+            <ProfileTab
+              viewedUserId={profileUserId}
+              onOpenChats={() => setTab('chats')}
+              onOpenConversation={handleOpenConversation}
+              onRelationshipChanged={() => void refreshPendingChatsCount()}
+              onOpenProfile={handleOpenProfile}
+              onOpenGroupCreator={() => {
+                setOpenGroupCreatorOnTabChange(true);
+                setTab('groups');
+              }}
+              onlineUserIds={onlineUserIds}
+            />
+          </div>
+        )}
       </main>
 
       <BottomNav tab={tab} setTab={handleSelectTab} pendingChatsCount={pendingChatsCount} unreadDmsCount={unreadDmsCount} onCreatePost={() => setShowPostPopup(true)} />
