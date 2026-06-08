@@ -130,7 +130,7 @@ self.addEventListener('push', (event) => {
 });
 
 /* ───── NOTIFICATION CLICK ───── */
-let pendingUrl = null;
+let pendingDMRoute = null;
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
@@ -167,17 +167,14 @@ self.addEventListener('notificationclick', (event) => {
       }
 
       // 2) COLD START: la app está cerrada.
-      //    Guardamos la ruta y abrimos la raíz limpia.
-      //    El cliente avisará con CLIENT_READY_FOR_NAVIGATION cuando esté hidratado.
-      pendingUrl = targetUrl;
-
-      // Timeout de seguridad: si el cliente no avisa en 8s, limpiamos
-      setTimeout(() => { pendingUrl = null; }, 8000);
+      //    Guardamos la ruta y abrimos con flag from_notification.
+      //    El cliente avisará con READY_FOR_DM cuando esté hidratado.
+      pendingDMRoute = targetUrl;
 
       try {
-        await self.clients.openWindow('/');
+        await self.clients.openWindow('/?from_notification=true');
       } catch {
-        pendingUrl = null;
+        pendingDMRoute = null;
       }
     })(),
   );
@@ -185,22 +182,13 @@ self.addEventListener('notificationclick', (event) => {
 
 /* ───── CLIENT READY HANDSHAKE ───── */
 self.addEventListener('message', (event) => {
-  if (event.data?.type === 'CLIENT_READY_FOR_NAVIGATION' && pendingUrl) {
-    const url = pendingUrl;
-    pendingUrl = null;
-    event.waitUntil(
-      (async () => {
-        const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-        for (const client of clients) {
-          if (client.url.startsWith(self.location.origin)) {
-            try {
-              client.postMessage({ type: 'NOTIFICATION_CLICK', url });
-            } catch { /* ignore */ }
-            return;
-          }
-        }
-      })(),
-    );
+  if (event.data?.type === 'READY_FOR_DM' && pendingDMRoute) {
+    const url = pendingDMRoute;
+    pendingDMRoute = null;
+    event.source.postMessage({
+      type: 'NAVIGATE_TO_NOTIFICATION',
+      url
+    });
   }
 });
 async function staleWhileRevalidate(request, cacheName) {

@@ -28,9 +28,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <DevServiceWorkerCleanup />
         <PwaRegister />
-        <AuthSessionSync />
-        <NotificationClickHandler />
-        {children}
+        <AuthSessionSync>
+          <NotificationClickHandler />
+          {children}
+        </AuthSessionSync>
       </body>
     </html>
   );

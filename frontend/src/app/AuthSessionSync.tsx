@@ -1,19 +1,29 @@
 'use client';
 
-import { useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/store/auth.store';
 
 const REDIRECT_KEY = 'appchat.redirect_to';
 
-export function AuthSessionSync() {
+export function AuthSessionSync({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, hydrated, hydrate } = useAuth();
+
+  const [isWaitingNotification, setIsWaitingNotification] = useState(false);
 
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  // Detectar si venimos de un inicio en frío por notificación push
+  useEffect(() => {
+    if (searchParams.get('from_notification') === 'true') {
+      setIsWaitingNotification(true);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const syncSession = () => {
@@ -38,9 +48,55 @@ export function AuthSessionSync() {
     };
   }, [hydrate]);
 
-  // Restaurar redirect_to pendiente cuando el usuario se autentica
+  // Handshake con el SW cuando venimos de notificación push en frío
   useEffect(() => {
-    if (!hydrated || !user) return;
+    if (!hydrated || !isWaitingNotification) return;
+
+    if (!user) {
+      // No hay sesión — soltamos el flag y dejamos que el flujo normal redirija al login
+      setIsWaitingNotification(false);
+      return;
+    }
+
+    if (!('serviceWorker' in navigator)) {
+      setIsWaitingNotification(false);
+      return;
+    }
+
+    navigator.serviceWorker.ready
+      .then((reg) => {
+        if (reg.active) {
+          reg.active.postMessage({ type: 'READY_FOR_DM' });
+        }
+      })
+      .catch(() => { setIsWaitingNotification(false); });
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'NAVIGATE_TO_NOTIFICATION' && event.data?.url) {
+        setIsWaitingNotification(false);
+        router.replace(event.data.url);
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', handleMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', handleMessage);
+  }, [hydrated, user, isWaitingNotification, router]);
+
+  // Restaurar redirect_to pendiente Y redirección normal
+  useEffect(() => {
+    if (!hydrated || isWaitingNotification) return;
+
+    if (!user) {
+      // Guardar ruta actual antes de redirigir al login
+      try {
+        const currentUrl = window.location.pathname + window.location.search;
+        if (currentUrl && currentUrl !== '/login') {
+          window.sessionStorage.setItem(REDIRECT_KEY, currentUrl);
+        }
+      } catch { /* ignore */ }
+      router.replace('/login');
+      return;
+    }
 
     let redirectTo: string | null = null;
     try {
@@ -48,8 +104,6 @@ export function AuthSessionSync() {
     } catch { /* ignore */ }
 
     if (redirectTo) {
-      // Comparar contra la URL COMPLETA (pathname + query params),
-      // no solo contra usePathname() que nunca incluye search.
       const currentFullUrl = pathname + window.location.search;
       if (currentFullUrl !== redirectTo) {
         if (redirectTo.startsWith('/')) {
@@ -57,7 +111,6 @@ export function AuthSessionSync() {
           router.replace(redirectTo);
           return;
         }
-        // Ruta inválida — limpiar y caer a fallback seguro
         window.sessionStorage.removeItem(REDIRECT_KEY);
       }
     }
@@ -65,22 +118,24 @@ export function AuthSessionSync() {
     if (pathname === '/' || pathname === '/login' || pathname === '/register') {
       router.replace('/app');
     }
-  }, [hydrated, user, pathname, router]);
+  }, [hydrated, user, pathname, router, isWaitingNotification]);
 
-  // Handshake con el Service Worker: avisar que el cliente ya está hidratado
-  // y listo para recibir la URL de navegación pendiente (cold-start de notificación)
-  useEffect(() => {
-    if (!hydrated || !user) return;
-    if (!('serviceWorker' in navigator)) return;
+  // Splash screen mientras se hidrata la sesión o se espera la ruta del SW
+  if (!hydrated || isWaitingNotification) {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center gap-6 bg-[#0f0f1a]">
+        <div
+          className="w-32 h-32 bg-no-repeat bg-center bg-contain animate-pulse"
+          style={{ backgroundImage: 'url(/icons/icon.svg)' }}
+        />
+        <div className="flex gap-2">
+          <div className="w-2 h-2 rounded-full bg-[#7c5cff] animate-bounce" style={{ animationDelay: '0ms' }} />
+          <div className="w-2 h-2 rounded-full bg-[#7c5cff] animate-bounce" style={{ animationDelay: '150ms' }} />
+          <div className="w-2 h-2 rounded-full bg-[#7c5cff] animate-bounce" style={{ animationDelay: '300ms' }} />
+        </div>
+      </main>
+    );
+  }
 
-    navigator.serviceWorker.ready
-      .then((reg) => {
-        if (reg.active) {
-          reg.active.postMessage({ type: 'CLIENT_READY_FOR_NAVIGATION' });
-        }
-      })
-      .catch(() => { /* ignore */ });
-  }, [hydrated, user]);
-
-  return null;
+  return <>{children}</>;
 }
