@@ -281,7 +281,42 @@ export class DirectMessagesService {
       parentMessageId = parent.id;
     }
 
-    const existingMessages = await this.prisma.directMessage.count({
+    /* Si el destinatario había ocultado/eliminado la conversación,
+       se restaura como nueva solicitud PENDING para que le aparezca
+       en la bandeja de solicitudes. */
+    const peerHidden = conv.userAId === peerId ? conv.userAHiddenAt : conv.userBHiddenAt;
+    let wasReset = false;
+    if (peerHidden) {
+      const peerOldMessages = await this.prisma.directMessage.findMany({
+        where: {
+          conversationId,
+          deletedAt: null,
+          status: 'PUBLISHED',
+          hiddenFor: { none: { userId: peerId } },
+        },
+        select: { id: true },
+      });
+      await this.prisma.$transaction([
+        this.prisma.directConversation.update({
+          where: { id: conversationId },
+          data: {
+            initiatorId: userId,
+            status: 'PENDING',
+            acceptedAt: null,
+            rejectedAt: null,
+            ...(conv.userAId === peerId ? { userAHiddenAt: null } : { userBHiddenAt: null }),
+          },
+        }),
+        ...peerOldMessages.map((msg) =>
+          this.prisma.directMessageHidden.create({
+            data: { messageId: msg.id, userId: peerId },
+          }),
+        ),
+      ]);
+      wasReset = true;
+    }
+
+    const existingMessages = wasReset ? 0 : await this.prisma.directMessage.count({
       where: { conversationId, deletedAt: null, status: 'PUBLISHED', hiddenFor: { none: { userId } } },
     });
 
@@ -321,7 +356,7 @@ export class DirectMessagesService {
 
     this.realtimeEvents.emitDmMessage(peerId, {
       conversationId,
-      conversationStatus: conv.status,
+      conversationStatus: wasReset ? 'PENDING' : conv.status,
       messageId: message.id,
       authorId: userId,
       authorDisplayName: message.author?.displayName ?? 'Usuario',
