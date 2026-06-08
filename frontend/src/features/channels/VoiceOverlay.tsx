@@ -32,8 +32,11 @@ export function VoiceOverlay() {
   const isVisible = !!activeChannelId && isJoined && pathname !== `/app/groups/${activeGroupId}`;
 
   // ── Drag handling ──
+  // Only start dragging on the main bubble area, not on interactive elements
   const onPointerDown = useCallback((e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest('button')) return; // don't drag on buttons
+    const target = e.target as HTMLElement;
+    // Don't start drag on buttons (mute, close) or inputs
+    if (target.closest('[data-no-drag]')) return;
     setDragging(true);
     dragRef.current = {
       startX: e.clientX,
@@ -120,11 +123,13 @@ export function VoiceOverlay() {
           ? 'border-emerald-400/30 bg-[#0a1f17]/92 shadow-[0_0_24px_rgba(52,211,153,.18)]'
           : 'border-white/10 bg-[#0c0f1a]/92'}
       `}>
-        {/* Tap area to go to group */}
-        <button
-          type="button"
+        {/* Tap area to go to group — uses div instead of button so it's draggable */}
+        <div
+          role="button"
+          tabIndex={0}
           onClick={goToGroup}
-          className="flex items-center gap-2 min-w-0"
+          onKeyDown={(e) => { if (e.key === 'Enter') goToGroup(); }}
+          className="flex items-center gap-2 min-w-0 cursor-pointer"
         >
           {/* Mic icon with speaking indicator */}
           <div className={`
@@ -150,12 +155,13 @@ export function VoiceOverlay() {
               {speakerCount > 0 ? `${speakerCount} hablando` : isJoined && isMuted ? 'Silenciado' : 'Escuchando'}
             </div>
           </div>
-        </button>
+        </div>
 
         {/* Mute/Unmute button */}
         {isJoined && (
           <button
             type="button"
+            data-no-drag
             onClick={(e) => { e.stopPropagation(); handleToggleMute(); }}
             className={`
               flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[10px]
@@ -182,6 +188,7 @@ export function VoiceOverlay() {
         {/* Close button */}
         <button
           type="button"
+          data-no-drag
           onClick={(e) => { e.stopPropagation(); handleLeave(); }}
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/[0.06] bg-white/[0.03] text-white/50 hover:bg-white/[0.08] hover:text-white/80"
           aria-label="Salir del chat de voz"
