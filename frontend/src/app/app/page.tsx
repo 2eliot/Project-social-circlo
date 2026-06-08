@@ -309,6 +309,7 @@ export default function AppHome() {
 
       if (keyboardH > 80) {
         // Prevenir que el viewport se desplace
+        document.documentElement.style.overflow = 'hidden';
         document.body.style.position = 'fixed';
         document.body.style.width = '100%';
         document.body.style.top = `-${vv.offsetTop ?? 0}px`;
@@ -322,6 +323,7 @@ export default function AppHome() {
         document.body.style.top = '';
         document.body.style.overscrollBehavior = '';
         document.documentElement.style.overscrollBehavior = '';
+        document.documentElement.style.overflow = '';
         if (scrollY) {
           window.scrollTo(0, Math.abs(parseInt(scrollY, 10) || 0));
         }
@@ -334,6 +336,7 @@ export default function AppHome() {
       vv.removeEventListener('resize', onResize);
       vv.removeEventListener('scroll', onResize);
       // Cleanup: restore body + html
+      document.documentElement.style.overflow = '';
       document.body.style.position = '';
       document.body.style.width = '';
       document.body.style.top = '';

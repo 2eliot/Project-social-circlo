@@ -272,22 +272,28 @@ export default function ChatConversation({
       if (!root) return;
       const keyboardH = Math.max(0, window.innerHeight - vv.height - (vv.offsetTop ?? 0));
       if (keyboardH > 80) {
-        // Lockear todo el viewport: body + html + overscroll
+        // Lockear todo el viewport: html + body + wrappers
+        document.documentElement.style.overflow = 'hidden';
+        document.documentElement.style.overscrollBehavior = 'none';
         document.body.style.position = 'fixed';
         document.body.style.width = '100%';
         document.body.style.top = `-${vv.offsetTop ?? 0}px`;
         document.body.style.overscrollBehavior = 'none';
-        document.documentElement.style.overscrollBehavior = 'none';
 
         // Bloquear mensajes para que no hagan overscroll y revelen el fondo
         if (messagesContainerRef.current) {
           messagesContainerRef.current.style.overscrollBehavior = 'contain';
         }
 
-        // Bloquear scroll en root y su wrapper padre para que no se escape nada
+        // Bloquear scroll en root y todos sus ancestros scroleables
         root.style.overflowY = 'hidden';
-        if (root.parentElement) {
-          root.parentElement.style.overflowY = 'hidden';
+        let el: HTMLElement | null = root.parentElement;
+        while (el) {
+          const style = window.getComputedStyle(el);
+          if (style.overflowY === 'auto' || style.overflowY === 'scroll' || style.overflow === 'auto' || style.overflow === 'scroll') {
+            (el as HTMLElement).style.overflowY = 'hidden';
+          }
+          el = el.parentElement;
         }
 
         // Available height = visual viewport height minus root's visual offset from top
@@ -300,8 +306,11 @@ export default function ChatConversation({
       } else {
         root.style.height = '';
         root.style.overflowY = '';
-        if (root.parentElement) {
-          root.parentElement.style.overflowY = '';
+        // Restaurar ancestros
+        let el: HTMLElement | null = root.parentElement;
+        while (el) {
+          if (el.style.overflowY === 'hidden') el.style.overflowY = '';
+          el = el.parentElement;
         }
         // Restaurar mensajes
         if (messagesContainerRef.current) {
@@ -314,6 +323,7 @@ export default function ChatConversation({
         document.body.style.top = '';
         document.body.style.overscrollBehavior = '';
         document.documentElement.style.overscrollBehavior = '';
+        document.documentElement.style.overflow = '';
         if (scrollY) {
           window.scrollTo(0, Math.abs(parseInt(scrollY, 10) || 0));
         }
@@ -323,20 +333,23 @@ export default function ChatConversation({
     onResize();
     return () => {
       window.visualViewport?.removeEventListener('resize', onResize);
-      // Cleanup body + html + root + wrapper
+      // Cleanup body + html + root + all ancestors
       document.body.style.position = '';
       document.body.style.width = '';
       document.body.style.top = '';
       document.body.style.overscrollBehavior = '';
       document.documentElement.style.overscrollBehavior = '';
+      document.documentElement.style.overflow = '';
       if (messagesContainerRef.current) {
         messagesContainerRef.current.style.overscrollBehavior = '';
       }
       const root = chatRootRef.current;
       if (root) {
         root.style.overflowY = '';
-        if (root.parentElement) {
-          root.parentElement.style.overflowY = '';
+        let el: HTMLElement | null = root.parentElement;
+        while (el) {
+          if (el.style.overflowY === 'hidden') el.style.overflowY = '';
+          el = el.parentElement;
         }
       }
     };
