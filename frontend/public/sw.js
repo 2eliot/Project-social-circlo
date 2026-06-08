@@ -99,6 +99,61 @@ async function cacheFirst(request, cacheName) {
 	}
 }
 
+/* ───── PUSH ───── */
+self.addEventListener('push', (event) => {
+	let payload = {};
+	try {
+		if (event.data) {
+			payload = event.data.json();
+		}
+	} catch {
+		// ignore parse errors
+	}
+
+	const title = payload.title || 'Social Circle';
+	const options = {
+		body: payload.body || '',
+		icon: payload.icon || '/icons/icon.svg',
+		badge: payload.badge || '/icons/icon.svg',
+		image: payload.image || undefined,
+		tag: payload.tag || 'default',
+		vibrate: payload.vibrate || [200, 100, 200],
+		data: {
+			...payload.data,
+			url: payload.data?.url || '/app',
+		},
+		requireInteraction: payload.requireInteraction !== false,
+		timestamp: payload.timestamp || Date.now(),
+	};
+
+	event.waitUntil(self.registration.showNotification(title, options));
+});
+
+/* ───── NOTIFICATION CLICK ───── */
+self.addEventListener('notificationclick', (event) => {
+	event.notification.close();
+
+	const urlToOpen = event.notification.data?.url || '/app';
+
+	event.waitUntil(
+		(async () => {
+			const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+			// Buscar una pestaña ya abierta y navegarla
+			for (const client of clients) {
+				if (client.url.includes(self.location.origin) && 'focus' in client) {
+					await client.focus();
+					await client.navigate(urlToOpen);
+					return;
+				}
+			}
+			// Si no hay pestaña abierta, abrir una nueva
+			if (self.clients.openWindow) {
+				await self.clients.openWindow(urlToOpen);
+			}
+		})(),
+	);
+});
+
 async function staleWhileRevalidate(request, cacheName) {
 	const cache = await caches.open(cacheName);
 	const cached = await cache.match(request);

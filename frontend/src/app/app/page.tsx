@@ -373,10 +373,9 @@ export default function AppHome() {
       attachments?: DMAttachment[];
     }) => {
       if (!payload || payload.authorId === user.id) return;
-      /* Incrementar contadores solo si NO estamos viendo esa conversación */
+      /* Incrementar contador solo si NO estamos viendo esa conversación */
       if (tabRef.current !== 'chats' || selectedConvRef.current !== payload.conversationId) {
         setPendingChatsCount((c) => c + 1);
-        setUnreadDmsCount((c) => c + 1);
       }
       /* Refrescar lista de chats si no estamos en la pestaña chats */
       if (tabRef.current !== 'chats') {
@@ -555,6 +554,7 @@ export default function AppHome() {
           onClick={() => {
             setTab('feed');
             setLiveInteractionNotice(null);
+            router.push('/app?tab=feed');
           }}
         >
           <UserAvatar displayName={liveInteractionNotice.actorDisplayName} avatarUrl={liveInteractionNotice.actorAvatarUrl} size={42} className="rounded-[14px]" />
@@ -4777,9 +4777,9 @@ function BottomNav({ tab, setTab, pendingChatsCount, unreadDmsCount, onCreatePos
           >
             <span className="nav-icon">
               {it.icon}
-              {it.id === 'chats' && (pendingChatsCount + unreadDmsCount) > 0 ? (
+              {it.id === 'chats' && pendingChatsCount > 0 ? (
                 <span className="absolute -right-2 -top-1 min-w-[16px] h-[16px] px-0.5 rounded-full bg-[#ff4343] text-white text-[8px] leading-[16px] text-center font-bold">
-                  {(pendingChatsCount + unreadDmsCount) > 9 ? '9+' : pendingChatsCount + unreadDmsCount}
+                  {pendingChatsCount > 9 ? '9+' : pendingChatsCount}
                 </span>
               ) : null}
               {tab === it.id ? <span className="nav-indicator" /> : null}

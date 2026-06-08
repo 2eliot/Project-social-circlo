@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
 import { getSocket } from '@/lib/socket-client';
 import { useAuth } from '@/store/auth.store';
@@ -715,6 +716,8 @@ function GroupsList({
   loading: boolean;
   onRefresh: () => void;
 }) {
+  const router = useRouter();
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -742,6 +745,7 @@ function GroupsList({
       {groups.map((group) => (
         <div
           key={group.id}
+          onClick={() => router.push(`/app/groups/${group.id}`)}
           className="flex cursor-pointer items-center gap-4 rounded-2xl bg-[#0e1126] p-4 transition hover:bg-[#1a1f3a] active:scale-[0.98]"
         >
           {/* Icono del grupo */}
