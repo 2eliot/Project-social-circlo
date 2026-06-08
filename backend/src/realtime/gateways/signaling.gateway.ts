@@ -42,6 +42,10 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
   private readonly logger = new Logger(SignalingGateway.name);
   private readonly pendingVoiceRequests = new Map<string, Set<string>>();
   private readonly approvedVoiceRequests = new Map<string, Set<string>>();
+  /** Grace period timers for speakers who disconnect (e.g. page refresh).
+   *  Key: `userId:channelId`. If the user reconnects within 3 s the delayed
+   *  peer_left / emitVoiceState is cancelled so the speaker slot stays. */
+  private readonly disconnectTimers = new Map<string, NodeJS.Timeout>();
 
   constructor(private readonly auth: WsAuthService, private readonly sfu: MediasoupService, private readonly prisma: PrismaService) {}
 
@@ -65,21 +69,68 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
   async handleDisconnect(rawSocket: Socket) {
     const socket = rawSocket as SignalingSocket;
     const channelId = socket.data?.channelId;
-    if (channelId) {
-      if (!socket.data.voiceListenOnly) {
-        socket.to(`voice:${channelId}`).emit('peer_left', { userId: socket.data.user.id });
-      }
+    const userId = socket.data?.user?.id;
+    const wasSpeaker = channelId && !socket.data.voiceListenOnly;
+
+    // Free mediasoup resources held by this socket immediately — transports
+    // release the UDP ports from the announced range; without this we exhaust
+    // 40000-40099. The new socket will create fresh ones on reconnect.
+    this.closeSocketResources(socket);
+
+    if (wasSpeaker && userId) {
+      // ── Grace period for speakers ──
+      // On a full page refresh (F5) the old socket disconnects and the new one
+      // reconnects within ~1-2 s.  Delaying peer_left / emitVoiceState by 3 s
+      // prevents the user from temporarily disappearing for other participants
+      // and gives the frontend time to auto-upgrade from listen-only to speaker.
+      const timerKey = `${userId}:${channelId}`;
+      // Clear any existing timer (paranoid safety against double disconnect)
+      const existing = this.disconnectTimers.get(timerKey);
+      if (existing) clearTimeout(existing);
+
+      this.disconnectTimers.set(
+        timerKey,
+        setTimeout(async () => {
+          this.disconnectTimers.delete(timerKey);
+          // If the user hasn't reconnected as a speaker by now, notify others
+          const isStillSpeaking = await this.isUserSpeaking(channelId!, userId);
+          if (!isStillSpeaking) {
+            socket.to(`voice:${channelId}`).emit('peer_left', { userId });
+            await this.emitVoiceState(channelId!);
+          }
+        }, 3_000),
+      );
+    } else if (channelId) {
+      // Listen-only disconnection — no grace period needed; just update state.
       await this.emitVoiceState(channelId);
     }
 
-    // Free mediasoup resources held by this socket (transports release the
-    // UDP ports from the announced range; without this we exhaust 40000-40099).
-    this.closeSocketResources(socket);
-
+    // Clean up any pending voice join requests from this user
     for (const [watchedChannelId, pending] of this.pendingVoiceRequests.entries()) {
       if (pending.delete(socket.data?.user?.id)) {
         await this.emitVoiceState(watchedChannelId);
       }
+    }
+  }
+
+  /** Check whether a user is currently a speaker in a given voice channel. */
+  private async isUserSpeaking(channelId: string, userId: string): Promise<boolean> {
+    const sockets = await this.server.in(`voice:${channelId}`).fetchSockets();
+    return sockets.some(
+      (raw) => {
+        const s = raw as unknown as SignalingSocket;
+        return s.data?.user?.id === userId && !s.data?.voiceListenOnly;
+      },
+    );
+  }
+
+  /** Cancel a pending disconnect grace-period timer for the given user+channel. */
+  private cancelDisconnectTimer(userId: string, channelId: string) {
+    const timerKey = `${userId}:${channelId}`;
+    const timer = this.disconnectTimers.get(timerKey);
+    if (timer) {
+      clearTimeout(timer);
+      this.disconnectTimers.delete(timerKey);
     }
   }
 
@@ -164,6 +215,7 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
     socket.data.voiceListenOnly = false;
     socket.data.micMuted = true;
     await socket.join(`voice:${body.channelId}`);
+    this.cancelDisconnectTimer(socket.data.user.id, body.channelId);
     socket.to(`voice:${body.channelId}`).emit('peer_joined', { userId: socket.data.user.id });
     await this.emitVoiceState(body.channelId);
 
@@ -199,6 +251,7 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
     socket.data.voiceListenOnly = true;
     socket.data.micMuted = true;
     await socket.join(`voice:${body.channelId}`);
+    this.cancelDisconnectTimer(socket.data.user.id, body.channelId);
 
     const rtpCapabilities = await this.sfu.rtpCapabilities(body.channelId);
     return { ok: true, rtpCapabilities };

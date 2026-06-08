@@ -113,6 +113,27 @@ export default function GroupPage() {
   const voiceStoreSetOnLeaveRequested = useVoiceStore((s) => s.setOnLeaveRequested);
   const voiceStoreSetIsActive = useVoiceStore((s) => s.setIsActive);
 
+  // ── Persist voice speaker state to sessionStorage so a full page refresh
+  //     (F5) can restore the user as speaker instead of reconnecting as
+  //     listen-only (which would hide the avatar in the voice container).
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      if (voiceChannel?.id && voiceJoined) {
+        try {
+          sessionStorage.setItem('voice_restore', JSON.stringify({
+            channelId: voiceChannel.id,
+            groupId,
+            isSpeaker: true,
+            isMuted: localMicMuted,
+            timestamp: Date.now(),
+          }));
+        } catch { /* quota exceeded — ignore */ }
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [voiceChannel?.id, voiceJoined, localMicMuted, groupId]);
+
   async function loadGroup() {
     const nextGroup = await api<GroupDetail>(`/groups/${groupId}`);
     setGroup(nextGroup);
@@ -395,10 +416,28 @@ export default function GroupPage() {
   useEffect(() => {
     if (!voiceChannel?.isEnabled) return;
 
-    // On first run after mount/remount, check if the store still has live voice state.
-    // If so, restore local state from the store instead of overwriting with defaults.
+    // On first run after mount/remount, check sessionStorage for a pre-refresh
+    // voice state snapshot. On full page refresh (F5) the Zustand store resets
+    // but sessionStorage survives, so we can restore the speaker status.
     if (!voiceRestoredRef.current) {
       voiceRestoredRef.current = true;
+      // ── Full page refresh restore (F5) ──
+      try {
+        const stored = sessionStorage.getItem('voice_restore');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          sessionStorage.removeItem('voice_restore');
+          if (parsed.groupId === groupId && parsed.isSpeaker && Date.now() - parsed.timestamp < 15_000) {
+            // User was a speaker in this group before the refresh.
+            // Restore mute state and flag for auto-upgrade after listen-only
+            // reconnects — same path as HMR restore.
+            setLocalMicMuted(parsed.isMuted ?? true);
+            voiceNeedsUpgradeRef.current = true;
+            return; // re-render; listen-only effect will handle the upgrade
+          }
+        }
+      } catch { /* corrupt JSON — ignore */ }
+      // ── HMR / remount restore (Zustand store survived) ──
       const storeState = useVoiceStore.getState();
       if (storeState.isActive && storeState.activeGroupId === groupId) {
         // HMR / remount: the Zustand store survived but the SFU connection did not.
