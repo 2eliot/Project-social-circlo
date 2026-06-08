@@ -657,7 +657,7 @@ export default function AppHome() {
           </div>
         )}
         {visitedTabs.has('groups') && (
-          <div className="flex-1 min-h-0 overflow-y-auto" style={{ display: tab === 'groups' ? undefined : 'none' }}>
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden" style={{ display: tab === 'groups' ? undefined : 'none' }}>
             <GroupsTab
               openCreatorOnMount={openGroupCreatorOnTabChange}
               onCreatorOpened={() => setOpenGroupCreatorOnTabChange(false)}
@@ -3453,14 +3453,15 @@ function GroupsTab({
   const visibleGroups = groupView === 'mine' ? mine : publicGroups;
 
   return (
-    <section className="group-browser">
-      <div className="group-browser__toolbar">
+    <section className="group-browser flex flex-col h-full">
+      <div className="group-browser__toolbar shrink-0">
         <div className="group-switcher">
           <button type="button" className={groupView === 'mine' ? 'active' : ''} onClick={() => setGroupView('mine')}>Mis grupos</button>
           <button type="button" className={groupView === 'public' ? 'active' : ''} onClick={() => setGroupView('public')}>Publicos</button>
         </div>
       </div>
 
+      <div className="flex-1 min-h-0 overflow-y-auto relative">
       {createComposerOpen ? (
         <>
           <button type="button" className="feed-composer-backdrop" aria-label="Cerrar creacion de grupo" onClick={() => setCreateComposerOpen(false)} />
@@ -3587,6 +3588,7 @@ function GroupsTab({
           <GroupPlusTinyIcon />
         </button>
       ) : null}
+      </div>
     </section>
   );
 }

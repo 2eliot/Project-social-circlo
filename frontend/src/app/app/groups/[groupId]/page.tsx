@@ -939,7 +939,7 @@ export default function GroupPage() {
   }
 
   return (
-    <div className="h-dvh max-w-[440px] w-full mx-auto bg-[#080a17] text-white flex flex-col overflow-hidden">
+    <div className="h-dvh max-w-[440px] w-full mx-auto bg-[#080a17] text-white flex flex-col overflow-hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
       {/* ── Header ── */}
       <div className="shrink-0 flex items-center gap-2.5 px-3 py-2.5 border-b border-white/[0.06] bg-[#0c0f1a]/95">
         <button
