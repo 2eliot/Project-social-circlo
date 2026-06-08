@@ -67,5 +67,20 @@ export function AuthSessionSync() {
     }
   }, [hydrated, user, pathname, router]);
 
+  // Handshake con el Service Worker: avisar que el cliente ya está hidratado
+  // y listo para recibir la URL de navegación pendiente (cold-start de notificación)
+  useEffect(() => {
+    if (!hydrated || !user) return;
+    if (!('serviceWorker' in navigator)) return;
+
+    navigator.serviceWorker.ready
+      .then((reg) => {
+        if (reg.active) {
+          reg.active.postMessage({ type: 'CLIENT_READY_FOR_NAVIGATION' });
+        }
+      })
+      .catch(() => { /* ignore */ });
+  }, [hydrated, user]);
+
   return null;
 }

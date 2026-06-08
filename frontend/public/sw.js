@@ -130,6 +130,8 @@ self.addEventListener('push', (event) => {
 });
 
 /* ───── NOTIFICATION CLICK ───── */
+let pendingUrl = null;
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
@@ -165,26 +167,41 @@ self.addEventListener('notificationclick', (event) => {
       }
 
       // 2) COLD START: la app está cerrada.
-      //    NUNCA abrir /app?dm=xxx directo → Next.js lanza 404 estático
-      //    antes de que React monte y pueda leer sessionStorage.
-      //    Abrimos la raíz limpia y delegamos vía postMessage.
+      //    Guardamos la ruta y abrimos la raíz limpia.
+      //    El cliente avisará con CLIENT_READY_FOR_NAVIGATION cuando esté hidratado.
+      pendingUrl = targetUrl;
+
+      // Timeout de seguridad: si el cliente no avisa en 8s, limpiamos
+      setTimeout(() => { pendingUrl = null; }, 8000);
+
       try {
-        const freshClient = await self.clients.openWindow('/');
-        if (freshClient) {
-          // Dar tiempo a que Next.js renderice el layout base
-          await new Promise((r) => setTimeout(r, 2000));
-          try {
-            freshClient.postMessage({ type: 'NOTIFICATION_CLICK', url: targetUrl });
-          } catch {
-            // postMessage falló — NotificationClickHandler no recibirá el mensaje,
-            // pero el flujo de sessionStorage en AuthSessionSync actuará de respaldo
-          }
-        }
+        await self.clients.openWindow('/');
       } catch {
-        // openWindow falló completamente (ej. iOS Safari en ciertos contextos)
+        pendingUrl = null;
       }
     })(),
   );
+});
+
+/* ───── CLIENT READY HANDSHAKE ───── */
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'CLIENT_READY_FOR_NAVIGATION' && pendingUrl) {
+    const url = pendingUrl;
+    pendingUrl = null;
+    event.waitUntil(
+      (async () => {
+        const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        for (const client of clients) {
+          if (client.url.startsWith(self.location.origin)) {
+            try {
+              client.postMessage({ type: 'NOTIFICATION_CLICK', url });
+            } catch { /* ignore */ }
+            return;
+          }
+        }
+      })(),
+    );
+  }
 });
 async function staleWhileRevalidate(request, cacheName) {
 	const cache = await caches.open(cacheName);

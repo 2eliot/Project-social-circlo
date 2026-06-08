@@ -29,7 +29,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [hydrated, user, router, pathname]);
 
-  if (!hydrated) return <main className="min-h-screen flex items-center justify-center">Cargando…</main>;
+  if (!hydrated) return (
+    <main className="min-h-screen flex flex-col items-center justify-center gap-6 bg-[#0f0f1a]">
+      <div
+        className="w-32 h-32 bg-no-repeat bg-center bg-contain animate-pulse"
+        style={{ backgroundImage: 'url(/icons/icon.svg)' }}
+      />
+      <div className="flex gap-2">
+        <div className="w-2 h-2 rounded-full bg-[#7c5cff] animate-bounce" style={{ animationDelay: '0ms' }} />
+        <div className="w-2 h-2 rounded-full bg-[#7c5cff] animate-bounce" style={{ animationDelay: '150ms' }} />
+        <div className="w-2 h-2 rounded-full bg-[#7c5cff] animate-bounce" style={{ animationDelay: '300ms' }} />
+      </div>
+    </main>
+  );
   if (!user) return null;
 
   return (
