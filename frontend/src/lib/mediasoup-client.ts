@@ -110,8 +110,7 @@ export class SfuClient {
         opusStereo: false,
         opusDtx: true,
         opusFec: true,               // Forward Error Correction for packet loss resilience
-        opusMaxAverageBitrate: 24000, // 24kbps óptimo para voz (calidad superior al teléfono)
-        opusMaxPlaybackRate: 16000,   // Limitar ancho de banda a 16kHz (solo frecuencias de voz)
+        opusMaxAverageBitrate: 32000, // 32kbps — calidad suficiente para que el AEC tenga buena referencia
         opusPtime: 20,               // 20ms frames for lower latency
       },
     });
