@@ -98,6 +98,7 @@ export class SfuClient {
         noiseSuppression: { exact: true },
         autoGainControl: { exact: true },
         channelCount: { ideal: 1 },    // Mono — crítico para AEC en móviles
+        sampleRate: { ideal: 48000 },  // 48kHz para mejor resolución del AEC
       },
       video: false,
     });
@@ -108,9 +109,10 @@ export class SfuClient {
       codecOptions: {
         opusStereo: false,
         opusDtx: true,
-        opusFec: true,           // Forward Error Correction for packet loss resilience
-        opusMaxAverageBitrate: 32000,  // Lower bitrate = less bandwidth, good for voice
-        opusPtime: 20,           // 20ms frames for lower latency
+        opusFec: true,               // Forward Error Correction for packet loss resilience
+        opusMaxAverageBitrate: 24000, // 24kbps óptimo para voz (calidad superior al teléfono)
+        opusMaxPlaybackRate: 16000,   // Limitar ancho de banda a 16kHz (solo frecuencias de voz)
+        opusPtime: 20,               // 20ms frames for lower latency
       },
     });
     console.log('[SfuClient] producer created id=', this.audioProducer.id);
@@ -252,7 +254,9 @@ export class SfuClient {
 
   // ── Voice activity detection ──
 
-  /** Start detecting speech activity from the local mic track. */
+  /** Start detecting speech activity from the local mic track.
+   *  Enfocado en frecuencias de voz (300Hz-4kHz) con hold time para
+   *  evitar falsos positivos por ruido ambiental. */
   private startSpeakingDetection(stream: MediaStream) {
     this.stopSpeakingDetection(); // cleanup any existing
 
@@ -261,24 +265,41 @@ export class SfuClient {
       const source = this.audioContext.createMediaStreamSource(stream);
       this.analyserNode = this.audioContext.createAnalyser();
       this.analyserNode.fftSize = 256;
-      this.analyserNode.smoothingTimeConstant = 0.4;
+      this.analyserNode.smoothingTimeConstant = 0.8; // más suavizado = menos fluctuación
       source.connect(this.analyserNode);
       // Don't connect to destination — we don't want feedback
 
       const dataArray = new Uint8Array(this.analyserNode.frequencyBinCount);
+      // Rango de voz: 300Hz-4kHz → bins ~2-21 (fftSize=256, cada bin = 187.5Hz a 48kHz)
+      const VOICE_START_BIN = 2;
+      const VOICE_END_BIN = 22;
+      let holdFrames = 0;
+      const HOLD_FRAMES = 3; // 3 checks × 150ms = 450ms de hold antes de "no speaking"
+
       this.speechCheckInterval = setInterval(() => {
         if (!this.analyserNode) return;
         this.analyserNode.getByteFrequencyData(dataArray);
-        // Sum energy across all frequency bins
-        const sum = dataArray.reduce((a, b) => a + b, 0);
-        const avg = sum / dataArray.length;
-        const isSpeaking = avg > 18; // threshold tuned for voice
-
-        if (isSpeaking !== this._isCurrentlySpeaking) {
-          this._isCurrentlySpeaking = isSpeaking;
-          this.onSpeakingChange?.(isSpeaking);
+        // Energía solo en frecuencias de voz (ignorar graves y agudos)
+        let sum = 0;
+        for (let i = VOICE_START_BIN; i < VOICE_END_BIN; i++) {
+          sum += dataArray[i];
         }
-      }, 100);
+        const avg = sum / (VOICE_END_BIN - VOICE_START_BIN);
+        const isSpeaking = avg > 28; // threshold más alto = menos falsos positivos
+
+        // Hold time: mantener "speaking" al menos 450ms para evitar parpadeo
+        if (isSpeaking) {
+          holdFrames = HOLD_FRAMES;
+        } else if (holdFrames > 0) {
+          holdFrames--;
+        }
+        const speakingWithHold = holdFrames > 0;
+
+        if (speakingWithHold !== this._isCurrentlySpeaking) {
+          this._isCurrentlySpeaking = speakingWithHold;
+          this.onSpeakingChange?.(speakingWithHold);
+        }
+      }, 150); // 150ms entre chequeos
     } catch (err) {
       console.warn('[SfuClient] Failed to start speaking detection:', err);
     }

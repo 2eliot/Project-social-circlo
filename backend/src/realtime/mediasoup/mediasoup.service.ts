@@ -15,7 +15,8 @@ const MEDIA_CODECS: RtpCodecCapability[] = [
       'usedtx': 1,             // Discontinuous Transmission (silence suppression)
       'stereo': 0,            // Forzar mono — elimina fase cancelada y mejora AEC
       'sprop-stereo': 0,      // Forzar mono en SDP
-      'maxaveragebitrate': 32000,  // Homologado con el frontend (32kbps) para no reservar recursos de más en el SFU
+      'maxaveragebitrate': 24000,  // 24kbps óptimo para voz (homologado con frontend)
+      'maxplaybackrate': 16000,    // Limitar ancho de banda a 16kHz (solo frecuencias de voz)
     },
   },
   { kind: 'video', mimeType: 'video/VP8', preferredPayloadType: 110, clockRate: 90000, parameters: { 'x-google-start-bitrate': 1000 } },
