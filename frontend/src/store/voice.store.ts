@@ -18,6 +18,8 @@ interface VoiceState {
   activeGroupName: string | null;
   /** Whether the current user has joined as a speaker */
   isJoined: boolean;
+  /** Whether the user has ANY voice connection (speaker or listener) */
+  isActive: boolean;
   /** Whether the user is muted */
   isMuted: boolean;
   /** Participants in the voice channel */
@@ -32,6 +34,7 @@ interface VoiceState {
   // Actions
   setActive: (channelId: string, groupId: string, groupName: string) => void;
   setJoined: (joined: boolean) => void;
+  setIsActive: (active: boolean) => void;
   setMuted: (muted: boolean) => void;
   setParticipants: (participants: VoiceParticipant[]) => void;
   updateParticipant: (userId: string, updates: Partial<VoiceParticipant>) => void;
@@ -47,6 +50,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   activeGroupId: null,
   activeGroupName: null,
   isJoined: false,
+  isActive: false,
   isMuted: true,
   participants: [],
   requestPending: false,
@@ -61,6 +65,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     }),
 
   setJoined: (joined) => set({ isJoined: joined }),
+
+  setIsActive: (active) => set({ isActive: active }),
 
   setMuted: (muted) => set({ isMuted: muted }),
 
@@ -85,6 +91,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       activeGroupId: null,
       activeGroupName: null,
       isJoined: false,
+      isActive: false,
       isMuted: true,
       participants: [],
       requestPending: false,

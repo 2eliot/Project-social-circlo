@@ -15,6 +15,7 @@ export function VoiceOverlay() {
     activeChannelId,
     activeGroupId,
     isJoined,
+    isActive,
     isMuted,
     clear: voiceStoreClear,
   } = useVoiceStore();
@@ -24,7 +25,7 @@ export function VoiceOverlay() {
   const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isVisible = !!activeChannelId && isJoined && pathname !== `/app/groups/${activeGroupId}`;
+  const isVisible = !!activeChannelId && isActive && pathname !== `/app/groups/${activeGroupId}`;
 
   // ── Long-press to drag (150ms hold) ──
   // Quick taps on buttons work as clicks; hold anywhere to drag.
@@ -75,6 +76,9 @@ export function VoiceOverlay() {
 
   // ── Handlers ──
   const handleLeave = () => {
+    // Primary: invoke the store callback (works even when group page is unmounted)
+    useVoiceStore.getState().onLeaveRequested?.();
+    // Fallback: also dispatch event for the group page (when mounted)
     window.dispatchEvent(new CustomEvent('voice:leaveRequested'));
     voiceStoreClear();
   };

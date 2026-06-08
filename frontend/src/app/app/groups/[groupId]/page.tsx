@@ -97,6 +97,8 @@ export default function GroupPage() {
   micChangeRef.current = handleMicMutedChange;
   const voiceJoinedRef = useRef(voiceJoined);
   voiceJoinedRef.current = voiceJoined;
+  const handleVoiceLeaveRef = useRef(handleVoiceLeave);
+  handleVoiceLeaveRef.current = handleVoiceLeave;
 
   // ── Global voice store sync ──
   const voiceStoreSetActive = useVoiceStore((s) => s.setActive);
@@ -106,6 +108,8 @@ export default function GroupPage() {
   const voiceStoreSetRequestPending = useVoiceStore((s) => s.setRequestPending);
   const voiceStoreClear = useVoiceStore((s) => s.clear);
   const voiceStoreSetOnMicToggled = useVoiceStore((s) => s.setOnMicToggled);
+  const voiceStoreSetOnLeaveRequested = useVoiceStore((s) => s.setOnLeaveRequested);
+  const voiceStoreSetIsActive = useVoiceStore((s) => s.setIsActive);
 
   async function loadGroup() {
     const nextGroup = await api<GroupDetail>(`/groups/${groupId}`);
@@ -391,14 +395,15 @@ export default function GroupPage() {
     if (!voiceRestoredRef.current) {
       voiceRestoredRef.current = true;
       const storeState = useVoiceStore.getState();
-      if (storeState.isJoined && storeState.activeGroupId === groupId) {
-        setVoiceJoined(true);
+      if (storeState.isActive && storeState.activeGroupId === groupId) {
+        setVoiceJoined(storeState.isJoined);
         setLocalMicMuted(storeState.isMuted);
         return; // re-render will re-run this effect with correct values
       }
     }
 
     voiceStoreSetActive(voiceChannel.id, currentGroup?.id ?? '', currentGroup?.name ?? '');
+    voiceStoreSetIsActive(true);
     voiceStoreSetJoined(voiceJoined);
     voiceStoreSetMuted(localMicMuted);
     voiceStoreSetRequestPending(voiceRequestPending);
@@ -412,9 +417,9 @@ export default function GroupPage() {
         isSelf: p.id === user?.id,
       })),
     );
-  }, [voiceChannel?.id, voiceChannel?.isEnabled, voiceParticipants, voiceJoined, localMicMuted, voiceRequestPending, currentGroup?.name, user?.id, voiceStoreSetActive, voiceStoreSetJoined, voiceStoreSetMuted, voiceStoreSetRequestPending, voiceStoreSetParticipants]);
+  }, [voiceChannel?.id, voiceChannel?.isEnabled, voiceParticipants, voiceJoined, localMicMuted, voiceRequestPending, currentGroup?.name, user?.id, voiceStoreSetActive, voiceStoreSetIsActive, voiceStoreSetJoined, voiceStoreSetMuted, voiceStoreSetRequestPending, voiceStoreSetParticipants]);
 
-  // ── Listen for leave request from VoiceOverlay ──
+  // ── Listen for leave request from VoiceOverlay (kept as fallback for when page IS mounted) ──
   useEffect(() => {
     const onLeaveRequested = () => {
       void handleVoiceLeave();
@@ -423,7 +428,16 @@ export default function GroupPage() {
     return () => window.removeEventListener('voice:leaveRequested', onLeaveRequested);
   }, [voiceChannel?.id]);
 
-  // ── Listen for mute toggle from VoiceOverlay ──
+  // ── Register leave callback in Zustand store so VoiceOverlay can trigger leave
+  //     even when the group page is unmounted ──
+  useEffect(() => {
+    voiceStoreSetOnLeaveRequested(() => {
+      handleVoiceLeaveRef.current();
+    });
+    return () => { voiceStoreSetOnLeaveRequested(null); };
+  }, [voiceStoreSetOnLeaveRequested]);
+
+  // ── Listen for mute toggle from VoiceOverlay (fallback for when page IS mounted) ──
   useEffect(() => {
     const onToggleMute = (e: Event) => {
       const detail = (e as CustomEvent<{ muted?: boolean }>).detail;
@@ -499,6 +513,9 @@ export default function GroupPage() {
           return;
         }
         sfuRef.current = sfu;
+        // Mark voice as active so the overlay stays visible when user navigates away
+        voiceStoreSetActive(voiceChannel.id, currentGroup?.id ?? '', currentGroup?.name ?? '');
+        voiceStoreSetIsActive(true);
       })
       .catch((err) => {
         console.warn('[group] listen-only connect failed', err);
@@ -506,7 +523,7 @@ export default function GroupPage() {
     return () => {
       cancelled = true;
     };
-  }, [voiceChannel?.id, voiceChannel?.isEnabled, voiceJoined]);
+  }, [voiceChannel?.id, voiceChannel?.isEnabled, voiceJoined, currentGroup?.id, currentGroup?.name, voiceStoreSetActive, voiceStoreSetIsActive]);
 
   if (!currentGroup) return <p className="p-6 opacity-70">Cargando…</p>;
 
