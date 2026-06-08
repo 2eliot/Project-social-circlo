@@ -90,11 +90,14 @@ export class SfuClient {
 
     // echoCancellation evita que el micrófono capte el audio de los altavoces,
     // previniendo eco. noiseSuppression y autoGainControl mejoran calidad de voz.
+    // Usamos { exact: true } en los constraints avanzados para que el navegador
+    // FALLE si no puede activar AEC, en vez de silenciosamente ignorarlo.
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
+        echoCancellation: { exact: true },
+        noiseSuppression: { exact: true },
+        autoGainControl: { exact: true },
+        channelCount: { ideal: 1 },    // Mono — crítico para AEC en móviles
       },
       video: false,
     });
@@ -113,23 +116,21 @@ export class SfuClient {
     console.log('[SfuClient] producer created id=', this.audioProducer.id);
     this.audioProducer.on('transportclose', () => { this.audioProducer = undefined; });
 
-    // Start voice activity detection (reuse suspended context if available)
-    if (this.audioContext && this.audioContext.state === 'suspended') {
-      await this.audioContext.resume().catch(() => {});
-    } else {
-      this.startSpeakingDetection(stream);
-    }
+    // Start voice activity detection — siempre cerramos el contexto anterior
+    // para evitar que un AudioContext suspendido interfiera con el AEC del navegador
+    // (bugs conocidos en Chrome Android y Safari).
+    this.startSpeakingDetection(stream);
   }
 
-  /** Stop publishing mic audio. Suspend AudioContext para ahorrar batería en móvil. */
+  /** Stop publishing mic audio. Cierra el AudioContext por completo para
+   *  evitar que un contexto suspendido interfere con el AEC del navegador
+   *  al volver a publicar (bugs conocidos en Chrome Android y Safari).
+   *  El overhead de recrear el contexto es irrelevante (~1ms). */
   async stopMic() {
     if (!this.audioProducer || this.audioProducer.closed) return;
     this.audioProducer.close();
     this.audioProducer = undefined;
-    // Suspender en lugar de cerrar — evita recrear el contexto cada vez que se mutea/desmutea
-    if (this.audioContext && this.audioContext.state === 'running') {
-      await this.audioContext.suspend().catch(() => {});
-    }
+    // Cerrar SIEMPRE en lugar de suspender — evita interferencias con AEC
     this.stopSpeakingDetection();
   }
 
