@@ -278,8 +278,10 @@ export default function AppHome() {
   const [conversationRefreshToken, setConversationRefreshToken] = useState(0);
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [pendingChatsCount, setPendingChatsCount] = useState(0);
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
   const [unreadDmsCount, setUnreadDmsCount] = useState(0);
   const [liveDmNotice, setLiveDmNotice] = useState<LiveDmNotice | null>(null);
+  const [liveRequestNotice, setLiveRequestNotice] = useState<LiveDmNotice | null>(null);
   const [liveInteractionNotice, setLiveInteractionNotice] = useState<LiveInteractionNotice | null>(null);
   const [openGroupCreatorOnTabChange, setOpenGroupCreatorOnTabChange] = useState(false);
   const [showPostPopup, setShowPostPopup] = useState(false);
@@ -428,6 +430,7 @@ export default function AppHome() {
     const socket = getSocket('/social');
     const onDmMessage = (payload: {
       conversationId: string;
+      conversationStatus?: string;
       authorId: string;
       authorDisplayName?: string;
       authorAvatarUrl?: string | null;
@@ -435,9 +438,14 @@ export default function AppHome() {
       attachments?: DMAttachment[];
     }) => {
       if (!payload || payload.authorId === user.id) return;
+      const isRequest = payload.conversationStatus === 'PENDING';
       /* Incrementar contador solo si NO estamos viendo esa conversación */
       if (tabRef.current !== 'chats' || selectedConvRef.current !== payload.conversationId) {
-        setPendingChatsCount((c) => c + 1);
+        if (isRequest) {
+          setPendingRequestsCount((c) => c + 1);
+        } else {
+          setPendingChatsCount((c) => c + 1);
+        }
       }
       /* Refrescar lista de chats si no estamos en la pestaña chats */
       if (tabRef.current !== 'chats') {
@@ -445,18 +453,27 @@ export default function AppHome() {
       }
       /* Solo mostrar popup si NO estamos en la pestaña chats */
       if (tabRef.current !== 'chats') {
-        const preview = getConversationPreview({
-          content: payload.content ?? '',
-          createdAt: new Date().toISOString(),
-          authorId: payload.authorId,
-          attachments: payload.attachments,
-        }) || 'Te llego un mensaje nuevo';
-        setLiveDmNotice({
-          conversationId: payload.conversationId,
-          authorDisplayName: payload.authorDisplayName ?? 'Nuevo mensaje',
-          authorAvatarUrl: payload.authorAvatarUrl ?? null,
-          preview,
-        });
+        if (isRequest) {
+          setLiveRequestNotice({
+            conversationId: payload.conversationId,
+            authorDisplayName: payload.authorDisplayName ?? 'Alguien',
+            authorAvatarUrl: payload.authorAvatarUrl ?? null,
+            preview: 'quiere conversar contigo',
+          });
+        } else {
+          const preview = getConversationPreview({
+            content: payload.content ?? '',
+            createdAt: new Date().toISOString(),
+            authorId: payload.authorId,
+            attachments: payload.attachments,
+          }) || 'Te llego un mensaje nuevo';
+          setLiveDmNotice({
+            conversationId: payload.conversationId,
+            authorDisplayName: payload.authorDisplayName ?? 'Nuevo mensaje',
+            authorAvatarUrl: payload.authorAvatarUrl ?? null,
+            preview,
+          });
+        }
       }
     };
 
@@ -530,6 +547,12 @@ export default function AppHome() {
   }, [liveDmNotice]);
 
   useEffect(() => {
+    if (!liveRequestNotice) return;
+    const timer = window.setTimeout(() => setLiveRequestNotice(null), 4200);
+    return () => window.clearTimeout(timer);
+  }, [liveRequestNotice]);
+
+  useEffect(() => {
     if (!liveInteractionNotice) return;
     const timer = window.setTimeout(() => setLiveInteractionNotice(null), 4200);
     return () => window.clearTimeout(timer);
@@ -553,6 +576,7 @@ export default function AppHome() {
       // Al entrar a chats, ya "viste" todo — limpiar ambos badges
       setUnreadDmsCount(0);
       setPendingChatsCount(0);
+      setPendingRequestsCount(0);
     }
     if (nextTab === 'profile') {
       setProfileUserId(user?.id ?? null);
@@ -580,6 +604,7 @@ export default function AppHome() {
     // Al abrir una conversación directamente, ya "viste" todo
     setUnreadDmsCount(0);
     setPendingChatsCount(0);
+    setPendingRequestsCount(0);
   }
 
   function handleConversationChanged() {
@@ -606,6 +631,24 @@ export default function AppHome() {
             <div className="truncate text-[12px] text-white/72">{liveDmNotice.preview}</div>
           </div>
           <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#9fffe8]">Chat</div>
+        </button>
+      ) : null}
+
+      {liveRequestNotice ? (
+        <button
+          type="button"
+          className="fixed left-1/2 -translate-x-1/2 top-[72px] z-50 flex w-[min(392px,calc(100%-42px))] items-center gap-3 rounded-[22px] border border-[#a78bfa]/24 bg-[rgba(26,16,53,.92)] px-3 py-3 text-left shadow-[0_16px_32px_rgba(0,0,0,.3)] backdrop-blur-[18px]"
+          onClick={() => {
+            handleOpenConversation(liveRequestNotice.conversationId);
+            setLiveRequestNotice(null);
+          }}
+        >
+          <UserAvatar displayName={liveRequestNotice.authorDisplayName} avatarUrl={liveRequestNotice.authorAvatarUrl} size={42} className="rounded-[14px]" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[12px] font-semibold text-[#cdbfff]">{liveRequestNotice.authorDisplayName}</div>
+            <div className="truncate text-[12px] text-white/72">{liveRequestNotice.preview}</div>
+          </div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#b79cff]">Solicitud</div>
         </button>
       ) : null}
 
@@ -685,7 +728,7 @@ export default function AppHome() {
         )}
       </main>
 
-      <BottomNav tab={tab} setTab={handleSelectTab} pendingChatsCount={pendingChatsCount} unreadDmsCount={unreadDmsCount} onCreatePost={() => setShowPostPopup(true)} />
+      <BottomNav tab={tab} setTab={handleSelectTab} pendingChatsCount={pendingChatsCount} pendingRequestsCount={pendingRequestsCount} unreadDmsCount={unreadDmsCount} onCreatePost={() => setShowPostPopup(true)} />
 
       {/* Popup para crear post */}
       {showPostPopup ? <PostComposerPopup onClose={() => setShowPostPopup(false)} /> : null}
@@ -4798,7 +4841,7 @@ function ProfileTab({
 }
 
 /* -------------------- Bottom nav -------------------- */
-function BottomNav({ tab, setTab, pendingChatsCount, unreadDmsCount, onCreatePost }: { tab: Tab; setTab: (t: Tab) => void; pendingChatsCount: number; unreadDmsCount: number; onCreatePost?: () => void }) {
+function BottomNav({ tab, setTab, pendingChatsCount, pendingRequestsCount, unreadDmsCount, onCreatePost }: { tab: Tab; setTab: (t: Tab) => void; pendingChatsCount: number; pendingRequestsCount: number; unreadDmsCount: number; onCreatePost?: () => void }) {
   const user = useAuth((state) => state.user);
   const items: { id: Tab | 'search'; label: string; icon: React.ReactNode }[] = [
     {
@@ -4854,6 +4897,11 @@ function BottomNav({ tab, setTab, pendingChatsCount, unreadDmsCount, onCreatePos
           >
             <span className="nav-icon">
               {it.icon}
+              {it.id === 'chats' && pendingRequestsCount > 0 ? (
+                <span className="absolute -right-2 -top-1 min-w-[16px] h-[16px] px-0.5 rounded-full bg-[#8b5cf6] text-white text-[8px] leading-[16px] text-center font-bold">
+                  {pendingRequestsCount > 9 ? '9+' : pendingRequestsCount}
+                </span>
+              ) : null}
               {it.id === 'chats' && pendingChatsCount > 0 ? (
                 <span className="absolute -right-2 -top-1 min-w-[16px] h-[16px] px-0.5 rounded-full bg-[#ff4343] text-white text-[8px] leading-[16px] text-center font-bold">
                   {pendingChatsCount > 9 ? '9+' : pendingChatsCount}

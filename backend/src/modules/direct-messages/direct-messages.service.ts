@@ -293,6 +293,7 @@ export class DirectMessagesService {
 
     this.realtimeEvents.emitDmMessage(peerId, {
       conversationId,
+      conversationStatus: conv.status,
       messageId: message.id,
       authorId: userId,
       authorDisplayName: message.author?.displayName ?? 'Usuario',
