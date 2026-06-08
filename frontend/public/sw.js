@@ -140,53 +140,48 @@ self.addEventListener('notificationclick', (event) => {
   try {
     destino = new URL(rawUrl, self.location.origin);
   } catch {
-    // Si viene rota, abrir solo /app y pasar el rawUrl como data para que el cliente lo resuelva
     destino = new URL('/app', self.location.origin);
     destino.searchParams.set('_notif_route', encodeURIComponent(rawUrl));
   }
 
-  const fullUrl = destino.href;
-  const relativeUrl = destino.pathname + destino.search;
+  const targetUrl = destino.pathname + destino.search;
 
   event.waitUntil(
     (async () => {
       const windowClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
 
-      // 1) Si hay una ventana abierta, enfocarla y navegar
+      // 1) App ya abierta → navegar directo (el router de Next.js está vivo)
       for (const client of windowClients) {
         if (client.url.startsWith(self.location.origin) && 'focus' in client) {
           try {
             await client.focus();
-            // navigate() funciona en Chrome desktop, puede fallar en mobile
-            await client.navigate(fullUrl);
+            await client.navigate(targetUrl);
             return;
           } catch {
-            // navigate falló — enviar mensaje para que el cliente haga router.push
-            client.postMessage({ type: 'NOTIFICATION_CLICK', url: relativeUrl });
+            client.postMessage({ type: 'NOTIFICATION_CLICK', url: targetUrl });
             return;
           }
         }
       }
 
-      // 2) No hay ventana abierta — intentar abrir una nueva
-      if (self.clients.openWindow) {
-        try {
-          await self.clients.openWindow(fullUrl);
-          return;
-        } catch {
-          // openWindow puede fallar en mobile (iOS/Safari)
+      // 2) COLD START: la app está cerrada.
+      //    NUNCA abrir /app?dm=xxx directo → Next.js lanza 404 estático
+      //    antes de que React monte y pueda leer sessionStorage.
+      //    Abrimos la raíz limpia y delegamos vía postMessage.
+      try {
+        const freshClient = await self.clients.openWindow('/');
+        if (freshClient) {
+          // Dar tiempo a que Next.js renderice el layout base
+          await new Promise((r) => setTimeout(r, 2000));
+          try {
+            freshClient.postMessage({ type: 'NOTIFICATION_CLICK', url: targetUrl });
+          } catch {
+            // postMessage falló — NotificationClickHandler no recibirá el mensaje,
+            // pero el flujo de sessionStorage en AuthSessionSync actuará de respaldo
+          }
         }
-      }
-
-      // 3) Último recurso: abrir / y pasar ruta por postMessage
-      const freshClient = await self.clients.openWindow('/');
-      if (freshClient) {
-        await new Promise((r) => setTimeout(r, 1500));
-        try {
-          freshClient.postMessage({ type: 'NOTIFICATION_CLICK', url: relativeUrl });
-        } catch {
-          // Si postMessage falla, la app leerá sessionStorage al hidratarse
-        }
+      } catch {
+        // openWindow falló completamente (ej. iOS Safari en ciertos contextos)
       }
     })(),
   );
