@@ -3759,6 +3759,22 @@ function ProfileTab({
   } | null>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [connectionsList, setConnectionsList] = useState<ProfileRelationshipUser[]>([]);
+
+  // Close profile menu on outside click (usa touchstart para respuesta instantánea en móvil)
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+    const handler = (e: Event) => {
+      if (!(e.target as HTMLElement).closest('[data-profile-menu]')) {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener('click', handler);
+    document.addEventListener('touchstart', handler, { passive: true });
+    return () => {
+      document.removeEventListener('click', handler);
+      document.removeEventListener('touchstart', handler);
+    };
+  }, [profileMenuOpen]);
   const [userVoteOnProfile, setUserVoteOnProfile] = useState<1 | -1 | null>(null);
   const [votingInProgress, setVotingInProgress] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
@@ -4060,7 +4076,10 @@ function ProfileTab({
 
           {/* Menú de opciones de perfil */}
           {profileMenuOpen ? (
-            <div className="absolute right-4 top-12.5 z-20 w-[180px] overflow-hidden rounded-[18px] border border-white/10 bg-[#141524] shadow-[0_12px_32px_rgba(0,0,0,.5)] backdrop-blur-[12px]">
+            <div
+              data-profile-menu
+              className="absolute right-4 top-12.5 z-[100] w-[180px] overflow-hidden rounded-[18px] border border-white/10 bg-[#141524] shadow-[0_12px_32px_rgba(0,0,0,.5)] backdrop-blur-[12px]"
+            >
               {isOwnProfile ? (
                 <>
                   <button

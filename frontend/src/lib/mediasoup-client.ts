@@ -19,6 +19,14 @@ export class SfuClient {
   private onProducerClosedHandler?: (payload: { producerId: string }) => void;
   private listenOnly = false;
 
+  // ── Voice activity detection ──
+  private audioContext?: AudioContext;
+  private analyserNode?: AnalyserNode;
+  private speechCheckInterval?: ReturnType<typeof setInterval>;
+  private _isCurrentlySpeaking = false;
+  /** Callback: fires when local mic speech activity changes */
+  public onSpeakingChange?: (isSpeaking: boolean) => void;
+
   constructor(public readonly channelId: string) {}
 
   /** Join the voice channel as a speaker (can publish + consume). */
@@ -82,17 +90,35 @@ export class SfuClient {
     console.log('[SfuClient] got mic track:', track.label, 'enabled=', track.enabled);
     this.audioProducer = await this.sendTransport.produce({
       track,
-      codecOptions: { opusStereo: false, opusDtx: true },
+      codecOptions: {
+        opusStereo: false,
+        opusDtx: true,
+        opusFec: true,           // Forward Error Correction for packet loss resilience
+        opusMaxAverageBitrate: 32000,  // Lower bitrate = less bandwidth, good for voice
+        opusPtime: 20,           // 20ms frames for lower latency
+      },
     });
     console.log('[SfuClient] producer created id=', this.audioProducer.id);
     this.audioProducer.on('transportclose', () => { this.audioProducer = undefined; });
+
+    // Start voice activity detection (reuse suspended context if available)
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      await this.audioContext.resume().catch(() => {});
+    } else {
+      this.startSpeakingDetection(stream);
+    }
   }
 
-  /** Stop publishing mic audio. */
+  /** Stop publishing mic audio. Suspend AudioContext para ahorrar batería en móvil. */
   async stopMic() {
     if (!this.audioProducer || this.audioProducer.closed) return;
     this.audioProducer.close();
     this.audioProducer = undefined;
+    // Suspender en lugar de cerrar — evita recrear el contexto cada vez que se mutea/desmutea
+    if (this.audioContext && this.audioContext.state === 'running') {
+      await this.audioContext.suspend().catch(() => {});
+    }
+    this.stopSpeakingDetection();
   }
 
   /** Leave the voice channel and clean up all resources. */
@@ -102,6 +128,7 @@ export class SfuClient {
     if (this.onProducerClosedHandler) socket.off('producer_closed', this.onProducerClosedHandler);
 
     await this.stopMic();
+    this.stopSpeakingDetection();
     for (const producerId of Array.from(this.consumers.keys())) {
       this.cleanupConsumer(producerId);
     }
@@ -203,6 +230,53 @@ export class SfuClient {
     }
 
     return transport;
+  }
+
+  // ── Voice activity detection ──
+
+  /** Start detecting speech activity from the local mic track. */
+  private startSpeakingDetection(stream: MediaStream) {
+    this.stopSpeakingDetection(); // cleanup any existing
+
+    try {
+      this.audioContext = new AudioContext();
+      const source = this.audioContext.createMediaStreamSource(stream);
+      this.analyserNode = this.audioContext.createAnalyser();
+      this.analyserNode.fftSize = 256;
+      this.analyserNode.smoothingTimeConstant = 0.4;
+      source.connect(this.analyserNode);
+      // Don't connect to destination — we don't want feedback
+
+      const dataArray = new Uint8Array(this.analyserNode.frequencyBinCount);
+      this.speechCheckInterval = setInterval(() => {
+        if (!this.analyserNode) return;
+        this.analyserNode.getByteFrequencyData(dataArray);
+        // Sum energy across all frequency bins
+        const sum = dataArray.reduce((a, b) => a + b, 0);
+        const avg = sum / dataArray.length;
+        const isSpeaking = avg > 18; // threshold tuned for voice
+
+        if (isSpeaking !== this._isCurrentlySpeaking) {
+          this._isCurrentlySpeaking = isSpeaking;
+          this.onSpeakingChange?.(isSpeaking);
+        }
+      }, 100);
+    } catch (err) {
+      console.warn('[SfuClient] Failed to start speaking detection:', err);
+    }
+  }
+
+  private stopSpeakingDetection() {
+    if (this.speechCheckInterval) {
+      clearInterval(this.speechCheckInterval);
+      this.speechCheckInterval = undefined;
+    }
+    if (this.audioContext && this.audioContext.state !== 'closed') {
+      this.audioContext.close().catch(() => {});
+    }
+    this.audioContext = undefined;
+    this.analyserNode = undefined;
+    this._isCurrentlySpeaking = false;
   }
 }
 

@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/store/auth.store';
+import { VoiceOverlay } from '@/features/channels/VoiceOverlay';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -19,6 +20,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (!hydrated) return <main className="min-h-screen flex items-center justify-center">Cargando…</main>;
   if (!user) return null;
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      {/* Global floating voice overlay — persists across navigation */}
+      <VoiceOverlay />
+    </>
+  );
 }
 

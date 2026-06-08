@@ -4,7 +4,19 @@ import * as mediasoup from 'mediasoup';
 import type { Worker, Router, RtpCodecCapability } from 'mediasoup/node/lib/types';
 
 const MEDIA_CODECS: RtpCodecCapability[] = [
-  { kind: 'audio', mimeType: 'audio/opus', preferredPayloadType: 100, clockRate: 48000, channels: 2 },
+  {
+    kind: 'audio',
+    mimeType: 'audio/opus',
+    preferredPayloadType: 100,
+    clockRate: 48000,
+    channels: 2,
+    parameters: {
+      'useinbandfec': 1,       // Forward Error Correction for packet loss resilience
+      'usedtx': 1,             // Discontinuous Transmission (silence suppression)
+      'minptime': 10,          // Lower packet time = lower latency (regresa a 20 si hay micro-cortes en móviles gama media)
+      'maxaveragebitrate': 40000,  // Homologado con el frontend (32kbps) para no reservar recursos de más en el SFU
+    },
+  },
   { kind: 'video', mimeType: 'video/VP8', preferredPayloadType: 110, clockRate: 90000, parameters: { 'x-google-start-bitrate': 1000 } },
   { kind: 'video', mimeType: 'video/H264', preferredPayloadType: 120, clockRate: 90000,
     parameters: {
@@ -65,7 +77,10 @@ export class MediasoupService implements OnModuleInit, OnModuleDestroy {
       enableUdp: true,
       enableTcp: true,
       preferUdp: true,
-      initialAvailableOutgoingBitrate: 1_000_000,
+      initialAvailableOutgoingBitrate: 2_000_000,
+      // DTLS optimizations for faster handshake
+      enableSctp: false,
+      numSctpStreams: { OS: 0, MIS: 0 },
     });
     return {
       transport,

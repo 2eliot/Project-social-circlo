@@ -437,7 +437,7 @@ button.primary:disabled { opacity: .5; cursor: not-allowed; }
   background: #0e1126;
   border: 1px solid rgba(59,34,142,.18);
   box-shadow: 0 8px 32px rgba(0,0,0,.37);
-  transition: transform .2s ease, border-color .2s ease;
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
   display: flex;
   flex-direction: column;
   container-type: inline-size;
@@ -445,8 +445,9 @@ button.primary:disabled { opacity: .5; cursor: not-allowed; }
 
 .group-card:hover,
 .group-card:active {
-  transform: scale(.98);
+  transform: translateY(-2px);
   border-color: rgba(124,92,255,.45);
+  box-shadow: 0 12px 36px rgba(0,0,0,.45);
 }
 
 .group-card--featured {
@@ -3020,5 +3021,104 @@ body {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
+}
+
+/* ── New micro-animations ── */
+
+/* Fade-in for posts, messages, group cards */
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  0% { opacity: 0; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Skeleton loading shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Utility classes for animations */
+.animate-fade-in-up {
+  animation: fadeInUp 0.35s ease-out both;
+}
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-out both;
+}
+.animate-scale-in {
+  animation: scaleIn 0.2s ease-out both;
+}
+
+/* Stagger delay utilities for list children */
+.stagger-delay-1 { animation-delay: 0.05s; }
+.stagger-delay-2 { animation-delay: 0.10s; }
+.stagger-delay-3 { animation-delay: 0.15s; }
+.stagger-delay-4 { animation-delay: 0.20s; }
+.stagger-delay-5 { animation-delay: 0.25s; }
+
+/* Skeleton loader base */
+.skeleton {
+  background: linear-gradient(90deg,
+    rgba(255,255,255,.04) 25%,
+    rgba(255,255,255,.08) 37%,
+    rgba(255,255,255,.04) 63%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+.skeleton-circle {
+  border-radius: 50%;
+}
+
+.skeleton-text {
+  height: 12px;
+  margin-bottom: 8px;
+}
+
+.skeleton-title {
+  height: 16px;
+  width: 60%;
+}
+
+.skeleton-card {
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(20,24,33,.4);
+  border: 1px solid rgba(255,255,255,.04);
+}
+
+/* Button micro-interaction */
+.btn-hover-lift {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-hover-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,.25);
+}
+.btn-hover-lift:active {
+  transform: translateY(0);
+}
+
+/* Smooth page transitions */
+.page-enter {
+  animation: fadeIn 0.2s ease-out both;
+}
+
+/* Smooth height transition — usa max-height + opacity (GPU-accelerated) */
+.transition-height {
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+  will-change: max-height, opacity;
+  transform: translateZ(0); /* fuerza capa GPU para evitar reflow */
 }
 

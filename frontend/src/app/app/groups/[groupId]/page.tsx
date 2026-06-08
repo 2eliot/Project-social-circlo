@@ -10,6 +10,7 @@ import { resolveMediaUrl } from '@/lib/media-url';
 import { getSocket } from '@/lib/socket-client';
 import { SfuClient } from '@/lib/mediasoup-client';
 import { useAuth } from '@/store/auth.store';
+import { useVoiceStore } from '@/store/voice.store';
 
 interface Channel { id: string; name: string; type: 'TEXT' | 'VOICE' | 'VIDEO'; isEnabled: boolean; }
 interface GroupMember {
@@ -43,6 +44,7 @@ interface VoiceStateUser {
   displayName: string;
   avatarUrl?: string | null;
   micMuted: boolean;
+  isSpeaking?: boolean;
 }
 
 interface GroupAuditLog {
@@ -89,6 +91,15 @@ export default function GroupPage() {
   const [groupForm, setGroupForm] = useState({ name: '', description: '', privacy: 'PRIVATE' as GroupDetail['privacy'], iconUrl: null as string | null, bannerUrl: null as string | null });
   const iconInputRef = useRef<HTMLInputElement | null>(null);
   const sfuRef = useRef<SfuClient | null>(null);
+
+  // ── Global voice store sync ──
+  const voiceStoreSetActive = useVoiceStore((s) => s.setActive);
+  const voiceStoreSetJoined = useVoiceStore((s) => s.setJoined);
+  const voiceStoreSetMuted = useVoiceStore((s) => s.setMuted);
+  const voiceStoreSetParticipants = useVoiceStore((s) => s.setParticipants);
+  const voiceStoreSetRequestPending = useVoiceStore((s) => s.setRequestPending);
+  const voiceStoreSetOnLeave = useVoiceStore((s) => s.setOnLeaveRequested);
+  const voiceStoreClear = useVoiceStore((s) => s.clear);
 
   async function loadGroup() {
     const nextGroup = await api<GroupDetail>(`/groups/${groupId}`);
@@ -365,6 +376,54 @@ export default function GroupPage() {
     };
   }, [localMicMuted, user?.id, voiceChannel?.id, voiceJoined]);
 
+  // ── Sync voice state to global store for VoiceOverlay ──
+  useEffect(() => {
+    if (voiceChannel?.isEnabled && voiceParticipants.length >= 0) {
+      voiceStoreSetActive(voiceChannel.id, currentGroup?.id ?? '', currentGroup?.name ?? '');
+      voiceStoreSetJoined(voiceJoined);
+      voiceStoreSetMuted(localMicMuted);
+      voiceStoreSetRequestPending(voiceRequestPending);
+      voiceStoreSetParticipants(
+        voiceParticipants.map((p) => ({
+          id: p.id,
+          displayName: p.displayName,
+          avatarUrl: p.avatarUrl ?? null,
+          micMuted: p.micMuted,
+          isSpeaking: p.id !== user?.id ? false : (!localMicMuted && voiceJoined),
+          isSelf: p.id === user?.id,
+        })),
+      );
+    }
+  }, [voiceChannel?.id, voiceChannel?.isEnabled, voiceParticipants, voiceJoined, localMicMuted, voiceRequestPending, currentGroup?.name, user?.id, voiceStoreSetActive, voiceStoreSetJoined, voiceStoreSetMuted, voiceStoreSetRequestPending, voiceStoreSetParticipants]);
+
+  // ── Register leave callback so VoiceOverlay can trigger leave ──
+  useEffect(() => {
+    voiceStoreSetOnLeave(() => {
+      void handleVoiceLeave();
+    });
+    return () => { voiceStoreSetOnLeave(null); };
+  }, [voiceStoreSetOnLeave, voiceChannel?.id]);
+
+  // ── Listen for mute toggle from VoiceOverlay ──
+  useEffect(() => {
+    const onToggleMute = () => {
+      handleMicMutedChange(!localMicMuted);
+    };
+    window.addEventListener('voice:toggleMute', onToggleMute);
+    return () => window.removeEventListener('voice:toggleMute', onToggleMute);
+  }, [localMicMuted, voiceJoined]);
+
+  // ── Speaking detection sync for the local user ──
+  useEffect(() => {
+    if (!sfuRef.current || !voiceJoined || !user) return;
+    sfuRef.current.onSpeakingChange = (isSpeaking: boolean) => {
+      setVoiceParticipants((prev) =>
+        prev.map((p) => (p.id === user.id ? { ...p, isSpeaking: isSpeaking } as any : p)),
+      );
+    };
+    return () => { if (sfuRef.current) sfuRef.current.onSpeakingChange = undefined; };
+  }, [voiceJoined, user?.id]);
+
   // Filter voice participants to only show current group members (prevents
   // clicking on kicked users and getting a 404 from the REST API).
   useEffect(() => {
@@ -380,13 +439,17 @@ export default function GroupPage() {
     });
   }, [currentGroup?.members]);
 
-  // Disconnect SFU when leaving the page
+  // Disconnect SFU when leaving the page (unless voice is active — overlay persists)
   useEffect(() => {
     return () => {
-      sfuRef.current?.disconnect().catch(() => undefined);
-      sfuRef.current = null;
+      // Only cleanup if user isn't in voice (otherwise VoiceOverlay persists)
+      if (!voiceJoined && !sfuRef.current?.channelId) {
+        sfuRef.current?.disconnect().catch(() => undefined);
+        sfuRef.current = null;
+        voiceStoreClear();
+      }
     };
-  }, []);
+  }, [voiceJoined]);
 
   // Auto-subscribe in listen-only mode so every group member hears the voice
   // channel without explicitly joining as a speaker. When the user later clicks
@@ -441,6 +504,7 @@ export default function GroupPage() {
       setVoiceRequestPending(false);
       sfuRef.current?.disconnect().catch(() => undefined);
       sfuRef.current = null;
+      voiceStoreClear();
     }
 
     try {
@@ -468,6 +532,7 @@ export default function GroupPage() {
         sfuRef.current = null;
         setVoiceJoined(false);
         setLocalMicMuted(true);
+        voiceStoreSetJoined(false);
         try {
           const listener = new SfuClient(voiceChannel.id);
           await listener.connectListenOnly();
@@ -507,6 +572,19 @@ export default function GroupPage() {
     } finally {
       setVoiceJoinBusy(false);
     }
+  }
+
+  /** Fully disconnect from voice (called by VoiceOverlay close button). */
+  async function handleVoiceLeave() {
+    await sfuRef.current?.disconnect().catch(() => undefined);
+    sfuRef.current = null;
+    setVoiceJoined(false);
+    setVoiceRequestPending(false);
+    setLocalMicMuted(true);
+    setVoiceParticipants([]);
+    setPendingVoiceRequests([]);
+    setVoiceTotalActive(0);
+    voiceStoreClear();
   }
 
   async function approveVoiceRequest(userId: string) {
