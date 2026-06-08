@@ -131,29 +131,42 @@ self.addEventListener('push', (event) => {
 
 /* ───── NOTIFICATION CLICK ───── */
 self.addEventListener('notificationclick', (event) => {
-	event.notification.close();
+  event.notification.close();
 
-	const urlToOpen = event.notification.data?.url || '/app';
+  const relativeUrl = event.notification.data?.url || '/app';
+  const fullUrl = new URL(relativeUrl, self.location.origin).href;
 
-	event.waitUntil(
-		(async () => {
-			const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-			// Buscar una pestaña ya abierta y navegarla
-			for (const client of clients) {
-				if (client.url.includes(self.location.origin) && 'focus' in client) {
-					await client.focus();
-					await client.navigate(urlToOpen);
-					return;
-				}
-			}
-			// Si no hay pestaña abierta, abrir una nueva
-			if (self.clients.openWindow) {
-				await self.clients.openWindow(urlToOpen);
-			}
-		})(),
-	);
-});
+  event.waitUntil(
+    (async () => {
+      const windowClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
 
+      // Intentar enfocar una ventana existente y navegarla vía postMessage
+      for (const client of windowClients) {
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+          try {
+            await client.focus();
+            // Intentar navigate (soportado en Chrome desktop, puede fallar en mobile)
+            await client.navigate(fullUrl);
+            return;
+          } catch {
+            // navigate falló — enviar mensaje para que el cliente haga router.push
+            client.postMessage({ type: 'NOTIFICATION_CLICK', url: relativeUrl });
+            return;
+          }
+        }
+      }
+
+      // No hay ventana abierta — abrir una nueva con URL absoluta
+      if (self.clients.openWindow) {
+        try {
+          await self.clients.openWindow(fullUrl);
+        } catch {
+          // Fallback: intentar con URL relativa
+          await self.clients.openWindow(relativeUrl);
+        }
+      }
+    })(),
+  );
 async function staleWhileRevalidate(request, cacheName) {
 	const cache = await caches.open(cacheName);
 	const cached = await cache.match(request);

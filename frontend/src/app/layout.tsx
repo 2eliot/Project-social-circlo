@@ -16,6 +16,8 @@ export const metadata: Metadata = {
   },
 };
 
+import { NotificationClickHandler } from './NotificationClickHandler';
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
@@ -27,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <DevServiceWorkerCleanup />
         <PwaRegister />
         <AuthSessionSync />
+        <NotificationClickHandler />
         {children}
       </body>
     </html>
