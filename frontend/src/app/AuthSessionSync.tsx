@@ -4,6 +4,8 @@ import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/store/auth.store';
 
+const REDIRECT_KEY = 'appchat.redirect_to';
+
 export function AuthSessionSync() {
   const pathname = usePathname();
   const router = useRouter();
@@ -36,8 +38,21 @@ export function AuthSessionSync() {
     };
   }, [hydrate]);
 
+  // Restaurar redirect_to pendiente cuando el usuario se autentica
   useEffect(() => {
     if (!hydrated || !user) return;
+
+    let redirectTo: string | null = null;
+    try {
+      redirectTo = window.sessionStorage.getItem(REDIRECT_KEY);
+    } catch { /* ignore */ }
+
+    if (redirectTo && pathname !== redirectTo) {
+      window.sessionStorage.removeItem(REDIRECT_KEY);
+      router.replace(redirectTo);
+      return;
+    }
+
     if (pathname === '/' || pathname === '/login' || pathname === '/register') {
       router.replace('/app');
     }

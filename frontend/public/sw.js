@@ -140,12 +140,12 @@ self.addEventListener('notificationclick', (event) => {
     (async () => {
       const windowClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
 
-      // Intentar enfocar una ventana existente y navegarla vía postMessage
+      // 1) Si hay una ventana abierta, enfocarla y navegar
       for (const client of windowClients) {
         if (client.url.startsWith(self.location.origin) && 'focus' in client) {
           try {
             await client.focus();
-            // Intentar navigate (soportado en Chrome desktop, puede fallar en mobile)
+            // navigate() funciona en Chrome desktop, puede fallar en mobile
             await client.navigate(fullUrl);
             return;
           } catch {
@@ -156,13 +156,26 @@ self.addEventListener('notificationclick', (event) => {
         }
       }
 
-      // No hay ventana abierta — abrir una nueva con URL absoluta
+      // 2) No hay ventana abierta — intentar abrir una nueva
       if (self.clients.openWindow) {
         try {
           await self.clients.openWindow(fullUrl);
+          return;
         } catch {
-          // Fallback: intentar con URL relativa
-          await self.clients.openWindow(relativeUrl);
+          // openWindow puede fallar en mobile (iOS/Safari)
+        }
+      }
+
+      // 3) Último recurso: registrar el cliente y esperar a que se conecte
+      //    (ocurre cuando la app se abre desde 0 en mobile)
+      const openClient = await self.clients.openWindow('/');
+      if (openClient) {
+        // Dar tiempo a que la app se inicialice
+        await new Promise((r) => setTimeout(r, 1500));
+        try {
+          openClient.postMessage({ type: 'NOTIFICATION_CLICK', url: relativeUrl });
+        } catch {
+          // Si postMessage falla, la app leerá sessionStorage al hidratarse
         }
       }
     })(),
