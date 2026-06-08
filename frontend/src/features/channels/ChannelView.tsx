@@ -563,7 +563,7 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
 
       {/* ===== MESSAGES ===== */}
       <div ref={messagesContainerRef} className="flex-1 px-3 relative z-2 scrollbar-thin overflow-y-auto flex flex-col gap-2 py-3"
-        style={{ scrollbarWidth: 'thin' }}>
+        style={{ scrollbarWidth: 'thin', overscrollBehaviorY: 'contain' }}>
 
         <PreserveScroll containerRef={messagesContainerRef} loading={initialLoading} messagesLength={messages.length} />
 

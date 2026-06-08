@@ -658,7 +658,7 @@ export default function ChatConversation({
 
       {/* ===== MESSAGES ===== */}
       <div ref={messagesContainerRef} className="flex-1 px-3 relative z-2 scrollbar-thin overflow-y-auto"
-        style={{ scrollbarWidth: 'thin' }}>
+        style={{ scrollbarWidth: 'thin', overscrollBehaviorY: 'contain' }}>
 
         {/* Date pill */}
         <div className="w-fit mx-auto mb-2 px-3 py-1 bg-[#131523]/94 rounded-xl text-[#eeeeff] text-[11px] font-bold shadow-lg">
