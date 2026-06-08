@@ -47,15 +47,19 @@ export function AuthSessionSync() {
       redirectTo = window.sessionStorage.getItem(REDIRECT_KEY);
     } catch { /* ignore */ }
 
-    if (redirectTo && pathname !== redirectTo) {
-      // Validar que sea una ruta interna válida (empieza con /)
-      if (redirectTo.startsWith('/')) {
+    if (redirectTo) {
+      // Comparar contra la URL COMPLETA (pathname + query params),
+      // no solo contra usePathname() que nunca incluye search.
+      const currentFullUrl = pathname + window.location.search;
+      if (currentFullUrl !== redirectTo) {
+        if (redirectTo.startsWith('/')) {
+          window.sessionStorage.removeItem(REDIRECT_KEY);
+          router.replace(redirectTo);
+          return;
+        }
+        // Ruta inválida — limpiar y caer a fallback seguro
         window.sessionStorage.removeItem(REDIRECT_KEY);
-        router.replace(redirectTo);
-        return;
       }
-      // Ruta inválida — limpiar y caer a fallback seguro
-      window.sessionStorage.removeItem(REDIRECT_KEY);
     }
 
     if (pathname === '/' || pathname === '/login' || pathname === '/register') {
