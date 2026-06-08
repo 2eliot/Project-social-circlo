@@ -114,7 +114,7 @@ export class DirectMessagesService {
             }),
           ),
         ]);
-        const updated = await this.prisma.directConversation.findUnique({
+        const updated = (await this.prisma.directConversation.findUnique({
           where: { id: existing.id },
           include: {
             userA: { select: { id: true, displayName: true, avatarUrl: true } },
@@ -126,7 +126,7 @@ export class DirectMessagesService {
               select: { id: true, content: true, createdAt: true, authorId: true, attachments: true },
             },
           },
-        })!;
+        }))!;
         return this.serializeConversation(meId, updated);
       }
       return this.serializeConversation(meId, existing);
