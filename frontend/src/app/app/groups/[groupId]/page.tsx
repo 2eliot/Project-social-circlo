@@ -620,7 +620,7 @@ export default function GroupPage() {
       router.back();
       return;
     }
-    router.push('/app?tab=groups');
+    router.push('/app?tab=groups&groupView=mine');
   }
 
   async function toggleChannel(channel: Channel, enabled: boolean) {

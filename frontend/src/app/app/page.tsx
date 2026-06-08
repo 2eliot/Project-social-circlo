@@ -3219,7 +3219,18 @@ function GroupsTab({
   const user = useAuth((state) => state.user);
   const [mine, setMine] = useState<Group[]>([]);
   const [publicGroups, setPublicGroups] = useState<Group[]>([]);
-  const [groupView, setGroupView] = useState<'mine' | 'public'>('public');
+  const [groupView, setGroupView] = useState<'mine' | 'public'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('lastGroupView');
+      if (saved === 'mine' || saved === 'public') return saved;
+    }
+    return 'public';
+  });
+
+  // Persist last groupView for back-navigation restore
+  useEffect(() => {
+    sessionStorage.setItem('lastGroupView', groupView);
+  }, [groupView]);
   const [createComposerOpen, setCreateComposerOpen] = useState(false);
   const [name, setName] = useState('');
   const [privacy, setPrivacy] = useState<GroupPrivacy>('PRIVATE');
