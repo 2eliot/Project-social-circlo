@@ -20,9 +20,11 @@ export function VoiceOverlay() {
     clear: voiceStoreClear,
   } = useVoiceStore();
 
-  const [position, setPosition] = useState({ x: 16, y: 120 });
+  // Esquina inferior derecha — siempre visible incluso en móviles con notch.
+  // bottom: 90 evita la barra de navegación inferior en iOS/Android.
+  const [position, setPosition] = useState({ bottom: 90, right: 16 });
   const [dragging, setDragging] = useState(false);
-  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const dragRef = useRef<{ startX: number; startY: number; origBottom: number; origRight: number } | null>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isVisible = !!activeChannelId && isActive && pathname !== `/app/groups/${activeGroupId}`;
@@ -37,8 +39,8 @@ export function VoiceOverlay() {
       dragRef.current = {
         startX: e.clientX,
         startY: e.clientY,
-        origX: position.x,
-        origY: position.y,
+        origBottom: position.bottom,
+        origRight: position.right,
       };
       e.preventDefault();
     }, 150);
@@ -60,9 +62,11 @@ export function VoiceOverlay() {
       if (!dragRef.current) return;
       const dx = e.clientX - dragRef.current.startX;
       const dy = e.clientY - dragRef.current.startY;
+      // Arrastrar hacia la derecha → right disminuye
+      // Arrastrar hacia abajo → bottom disminuye
       setPosition({
-        x: Math.max(0, Math.min(window.innerWidth - 80, dragRef.current.origX + dx)),
-        y: Math.max(60, Math.min(window.innerHeight - 60, dragRef.current.origY + dy)),
+        bottom: Math.max(60, Math.min(window.innerHeight - 80, dragRef.current.origBottom - dy)),
+        right: Math.max(6, Math.min(window.innerWidth - 80, dragRef.current.origRight - dx)),
       });
     };
     const onUp = () => setDragging(false);
@@ -101,8 +105,8 @@ export function VoiceOverlay() {
       onPointerUp={onPointerUp}
       className="fixed z-[9999] select-none"
       style={{
-        left: position.x,
-        top: position.y,
+        bottom: position.bottom,
+        right: position.right,
         touchAction: 'none',
         transition: dragging ? 'none' : 'box-shadow 0.2s',
       }}
