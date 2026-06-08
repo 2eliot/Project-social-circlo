@@ -334,12 +334,24 @@ export default function AppHome() {
     if (nextProfileUserId) {
       setProfileUserId(nextProfileUserId);
       setTab('profile');
+      setVisitedTabs((prev) => {
+        if (prev.has('profile')) return prev;
+        const next = new Set(prev);
+        next.add('profile');
+        return next;
+      });
       return;
     }
 
     const nextTab = searchParams.get('tab');
     if (nextTab === 'feed' || nextTab === 'chats' || nextTab === 'groups' || nextTab === 'profile') {
       setTab(nextTab);
+      setVisitedTabs((prev) => {
+        if (prev.has(nextTab)) return prev;
+        const next = new Set(prev);
+        next.add(nextTab);
+        return next;
+      });
     }
 
     const nextPostId = searchParams.get('post');
