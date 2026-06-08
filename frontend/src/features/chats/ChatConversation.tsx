@@ -548,7 +548,7 @@ export default function ChatConversation({
       <input ref={imageInputRef} type="file" accept="image/*" className="opacity-0 absolute w-0 h-0 overflow-hidden -z-10" onChange={onPickImage} />
 
       {/* ===== HEADER ===== */}
-      <header className={`flex items-center gap-2 px-2 py-1.5 bg-[#090b19]/96 border-b border-white/[0.05] shrink-0 ${longPressMenu ? 'z-50' : 'z-5'} relative`}>
+      <header className={`sticky top-0 flex items-center gap-2 px-2 py-1.5 bg-[#090b19]/96 border-b border-white/[0.05] shrink-0 ${longPressMenu ? 'z-50' : 'z-20'}`}>
         {/* Back */}
         <button type="button" onClick={onBack}
           className="flex items-center justify-center w-7 h-7 rounded-xl bg-[#101225] text-[#8c55ff] text-xl font-light border-none cursor-pointer shrink-0">
@@ -850,7 +850,7 @@ export default function ChatConversation({
       )}
 
       {/* ===== COMPOSER ===== */}
-      <footer className="shrink-0 h-12 bg-[#0e1021]/97 border-t border-[#7349ff]/12 flex items-center px-2 shadow-2xl z-10">
+      <footer className="shrink-0 h-12 bg-[#0e1021]/97 border-t border-[#7349ff]/12 flex items-center px-2 shadow-2xl z-50">
         {/* Gallery */}
         <button type="button" disabled={!canWrite || uploadingAttachment || voice.isRecording}
           onClick={() => imageInputRef.current?.click()}

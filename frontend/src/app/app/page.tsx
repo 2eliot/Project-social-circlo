@@ -3500,7 +3500,7 @@ function GroupsTab({
 
   return (
     <section className="group-browser flex flex-col h-full">
-      <div className="group-browser__toolbar shrink-0">
+      <div className="group-browser__toolbar sticky top-0 z-10 shrink-0">
         <div className="group-switcher">
           <button type="button" className={groupView === 'mine' ? 'active' : ''} onClick={() => setGroupView('mine')}>Mis grupos</button>
           <button type="button" className={groupView === 'public' ? 'active' : ''} onClick={() => setGroupView('public')}>Publicos</button>
