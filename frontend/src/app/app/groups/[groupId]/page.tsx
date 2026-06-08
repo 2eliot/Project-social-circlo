@@ -375,6 +375,15 @@ export default function GroupPage() {
     };
   }, [localMicMuted, user?.id, voiceChannel?.id, voiceJoined]);
 
+  // ── Restore voice state from store on mount (prevents drops on HMR / app update) ──
+  useEffect(() => {
+    const storeState = useVoiceStore.getState();
+    if (storeState.isJoined && storeState.activeChannelId === voiceChannel?.id) {
+      setVoiceJoined(true);
+      setLocalMicMuted(storeState.isMuted);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Sync voice state to global store for VoiceOverlay ──
   useEffect(() => {
     if (voiceChannel?.isEnabled && voiceParticipants.length >= 0) {
@@ -406,8 +415,10 @@ export default function GroupPage() {
 
   // ── Listen for mute toggle from VoiceOverlay ──
   useEffect(() => {
-    const onToggleMute = () => {
-      handleMicMutedChange(!localMicMuted);
+    const onToggleMute = (e: Event) => {
+      const detail = (e as CustomEvent<{ muted?: boolean }>).detail;
+      const targetMuted = detail?.muted ?? !localMicMuted;
+      handleMicMutedChange(targetMuted);
     };
     window.addEventListener('voice:toggleMute', onToggleMute);
     return () => window.removeEventListener('voice:toggleMute', onToggleMute);
