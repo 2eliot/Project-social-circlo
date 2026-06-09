@@ -101,6 +101,7 @@ export class SfuClient {
         // autoGainControl sube el ruido de fondo cuando hay silencio, colando ruido ambiental en la sala.
         noiseSuppression: { ideal: false },
         autoGainControl: { ideal: false },
+        // @ts-expect-error — latency existe en Chromium pero no en el tipo de TS
         latency: { ideal: 0.005, max: 0.02 }, // Presiona al navegador a priorizar tiempo real
       },
       video: false,
