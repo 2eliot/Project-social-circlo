@@ -11,8 +11,9 @@ const MEDIA_CODECS: RtpCodecCapability[] = [
     clockRate: 48000,
     channels: 2,
     parameters: {
-      'useinbandfec': 1,       // Forward Error Correction for packet loss resilience
-      'usedtx': 1,             // Discontinuous Transmission (silence suppression)
+      'useinbandfec': 1,       // Forward Error Correction — evita microcortes por pérdida de paquetes
+      'usedtx': 1,             // Discontinuous Transmission — no envía paquetes en silencio
+      'cbr': 0,               // Variable Bitrate — baja el bitrate en silencio, ahorra ancho de banda masivo
       'stereo': 0,            // Forzar mono — elimina fase cancelada y mejora AEC
       'sprop-stereo': 0,      // Forzar mono en SDP
       'maxaveragebitrate': 32000,  // 32kbps — el AEC necesita buena calidad de referencia

@@ -95,10 +95,13 @@ export class SfuClient {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: { exact: true },
-        noiseSuppression: { exact: true },
-        autoGainControl: { exact: true },
-        channelCount: { ideal: 1 },    // Mono — crítico para AEC en móviles
-        sampleRate: { ideal: 48000 },  // 48kHz para mejor resolución del AEC
+        channelCount: { ideal: 1 },     // Mono — crítico para AEC en móviles
+        sampleRate: { ideal: 48000 },   // 48kHz para mejor resolución del AEC
+        // Desactivar procesamiento nativo del navegador — Opus lo hace mejor y con menos delay.
+        // autoGainControl sube el ruido de fondo cuando hay silencio, colando ruido ambiental en la sala.
+        noiseSuppression: { ideal: false },
+        autoGainControl: { ideal: false },
+        latency: { ideal: 0.005, max: 0.02 }, // Presiona al navegador a priorizar tiempo real
       },
       video: false,
     });
