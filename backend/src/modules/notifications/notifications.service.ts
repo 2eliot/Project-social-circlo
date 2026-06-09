@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/database/prisma.module';
 import { RealtimeEventsService } from '../../realtime/realtime-events.service';
 
-export type NotificationKind = 'POST_LIKED' | 'POST_COMMENTED' | 'COMMENT_REPLIED';
+export type NotificationKind = 'POST_LIKED' | 'POST_COMMENTED' | 'COMMENT_REPLIED' | 'DM_MESSAGE';
 
 export type NotificationPayload = {
   id: string;
@@ -10,6 +10,7 @@ export type NotificationPayload = {
   title: string;
   body: string;
   postId: string | null;
+  metadata: unknown;
   isRead: boolean;
   createdAt: Date;
   actor: {
@@ -29,6 +30,7 @@ type NotificationRow = {
   postId: string | null;
   isRead: boolean;
   createdAt: Date;
+  metadata: unknown;
   actorId: string | null;
   actorDisplayName: string | null;
   actorAvatarUrl: string | null;
@@ -56,6 +58,13 @@ export class NotificationsService implements OnModuleInit {
         is_read BOOLEAN NOT NULL DEFAULT false,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )
+    `);
+    // Añadir columna metadata si no existe (para contexto DM: conversationId, messageId, peerHandle, etc.)
+    await this.prisma.$executeRawUnsafe(`
+      DO $$ BEGIN
+        ALTER TABLE user_notifications ADD COLUMN metadata JSONB;
+      EXCEPTION WHEN duplicate_column THEN NULL;
+      END $$;
     `);
     await this.prisma.$executeRawUnsafe(
       'CREATE INDEX IF NOT EXISTS idx_user_notifications_user_created ON user_notifications (user_id, created_at DESC)',
@@ -94,6 +103,43 @@ export class NotificationsService implements OnModuleInit {
     return notification;
   }
 
+  /** Crea una notificación in-app cuando llega un DM y el usuario está offline. */
+  async createDmNotification(input: {
+    userId: string;
+    actorUserId: string;
+    actorDisplayName: string;
+    actorAvatarUrl: string | null;
+    body: string;
+    conversationId: string;
+    messageId: string;
+    peerHandle?: string;
+  }) {
+    if (input.userId === input.actorUserId) return null;
+
+    const metadata = {
+      conversationId: input.conversationId,
+      messageId: input.messageId,
+      peerHandle: input.peerHandle ?? null,
+    };
+
+    const rows = await this.prisma.$queryRawUnsafe<NotificationRow[]>(
+      `
+        INSERT INTO user_notifications (user_id, actor_user_id, kind, title, body, metadata)
+        VALUES ($1::uuid, $2::uuid, 'DM_MESSAGE', $3, $4, $5::jsonb)
+        RETURNING id, kind, title, body, post_id AS "postId", is_read AS "isRead", created_at AS "createdAt", actor_user_id AS "actorId"
+      `,
+      input.userId,
+      input.actorUserId,
+      input.actorDisplayName,
+      input.body,
+      JSON.stringify(metadata),
+    );
+
+    const notification = await this.hydrateRow(rows[0]);
+    this.realtimeEvents.emitNotification(input.userId, notification);
+    return notification;
+  }
+
   async list(userId: string, limit = 30) {
     const rows = await this.prisma.$queryRawUnsafe<NotificationRow[]>(
       `
@@ -106,6 +152,7 @@ export class NotificationsService implements OnModuleInit {
           n.is_read AS "isRead",
           n.created_at AS "createdAt",
           n.actor_user_id AS "actorId",
+          n.metadata AS "metadata",
           u.display_name AS "actorDisplayName",
           u.avatar_url AS "actorAvatarUrl",
           u.global_role AS "actorGlobalRole",
@@ -191,6 +238,7 @@ export class NotificationsService implements OnModuleInit {
       title: row.title,
       body: row.body,
       postId: row.postId,
+      metadata: row.metadata ?? null,
       isRead: row.isRead,
       createdAt: row.createdAt,
       actor: row.actorId

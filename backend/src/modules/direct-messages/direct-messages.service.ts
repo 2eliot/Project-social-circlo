@@ -4,6 +4,7 @@ import { PrismaService } from '../../infrastructure/database/prisma.module';
 import { RealtimeEventsService } from '../../realtime/realtime-events.service';
 import { PresenceService } from '../../infrastructure/redis/redis.module';
 import { PushNotificationsService } from '../push-notifications/push-notifications.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class DirectMessagesService {
@@ -14,6 +15,7 @@ export class DirectMessagesService {
     private readonly realtimeEvents: RealtimeEventsService,
     private readonly presence: PresenceService,
     private readonly pushNotifications: PushNotificationsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private async assertNotBlocked(meId: string, peerId: string) {
@@ -368,18 +370,34 @@ export class DirectMessagesService {
       parent: message.parent,
     });
 
-    // Send push notification if peer is offline
+    // Send push notification and in-app notification if peer is offline
     const peerOnline = await this.presence.isOnline(peerId);
     if (!peerOnline) {
+      const authorName = message.author?.displayName ?? 'Usuario';
+      const bodyText = message.content
+        ? message.content.substring(0, 120)
+        : 'Te envió un archivo';
+      const authorAvatar = message.author?.avatarUrl ?? null;
+
+      // In-app notification
+      this.notifications.createDmNotification({
+        userId: peerId,
+        actorUserId: userId,
+        actorDisplayName: authorName,
+        actorAvatarUrl: authorAvatar,
+        body: bodyText,
+        conversationId,
+        messageId: message.id,
+        peerHandle: conv.userAId === peerId
+          ? (conv as any).userA?.handle ?? undefined
+          : (conv as any).userB?.handle ?? undefined,
+      }).catch((err) => this.logger.error(`DM notification error: ${err.message}`));
+
+      // Push notification
       try {
         const subscriptions = await this.prisma.pushSubscription.findMany({
           where: { userId: peerId },
         });
-        const authorName = message.author?.displayName ?? 'Usuario';
-        const bodyText = message.content
-          ? message.content.substring(0, 120)
-          : 'Te envió un archivo';
-        const authorAvatar = message.author?.avatarUrl ?? null;
         for (const sub of subscriptions) {
           this.pushNotifications.sendPushNotification(sub, {
             title: authorName,
