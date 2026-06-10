@@ -147,27 +147,31 @@ async function subscribeNativePush(): Promise<boolean> {
       console.log('[Push] Foreground notification received:', notification);
       const url = notification.data?.url;
       if (url) {
-        console.log('[Push] Navigating to:', url);
-        // In foreground, use direct navigation — the app is alive
-        window.location.replace(url);
+        console.log('[Push] Storing foreground notification URL:', url);
+        // Store for NotificationClickHandler to pick up via Next.js router
+        // (avoid window.location.replace which causes full page reload)
+        try {
+          window.sessionStorage.setItem('appchat.redirect_to', url);
+        } catch { /* ignore */ }
+        window.dispatchEvent(new CustomEvent('appchat:navigate', { detail: { url } }));
       }
     });
 
     // Handle notification tap (app in background or killed)
-    // IMPORTANT: When app is killed, the WebView may not be loaded yet,
-    // so we store the URL in sessionStorage for NotificationClickHandler to pick up.
-    // We ALSO try location.replace() as a fallback for when app is just backgrounded.
     PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
       console.log('[Push] Notification action performed:', JSON.stringify(action));
       const url = action.notification?.data?.url;
       console.log('[Push] URL from notification data:', url);
       if (url) {
+        // Store in sessionStorage so NotificationClickHandler can pick it up
+        // after React mounts — avoids full page reload with location.replace()
         try {
           window.sessionStorage.setItem('appchat.redirect_to', url);
         } catch { /* ignore */ }
-        // Direct navigation works when app is alive (backgrounded).
-        // When killed, NotificationClickHandler will use the sessionStorage value.
-        window.location.replace(url);
+        // Dispatch custom event for NotificationClickHandler
+        window.dispatchEvent(new CustomEvent('appchat:navigate', { detail: { url } }));
+      }
+    });
       }
     });
 

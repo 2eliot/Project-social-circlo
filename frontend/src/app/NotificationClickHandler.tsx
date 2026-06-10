@@ -28,11 +28,25 @@ export function NotificationClickHandler() {
         window.sessionStorage.removeItem(REDIRECT_KEY);
         // Small delay to let auth state settle
         setTimeout(() => router.push(pending), 100);
-        return;
+        // Don't return — also set up the event listener for subsequent notifications
       }
     } catch { /* ignore */ }
 
-    if (!('serviceWorker' in navigator)) return;
+    // ── Capacitor: listen for custom navigate event from push-subscription.ts ──
+    const onNavigate = (e: Event) => {
+      const url = (e as CustomEvent).detail?.url;
+      if (url) {
+        try {
+          window.sessionStorage.removeItem(REDIRECT_KEY);
+        } catch { /* ignore */ }
+        router.push(url);
+      }
+    };
+    window.addEventListener('appchat:navigate', onNavigate);
+
+    if (!('serviceWorker' in navigator)) {
+      return () => window.removeEventListener('appchat:navigate', onNavigate);
+    }
 
     // ── Web push: listen for postMessage from service worker ──
     const onMessage = (event: MessageEvent) => {
@@ -50,6 +64,7 @@ export function NotificationClickHandler() {
     navigator.serviceWorker.addEventListener('message', onMessage);
     return () => {
       navigator.serviceWorker.removeEventListener('message', onMessage);
+      window.removeEventListener('appchat:navigate', onNavigate);
     };
   }, [router]);
 
