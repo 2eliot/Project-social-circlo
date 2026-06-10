@@ -1,7 +1,8 @@
 'use client';
 
 import { create } from 'zustand';
-import { api, getAccessToken, setAccessToken } from '@/lib/api-client';
+import { api, getAccessToken, setAccessToken, restoreAccessToken } from '@/lib/api-client';
+import { appStorage } from '@/lib/storage';
 
 export interface SessionUser {
   id: string;
@@ -34,22 +35,22 @@ export interface RegisterInput {
 }
 
 let hydratePromise: Promise<void> | null = null;
-const SESSION_USER_STORAGE_KEY = 'appchat.sessionUser';
+const SESSION_USER_STORAGE_KEY = 'sessionUser';
 
-function persistSessionUser(user: SessionUser | null) {
+async function persistSessionUser(user: SessionUser | null) {
   if (typeof window === 'undefined') return;
-  if (user) window.localStorage.setItem(SESSION_USER_STORAGE_KEY, JSON.stringify(user));
-  else window.localStorage.removeItem(SESSION_USER_STORAGE_KEY);
+  if (user) await appStorage.set(SESSION_USER_STORAGE_KEY, JSON.stringify(user));
+  else await appStorage.remove(SESSION_USER_STORAGE_KEY);
 }
 
-function readSessionUser(): SessionUser | null {
+async function readSessionUser(): Promise<SessionUser | null> {
   if (typeof window === 'undefined') return null;
-  const raw = window.localStorage.getItem(SESSION_USER_STORAGE_KEY);
+  const raw = await appStorage.get(SESSION_USER_STORAGE_KEY);
   if (!raw) return null;
   try {
     return JSON.parse(raw) as SessionUser;
   } catch {
-    window.localStorage.removeItem(SESSION_USER_STORAGE_KEY);
+    await appStorage.remove(SESSION_USER_STORAGE_KEY);
     return null;
   }
 }
@@ -58,12 +59,10 @@ export const useAuth = create<AuthState>((set, get) => ({
   user: null,
   loading: false,
   hydrated: false,
-  updateUser(patch) {
-    set((state) => {
-      const user = state.user ? { ...state.user, ...patch } : state.user;
-      persistSessionUser(user);
-      return { user };
-    });
+  async updateUser(patch) {
+    const user = get().user ? { ...get().user!, ...patch } : null;
+    set({ user });
+    await persistSessionUser(user);
   },
   async login(email, password) {
     set({ loading: true });
@@ -74,7 +73,7 @@ export const useAuth = create<AuthState>((set, get) => ({
         skipAuth: true,
       });
       setAccessToken(res.accessToken);
-      persistSessionUser(res.user);
+      await persistSessionUser(res.user);
       set({ user: res.user });
     } finally {
       set({ loading: false });
@@ -88,7 +87,7 @@ export const useAuth = create<AuthState>((set, get) => ({
         { method: 'POST', body: input, skipAuth: true },
       );
       setAccessToken(res.accessToken);
-      persistSessionUser(res.user);
+      await persistSessionUser(res.user);
       set({ user: res.user });
       return { invitationCode: (res.user as any).invitationCode ?? '' };
     } finally {
@@ -100,15 +99,16 @@ export const useAuth = create<AuthState>((set, get) => ({
       await api('/auth/logout', { method: 'POST' });
     } catch {}
     setAccessToken(null);
-    persistSessionUser(null);
+    await persistSessionUser(null);
     set({ user: null });
   },
   async hydrate(force = false) {
     if (get().hydrated && !force) return;
     if (hydratePromise) return hydratePromise;
     hydratePromise = (async () => {
-      const storedUser = readSessionUser();
-      const storedToken = getAccessToken();
+      // Restore token from native storage into memory FIRST
+      const storedToken = await restoreAccessToken();
+      const storedUser = await readSessionUser();
 
       // If we have a stored user, set it immediately regardless of token state.
       // The token might be expired — API interceptor will refresh it on first 401.
@@ -123,7 +123,7 @@ export const useAuth = create<AuthState>((set, get) => ({
               skipAuth: true,
             });
             setAccessToken(res.accessToken);
-            persistSessionUser(res.user);
+            await persistSessionUser(res.user);
           } catch {
             // Refresh failed, but user stays logged in.
             // Next API call will try refresh again transparently.
@@ -140,7 +140,7 @@ export const useAuth = create<AuthState>((set, get) => ({
           skipAuth: true,
         });
         setAccessToken(res.accessToken);
-        persistSessionUser(res.user);
+        await persistSessionUser(res.user);
         set({ user: res.user });
       } catch {
         // No session — stay logged out

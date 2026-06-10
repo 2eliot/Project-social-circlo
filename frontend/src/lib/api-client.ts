@@ -1,23 +1,34 @@
 /**
  * Lightweight fetch wrapper:
- *  - Access token in localStorage for persistence across app restarts.
+ *  - Access token persists via @capacitor/preferences (SharedPreferences nativo).
  *  - Refresh token rides HttpOnly cookie issued by the API.
  *  - Transparent retry on 401: hits /auth/refresh once before failing.
  */
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? '/api/v1';
-const ACCESS_TOKEN_STORAGE_KEY = 'appchat.accessToken';
+import { appStorage } from './storage';
 
-let accessToken: string | null =
-  typeof window === 'undefined' ? null : window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
+const API = process.env.NEXT_PUBLIC_API_URL ?? '/api/v1';
+const ACCESS_TOKEN_STORAGE_KEY = 'accessToken';
+
+// Starts null; restored asynchronously by restoreAccessToken() during hydrate.
+let accessToken: string | null = null;
 let refreshing: Promise<boolean> | null = null;
 const listeners = new Set<(t: string | null) => void>();
 
+/** Restore access token from native storage (call during hydrate). */
+export async function restoreAccessToken(): Promise<string | null> {
+  const raw = await appStorage.get(ACCESS_TOKEN_STORAGE_KEY);
+  accessToken = raw;
+  listeners.forEach((l) => l(raw));
+  return raw;
+}
+
 export function setAccessToken(token: string | null) {
   accessToken = token;
+  // Persist to native SharedPreferences (fire-and-forget)
   if (typeof window !== 'undefined') {
-    if (token) window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
-    else window.localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+    if (token) appStorage.set(ACCESS_TOKEN_STORAGE_KEY, token);
+    else appStorage.remove(ACCESS_TOKEN_STORAGE_KEY);
   }
   listeners.forEach((l) => l(token));
 }
