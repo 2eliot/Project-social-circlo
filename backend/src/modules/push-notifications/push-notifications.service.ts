@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 const webpush = require('web-push');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const admin = require('firebase-admin');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { getMessaging } = require('firebase-admin/messaging');
 
 export interface PushSubscription {
   id: string;
@@ -133,7 +135,7 @@ export class PushNotificationsService {
         },
       };
 
-      await admin.messaging(this.fcmApp).send(message);
+      await getMessaging(this.fcmApp).send(message);
       return true;
     } catch (error: any) {
       if (error.code === 'messaging/invalid-registration-token' ||
