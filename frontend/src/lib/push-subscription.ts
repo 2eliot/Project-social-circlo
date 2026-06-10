@@ -6,7 +6,26 @@ const VAPID_PUBLIC_KEY = 'BHISlS7HQ-_rvtI5zYWsCIp1KDqc6n58_kcYiOcKEAZMPgiclv3lOW
 let pendingFcmToken: string | null = null;
 let unsubscribeAuthListener: (() => void) | null = null;
 
+/** Returns true if the string looks like a real JWT (three base64url parts). */
+function isRealJwt(t: string | null | undefined): t is string {
+  if (!t || typeof t !== 'string') return false;
+  const trimmed = t.trim();
+  if (trimmed === '' || trimmed === 'null' || trimmed === 'undefined') return false;
+  // A real JWT has 3 dot-separated base64url segments and starts with eyJ
+  return /^eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+$/.test(trimmed);
+}
+
 async function flushPendingFcmToken(token: string): Promise<void> {
+  // ── CRITICAL: never send if there's no real JWT ──
+  // Hydration may be forced before the user logs in, leaving accessToken=null.
+  // Sending FCM without a valid JWT returns 401 AND blocks the Capacitor
+  // WebView HTTP pipeline, freezing the entire login UI.
+  const jwt = getAccessToken();
+  if (!isRealJwt(jwt)) {
+    console.log('[Push] No valid JWT yet — FCM token stays pending');
+    return;
+  }
+
   try {
     await api('/push/fcm/subscribe', {
       method: 'POST',
@@ -158,9 +177,13 @@ async function subscribeNativePush(): Promise<boolean> {
 
         // Subscribe to auth changes so we flush the token as soon as the
         // user logs in or the session is restored (hydrate).
+        // IMPORTANT: Only flush when newToken is a REAL JWT (not null,
+        // empty string, or the literal strings "null"/"undefined").
+        // When AuthSessionSync forces hydrated=true on timeout, the old
+        // token from storage may be a stale/empty string — skip it.
         if (!unsubscribeAuthListener) {
           unsubscribeAuthListener = onAccessTokenChange((newToken) => {
-            if (newToken && pendingFcmToken) {
+            if (pendingFcmToken && isRealJwt(newToken)) {
               void flushPendingFcmToken(pendingFcmToken);
             }
           });
