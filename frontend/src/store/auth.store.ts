@@ -109,11 +109,31 @@ export const useAuth = create<AuthState>((set, get) => ({
     hydratePromise = (async () => {
       const storedUser = readSessionUser();
       const storedToken = getAccessToken();
-      if (storedUser && storedToken) {
+
+      // If we have a stored user, set it immediately regardless of token state.
+      // The token might be expired — API interceptor will refresh it on first 401.
+      // NEVER clear the user here; only logout() does that.
+      if (storedUser) {
         set({ user: storedUser, hydrated: true });
+        // If token is missing, try to get one in background (no big deal if fails)
+        if (!storedToken) {
+          try {
+            const res = await api<{ user: SessionUser; accessToken: string }>('/auth/refresh', {
+              method: 'POST',
+              skipAuth: true,
+            });
+            setAccessToken(res.accessToken);
+            persistSessionUser(res.user);
+          } catch {
+            // Refresh failed, but user stays logged in.
+            // Next API call will try refresh again transparently.
+          }
+        }
         hydratePromise = null;
         return;
       }
+
+      // No stored user at all — try refresh cookie to see if session exists
       try {
         const res = await api<{ user: SessionUser; accessToken: string }>('/auth/refresh', {
           method: 'POST',
@@ -123,9 +143,7 @@ export const useAuth = create<AuthState>((set, get) => ({
         persistSessionUser(res.user);
         set({ user: res.user });
       } catch {
-        setAccessToken(null);
-        persistSessionUser(null);
-        set({ user: null });
+        // No session — stay logged out
       } finally {
         set({ hydrated: true });
         hydratePromise = null;

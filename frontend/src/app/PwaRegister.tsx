@@ -17,6 +17,14 @@ export function PwaRegister() {
     if (isCapacitor()) {
       console.log('[PwaRegister] Capacitor detected → subscribing native push');
       void subscribeToPush();
+
+      // ── Init keyboard plugin for better third-party keyboard compat ──
+      void import('@capacitor/keyboard').then(({ Keyboard, KeyboardResizeMode }) => {
+        Keyboard.setResizeMode({ mode: KeyboardResizeMode.Body });
+        Keyboard.setScroll(); // optional: ensures scroll works with keyboard open
+        console.log('[PwaRegister] Keyboard plugin initialized (resizeMode=Body)');
+      });
+
       return;
     }
 
