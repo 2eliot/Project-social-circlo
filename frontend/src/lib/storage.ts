@@ -31,11 +31,26 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 
-let PreferencesModule: any = null;
+let preferencesPlugin: any = null;
 let moduleLoaded = false;
+let ensurePromise: Promise<void> | null = null;
 
-async function getPreferences() {
-  if (!moduleLoaded) {
+/**
+ * Load the Capacitor Preferences native plugin (one-shot).
+ *
+ * IMPORTANT: async functions must NEVER return a Capacitor plugin proxy
+ * directly, because Promise.resolve(proxy) accesses proxy.then, which the
+ * Capacitor bridge intercepts as a native method call → throws
+ * `"Preferences.then()" is not implemented on android`.
+ *
+ * Instead, this function stores the proxy in a module-level variable and
+ * storage methods access it synchronously after awaiting this.
+ */
+async function ensurePreferences(): Promise<void> {
+  if (moduleLoaded) return;
+  if (ensurePromise) return ensurePromise;
+
+  ensurePromise = (async () => {
     if (isCapacitorNative()) {
       try {
         // ⚠️ Dynamic import can hang indefinitely on cold start if the
@@ -45,21 +60,23 @@ async function getPreferences() {
           import('@capacitor/preferences'),
           PLUGIN_TIMEOUT_MS,
         );
-        PreferencesModule = mod.Preferences;
+        preferencesPlugin = mod.Preferences;
       } catch {
         // Capacitor Preferences failed to load or timed out.
         // Fall through to localStorage for this and all future calls.
       }
     }
     moduleLoaded = true;
-  }
-  return PreferencesModule;
+  })();
+
+  return ensurePromise;
 }
 
 export const appStorage = {
   async get(key: string): Promise<string | null> {
     const prefixed = KEY_PREFIX + key;
-    const prefs: any = await withTimeout(getPreferences(), PLUGIN_TIMEOUT_MS).catch(() => null);
+    await withTimeout(ensurePreferences(), PLUGIN_TIMEOUT_MS).catch(() => {});
+    const prefs = preferencesPlugin;
     if (prefs) {
       try {
         const result: any = await withTimeout(
@@ -86,7 +103,8 @@ export const appStorage = {
 
   async set(key: string, value: string): Promise<void> {
     const prefixed = KEY_PREFIX + key;
-    const prefs: any = await withTimeout(getPreferences(), PLUGIN_TIMEOUT_MS).catch(() => null);
+    await withTimeout(ensurePreferences(), PLUGIN_TIMEOUT_MS).catch(() => {});
+    const prefs = preferencesPlugin;
     if (prefs) {
       try {
         await withTimeout(prefs.set({ key: prefixed, value }), PLUGIN_TIMEOUT_MS);
@@ -107,7 +125,8 @@ export const appStorage = {
 
   async remove(key: string): Promise<void> {
     const prefixed = KEY_PREFIX + key;
-    const prefs: any = await withTimeout(getPreferences(), PLUGIN_TIMEOUT_MS).catch(() => null);
+    await withTimeout(ensurePreferences(), PLUGIN_TIMEOUT_MS).catch(() => {});
+    const prefs = preferencesPlugin;
     if (prefs) {
       try {
         await withTimeout(prefs.remove({ key: prefixed }), PLUGIN_TIMEOUT_MS);
