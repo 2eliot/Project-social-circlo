@@ -25,21 +25,25 @@ async function getPreferences() {
   return PreferencesModule;
 }
 
-function isCapacitor(): boolean {
-  return typeof window !== 'undefined' && !!(window as any).Capacitor?.isNativePlatform?.();
-}
-
 export const appStorage = {
   async get(key: string): Promise<string | null> {
     const prefixed = KEY_PREFIX + key;
     const prefs = await getPreferences();
     if (prefs) {
-      const { value } = await prefs.get({ key: prefixed });
-      return value ?? null;
+      try {
+        const { value } = await prefs.get({ key: prefixed });
+        if (value !== null && value !== undefined) return value;
+      } catch {
+        // Capacitor Preferences failed (e.g. "not implemented on web") — fall through to localStorage
+      }
     }
-    // Fallback for browser dev
+    // Fallback for browser dev / safe fallback
     if (typeof window !== 'undefined') {
-      return localStorage.getItem(prefixed);
+      try {
+        return localStorage.getItem(prefixed);
+      } catch {
+        // localStorage may throw in some environments
+      }
     }
     return null;
   },
@@ -48,9 +52,19 @@ export const appStorage = {
     const prefixed = KEY_PREFIX + key;
     const prefs = await getPreferences();
     if (prefs) {
-      await prefs.set({ key: prefixed, value });
-    } else if (typeof window !== 'undefined') {
-      localStorage.setItem(prefixed, value);
+      try {
+        await prefs.set({ key: prefixed, value });
+        return;
+      } catch {
+        // Capacitor Preferences failed — fall through to localStorage
+      }
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(prefixed, value);
+      } catch {
+        // localStorage may throw (quota, privacy mode)
+      }
     }
   },
 
@@ -58,9 +72,19 @@ export const appStorage = {
     const prefixed = KEY_PREFIX + key;
     const prefs = await getPreferences();
     if (prefs) {
-      await prefs.remove({ key: prefixed });
-    } else if (typeof window !== 'undefined') {
-      localStorage.removeItem(prefixed);
+      try {
+        await prefs.remove({ key: prefixed });
+        return;
+      } catch {
+        // Capacitor Preferences failed — fall through to localStorage
+      }
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem(prefixed);
+      } catch {
+        // localStorage may throw
+      }
     }
   },
 };
