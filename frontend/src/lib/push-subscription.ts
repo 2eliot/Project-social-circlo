@@ -119,19 +119,23 @@ async function subscribeNativePush(): Promise<boolean> {
       return false;
     }
 
-    // Register
-    await PushNotifications.register();
+    // ── Add listeners BEFORE register() ──
+    // This ensures we catch the registration event even if it fires synchronously
 
-    // Listen for registration token
     PushNotifications.addListener('registration', async (token) => {
       console.log('[Push] FCM token received:', token.value.substring(0, 20) + '...');
-      await api('/push/fcm/subscribe', {
-        method: 'POST',
-        body: {
-          fcmToken: token.value,
-          platform: 'android',
-        },
-      });
+      try {
+        await api('/push/fcm/subscribe', {
+          method: 'POST',
+          body: {
+            fcmToken: token.value,
+            platform: 'android',
+          },
+        });
+        console.log('[Push] FCM token sent to server');
+      } catch (err) {
+        console.error('[Push] Failed to send FCM token to server:', err);
+      }
     });
 
     PushNotifications.addListener('registrationError', (error) => {
@@ -141,9 +145,23 @@ async function subscribeNativePush(): Promise<boolean> {
     // Handle incoming push when app is in foreground
     PushNotifications.addListener('pushNotificationReceived', (notification) => {
       console.log('[Push] Foreground notification received:', notification);
-      // The notification shows automatically via FCM data->notification
-      // If app is in foreground, show an in-app toast or update badge
     });
+
+    // Handle notification tap (app in background or killed)
+    PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+      console.log('[Push] Notification action performed:', action);
+      const url = action.notification?.data?.url;
+      if (url) {
+        try {
+          window.sessionStorage.setItem('appchat.redirect_to', url);
+        } catch { /* ignore */ }
+        // Navigate in the Capacitor WebView
+        window.location.href = url;
+      }
+    });
+
+    // NOW register — listeners are already in place
+    await PushNotifications.register();
 
     console.log('[Push] Native push registered');
     return true;
