@@ -49,6 +49,8 @@ model User {
   reputationReceived                                         UserReputation[]      @relation("TargetReputation")
   reputationVotes                                            UserReputation[]      @relation("VoterReputation")
   pushSubscriptions                                          PushSubscription[]
+  mutedUsers                                                 UserMutedSetting[]     @relation("Muter")
+  mutedBy                                                    UserMutedSetting[]     @relation("Muted")
 
   @@index([globalRole])
   @@map("users")
@@ -347,6 +349,19 @@ model PushSubscription {
   @@unique([userId, endpoint])
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+model UserMutedSetting {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  mutedUserId String   @map("muted_user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user        User     @relation("Muter", fields: [userId], references: [id], onDelete: Cascade)
+  mutedUser   User     @relation("Muted", fields: [mutedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, mutedUserId])
+  @@index([userId])
+  @@map("user_muted_settings")
 }
 
 enum GlobalRole {

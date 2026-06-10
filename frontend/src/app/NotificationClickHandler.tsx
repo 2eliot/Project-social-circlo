@@ -22,8 +22,12 @@ export function NotificationClickHandler() {
     if (!('serviceWorker' in navigator)) return;
 
     const onMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'NOTIFICATION_CLICK' && event.data?.url) {
-        // Persistir la ruta destino antes de navegar
+      // Verificamos que el mensaje venga del click de la notificación
+      if (
+        (event.data?.type === 'NOTIFICATION_CLICK' || event.data?.type === 'NOTIFICATION_CLICKED') &&
+        event.data?.url
+      ) {
+        // Persistir la ruta destino antes de navegar (para restaurar tras login si aplica)
         try {
           window.sessionStorage.setItem(REDIRECT_KEY, event.data.url);
         } catch { /* ignore */ }

@@ -112,6 +112,7 @@ self.addEventListener('push', (event) => {
 
 	const title = payload.title || 'Social Circle';
 	const options = {
+		// Body = senderName + salto de línea + mensaje
 		body: payload.body || '',
 		icon: payload.icon || '/icons/icon.svg',
 		badge: payload.badge || '/icons/icon.svg',
@@ -123,6 +124,8 @@ self.addEventListener('push', (event) => {
 			url: payload.data?.url || '/app',
 		},
 		requireInteraction: payload.requireInteraction !== false,
+		renotify: payload.renotify || false,
+		actions: payload.actions || [],
 		timestamp: payload.timestamp || Date.now(),
 	};
 
@@ -131,35 +134,67 @@ self.addEventListener('push', (event) => {
 
 /* ───── NOTIFICATION CLICK ───── */
 self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
+	const notification = event.notification;
+	const action = event.action;
+	const data = notification.data || {};
 
-  const conversationId = event.notification.data?.conversationId;
-  const targetUrl = conversationId
-    ? `/app?tab=chats&dm=${conversationId}`
-    : '/app';
+	notification.close();
 
-  event.waitUntil(
-    (async () => {
-      const windowClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+	// Helper: navigate or postMessage to open window
+	const navigateTo = async (targetUrl) => {
+		const windowClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+		for (const client of windowClients) {
+			if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+				try {
+					await client.focus();
+					await client.navigate(targetUrl);
+					return;
+				} catch {
+					client.postMessage({ type: 'NOTIFICATION_CLICK', url: targetUrl });
+					return;
+				}
+			}
+		}
+		await self.clients.openWindow(targetUrl);
+	};
 
-      // 1) App ya abierta → enfocar y navegar
-      for (const client of windowClients) {
-        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-          try {
-            await client.focus();
-            await client.navigate(targetUrl);
-            return;
-          } catch {
-            client.postMessage({ type: 'NOTIFICATION_CLICK', url: targetUrl });
-            return;
-          }
-        }
-      }
+	// 1. Click on body (no specific action button)
+	if (!action) {
+		const targetUrl = data.url || '/app';
+		event.waitUntil(navigateTo(targetUrl));
+		return;
+	}
 
-      // 2) COLD START: abrir directo a /app con los parámetros que el frontend ya sabe leer
-      await self.clients.openWindow(targetUrl);
-    })(),
-  );
+	// 2. Action buttons
+	switch (action) {
+		case 'reply': {
+			const chatUrl = data.url || `/app?dm=${data.conversationId || data.chatId}&tab=chats`;
+			event.waitUntil(navigateTo(chatUrl));
+			break;
+		}
+
+		case 'view-profile': {
+			const senderId = data.senderId || data.authorId;
+			const profileUrl = senderId
+				? `/app?profile=${senderId}`
+				: '/app';
+			event.waitUntil(navigateTo(profileUrl));
+			break;
+		}
+
+		case 'mute': {
+			const senderId = data.senderId || data.authorId;
+			event.waitUntil(
+				fetch(`/api/push/mute/${senderId}`, { method: 'POST' }).catch(() => {})
+			);
+			break;
+		}
+
+		default: {
+			const targetUrl = data.url || '/app';
+			event.waitUntil(navigateTo(targetUrl));
+		}
+	}
 });
 async function staleWhileRevalidate(request, cacheName) {
 	const cache = await caches.open(cacheName);

@@ -40,6 +40,9 @@ export class PushNotificationsService {
       image?: string;
       data?: Record<string, unknown>;
       tag?: string;
+      actions?: Array<{ action: string; title: string; type?: string; placeholder?: string }>;
+      renotify?: boolean;
+      requireInteraction?: boolean;
     },
   ): Promise<boolean> {
     try {
@@ -62,7 +65,9 @@ export class PushNotificationsService {
           data: payload.data || {},
           tag: payload.tag || 'dm',
           vibrate: [200, 100, 200],
-          requireInteraction: true,
+          requireInteraction: payload.requireInteraction !== undefined ? payload.requireInteraction : true,
+          renotify: payload.renotify || false,
+          actions: payload.actions || [],
           timestamp: Date.now(),
         }),
       );

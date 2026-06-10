@@ -393,24 +393,51 @@ export class DirectMessagesService {
           : (conv as any).userB?.handle ?? undefined,
       }).catch((err) => this.logger.error(`DM notification error: ${err.message}`));
 
-      // Push notification
+      // Push notification — skip if peer has muted the sender
       try {
+        const isMuted = await this.prisma.userMutedSetting.findUnique({
+          where: { userId_mutedUserId: { userId: peerId, mutedUserId: userId } },
+          select: { id: true },
+        });
+        if (isMuted) return message;
+
         const subscriptions = await this.prisma.pushSubscription.findMany({
           where: { userId: peerId },
         });
         for (const sub of subscriptions) {
           this.pushNotifications.sendPushNotification(sub, {
-            title: authorName,
-            body: bodyText,
+            title: 'Social Circle',
+            body: `${authorName}\n${bodyText}`,
+            icon: '/icons/icon.svg',
+            badge: '/icons/icon.svg',
             image: authorAvatar || undefined,
             data: {
               type: 'dm',
               conversationId,
               messageId: message.id,
               authorId: userId,
+              senderId: userId,
+              senderName: authorName,
+              chatId: conversationId,
               url: `/app?dm=${conversationId}&tab=chats`,
             },
-            tag: `dm-${conversationId}`,
+            tag: `dm-message-${userId}`,
+            renotify: true,
+            requireInteraction: true,
+            actions: [
+              {
+                action: 'reply',
+                title: '💬 Responder',
+              },
+              {
+                action: 'view-profile',
+                title: '👤 Ver perfil',
+              },
+              {
+                action: 'mute',
+                title: '🔕 Silenciar',
+              },
+            ],
           }).catch((err) => this.logger.error(`Push send error: ${err.message}`));
         }
       } catch (err: any) {

@@ -1,4 +1,4 @@
-import { Controller, Post, Delete, Body, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Delete, Param, Body, UseGuards, Req } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { PrismaService } from '../../infrastructure/database/prisma.module';
 import { PushNotificationsService } from './push-notifications.service';
@@ -47,5 +47,23 @@ export class PushNotificationsController {
     });
 
     return { success: true };
+  }
+
+  @Post('mute/:senderId')
+  async muteUserNotifications(
+    @Param('senderId') senderId: string,
+    @Req() req: any,
+  ) {
+    const userId = req.user.id;
+
+    await this.prisma.userMutedSetting.upsert({
+      where: {
+        userId_mutedUserId: { userId, mutedUserId: senderId },
+      },
+      update: {},
+      create: { userId, mutedUserId: senderId },
+    });
+
+    return { success: true, message: 'Usuario silenciado' };
   }
 }
