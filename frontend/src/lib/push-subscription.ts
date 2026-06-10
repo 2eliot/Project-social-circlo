@@ -154,11 +154,19 @@ async function subscribeNativePush(): Promise<boolean> {
     });
 
     // Handle notification tap (app in background or killed)
+    // IMPORTANT: When app is killed, the WebView may not be loaded yet,
+    // so we store the URL in sessionStorage for NotificationClickHandler to pick up.
+    // We ALSO try location.replace() as a fallback for when app is just backgrounded.
     PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
       console.log('[Push] Notification action performed:', JSON.stringify(action));
       const url = action.notification?.data?.url;
       console.log('[Push] URL from notification data:', url);
       if (url) {
+        try {
+          window.sessionStorage.setItem('appchat.redirect_to', url);
+        } catch { /* ignore */ }
+        // Direct navigation works when app is alive (backgrounded).
+        // When killed, NotificationClickHandler will use the sessionStorage value.
         window.location.replace(url);
       }
     });

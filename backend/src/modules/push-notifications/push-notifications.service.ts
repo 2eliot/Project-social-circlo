@@ -130,7 +130,6 @@ export class PushNotificationsService {
             icon: 'ic_launcher',
             color: '#6366f1',
             tag: payload.tag || 'dm',
-            clickAction: 'cloud.socialcircleinfo.app.OPEN',
           },
         },
       };
