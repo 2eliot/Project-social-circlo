@@ -13,26 +13,32 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
+    private boolean micPermissionRequested = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        // Crear canal de notificaciones (Android 8+)
         createNotificationChannel();
+    }
 
-        // Pedir RECORD_AUDIO proactivamente al iniciar la app.
-        // Capacitor 8.x ya maneja onPermissionRequest en su BridgeWebChromeClient,
-        // pero el permiso de Android debe estar concedido a nivel de SO para que
-        // el WebView pueda conceder RESOURCE_AUDIO_CAPTURE transparentemente.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+    @Override
+    protected void onResume() {
+        super.onResume();
+
+        // Pedir RECORD_AUDIO al reanudar (no en onCreate, que es muy temprano).
+        // Capacitor 8.x ya maneja onPermissionRequest en BridgeWebChromeClient,
+        // pero el permiso de Android debe estar concedido a nivel SO para que
+        // el WebView pueda otorgar RESOURCE_AUDIO_CAPTURE transparentemente.
+        if (!micPermissionRequested
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                     != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(
-                    this,
-                    new String[] { Manifest.permission.RECORD_AUDIO },
-                    1002
-                );
-            }
+            micPermissionRequested = true;
+            ActivityCompat.requestPermissions(
+                this,
+                new String[] { Manifest.permission.RECORD_AUDIO },
+                1002
+            );
         }
     }
 
