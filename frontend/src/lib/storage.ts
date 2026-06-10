@@ -38,10 +38,17 @@ async function getPreferences() {
   if (!moduleLoaded) {
     if (isCapacitorNative()) {
       try {
-        const mod = await import('@capacitor/preferences');
+        // ⚠️ Dynamic import can hang indefinitely on cold start if the
+        // Capacitor native bridge isn't initialised yet. Race it against
+        // the same timeout used for individual get/set/remove calls.
+        const mod = await withTimeout(
+          import('@capacitor/preferences'),
+          PLUGIN_TIMEOUT_MS,
+        );
         PreferencesModule = mod.Preferences;
       } catch {
-        // Capacitor Preferences failed to load
+        // Capacitor Preferences failed to load or timed out.
+        // Fall through to localStorage for this and all future calls.
       }
     }
     moduleLoaded = true;
@@ -52,7 +59,7 @@ async function getPreferences() {
 export const appStorage = {
   async get(key: string): Promise<string | null> {
     const prefixed = KEY_PREFIX + key;
-    const prefs = await getPreferences();
+    const prefs: any = await withTimeout(getPreferences(), PLUGIN_TIMEOUT_MS).catch(() => null);
     if (prefs) {
       try {
         const result: any = await withTimeout(
@@ -79,7 +86,7 @@ export const appStorage = {
 
   async set(key: string, value: string): Promise<void> {
     const prefixed = KEY_PREFIX + key;
-    const prefs = await getPreferences();
+    const prefs: any = await withTimeout(getPreferences(), PLUGIN_TIMEOUT_MS).catch(() => null);
     if (prefs) {
       try {
         await withTimeout(prefs.set({ key: prefixed, value }), PLUGIN_TIMEOUT_MS);
@@ -100,7 +107,7 @@ export const appStorage = {
 
   async remove(key: string): Promise<void> {
     const prefixed = KEY_PREFIX + key;
-    const prefs = await getPreferences();
+    const prefs: any = await withTimeout(getPreferences(), PLUGIN_TIMEOUT_MS).catch(() => null);
     if (prefs) {
       try {
         await withTimeout(prefs.remove({ key: prefixed }), PLUGIN_TIMEOUT_MS);
