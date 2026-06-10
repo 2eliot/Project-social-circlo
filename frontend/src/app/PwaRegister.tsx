@@ -3,11 +3,25 @@
 import { useEffect } from 'react';
 import { subscribeToPush } from '@/lib/push-subscription';
 
+function isCapacitor(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !!(window as any).Capacitor?.isNativePlatform?.();
+}
+
 export function PwaRegister() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    // In Capacitor (native app), go straight to push subscription
+    // FCM works via Capacitor plugin, not Service Worker
+    if (isCapacitor()) {
+      console.log('[PwaRegister] Capacitor detected → subscribing native push');
+      void subscribeToPush();
+      return;
+    }
+
+    // In browser/PWA, we need Service Worker for web-push
     if (!('serviceWorker' in navigator)) return;
-    // Skip in development — DevServiceWorkerCleanup handles cleanup there
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') return;
 
     void (async () => {
