@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/store/auth.store';
 
 const REDIRECT_KEY = 'appchat.redirect_to';
 
@@ -11,28 +12,21 @@ const REDIRECT_KEY = 'appchat.redirect_to';
  * También maneja redirects de Capacitor (FCM) almacenados en sessionStorage
  * cuando la app fue abierta desde estado "killed" por un tap en notificación.
  *
- * Antes de navegar, persiste la ruta en sessionStorage como redirect_to
- * para que si el guard de autenticación redirige al login, al volver
- * se restaure la navegación original.
+ * ⚠️ ESPERA a que hydrate() termine antes de navegar.  Sin esto la navegación
+ * ocurría 100ms después de montar el componente, cuando el access token aún no
+ * se había restaurado de Capacitor Preferences, y todas las llamadas API
+ * fallaban con 401 → el usuario veía el feed vacío.
  */
 export function NotificationClickHandler() {
   const router = useRouter();
+  const { hydrated, user } = useAuth();
+  const processedRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // ── Capacitor: check for redirect stored by pushNotificationActionPerformed ──
-    try {
-      const pending = window.sessionStorage.getItem(REDIRECT_KEY);
-      if (pending) {
-        window.sessionStorage.removeItem(REDIRECT_KEY);
-        // Small delay to let auth state settle
-        setTimeout(() => router.push(pending), 100);
-        // Don't return — also set up the event listener for subsequent notifications
-      }
-    } catch { /* ignore */ }
-
     // ── Capacitor: listen for custom navigate event from push-subscription.ts ──
+    // (foreground notifications — auth ya está listo en este punto)
     const onNavigate = (e: Event) => {
       const url = (e as CustomEvent).detail?.url;
       if (url) {
@@ -67,6 +61,27 @@ export function NotificationClickHandler() {
       window.removeEventListener('appchat:navigate', onNavigate);
     };
   }, [router]);
+
+  // ── Cold-start notification tap: wait for hydrate before navigating ──
+  useEffect(() => {
+    if (!hydrated || processedRef.current) return;
+
+    try {
+      const pending = window.sessionStorage.getItem(REDIRECT_KEY);
+      if (!pending) return;
+
+      processedRef.current = true;
+
+      if (user) {
+        // Session is ready — consume the redirect and navigate immediately
+        window.sessionStorage.removeItem(REDIRECT_KEY);
+        router.push(pending);
+      }
+      // If user is null, leave redirect_to in sessionStorage.
+      // AuthSessionSync will redirect to /login, save the current URL,
+      // and after login the redirect_to will be restored from sessionStorage.
+    } catch { /* ignore */ }
+  }, [hydrated, user, router]);
 
   return null;
 }
