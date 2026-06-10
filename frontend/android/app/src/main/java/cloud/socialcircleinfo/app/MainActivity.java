@@ -22,7 +22,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
 
         // Pedir RECORD_AUDIO al reanudar (no en onCreate, que es muy temprano).
