@@ -104,19 +104,27 @@ export const useAuth = create<AuthState>((set, get) => ({
   },
   async hydrate(force = false) {
     if (get().hydrated && !force) return;
-    // If a previous hydrate attempt failed (rejected promise), reset so we retry
+    // If a previous hydrate attempt failed (rejected promise), reset so we retry.
+    // ALSO: add a 7s safety timeout so we never wait on a stuck promise forever.
     if (hydratePromise) {
       try {
-        await hydratePromise;
+        await Promise.race([
+          hydratePromise,
+          new Promise<void>((_, reject) =>
+            setTimeout(() => reject(new Error('hydrate-stale')), 7000),
+          ),
+        ]);
         return;
       } catch {
-        // Previous hydrate failed — reset and retry
+        // Previous hydrate failed or timed out — reset and retry
         hydratePromise = null;
       }
     }
     hydratePromise = (async () => {
       try {
-        // Restore token from native storage into memory FIRST
+        // Restore token from native storage into memory FIRST.
+        // Each Capacitor Preferences call races against a 3s timeout in storage.ts,
+        // so these will throw instead of hanging indefinitely.
         const storedToken = await restoreAccessToken();
         const storedUser = await readSessionUser();
 
@@ -139,7 +147,6 @@ export const useAuth = create<AuthState>((set, get) => ({
               // Next API call will try refresh again transparently.
             }
           }
-          hydratePromise = null;
           return;
         }
 
@@ -156,7 +163,7 @@ export const useAuth = create<AuthState>((set, get) => ({
           // No session — stay logged out
         }
       } catch (err) {
-        // Absolute last resort: something catastrophic happened (storage, etc.)
+        // Absolute last resort: something catastrophic happened (storage timeout, etc.)
         // Ensure the app doesn't stay stuck on splash
         console.error('[hydrate] Fatal error during hydrate:', err);
       } finally {

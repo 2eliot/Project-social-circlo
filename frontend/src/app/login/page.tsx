@@ -20,6 +20,16 @@ export default function LoginPage() {
     img.src = '/logo.png';
   }, []);
 
+  // Safety: force-reset loading if it stays stuck for 15s (prevents frozen "Entrando…")
+  useEffect(() => {
+    if (!loading) return;
+    const timer = setTimeout(() => {
+      console.warn('[Login] Loading stuck — force reset');
+      useAuth.setState({ loading: false });
+    }, 15000);
+    return () => clearTimeout(timer);
+  }, [loading]);
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);

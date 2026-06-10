@@ -15,13 +15,17 @@ export function AuthSessionSync({ children }: { children: React.ReactNode }) {
     void hydrate();
   }, [hydrate]);
 
-  // ⏱ Safety timeout: force hydrated after 8s even if something hangs
+  // ⏱ Safety timeout: force hydrated after 6s even if hydrate hangs.
+  // Capacitor Preferences calls now have their own 3s timeout (storage.ts),
+  // so hydrate should never take longer than ~5s. This is a last-resort guard.
   useEffect(() => {
     if (hydrated) return;
     const timer = setTimeout(() => {
       console.warn('[AuthSessionSync] Hydrate timeout — forcing hydrated=true');
       useAuth.setState({ hydrated: true });
-    }, 8000);
+      // Also force a fresh hydrate attempt to clean up any stuck promise
+      void hydrate(true);
+    }, 6000);
     return () => clearTimeout(timer);
   }, [hydrated]);
 

@@ -5,14 +5,30 @@
  * This is the ONLY place that touches persistent storage.
  * The auth token and user session are stored here so they survive
  * Android process kills — unlike sessionStorage or in-memory state.
+ *
+ * ⚠️ All Capacitor Preferences calls race against a 3s timeout.
+ * On Android, the native bridge may not be ready when the WebView first loads,
+ * causing `prefs.get()` / `prefs.set()` to hang indefinitely and block hydration.
+ * When a call times out, we fall back to localStorage (or return null for reads).
  */
 
 const KEY_PREFIX = 'appchat.';
+const PLUGIN_TIMEOUT_MS = 3000;
 
 /** Detect if running inside Capacitor native (Android/iOS), not browser/PWA */
 function isCapacitorNative(): boolean {
   if (typeof window === 'undefined') return false;
   return !!(window as any).Capacitor?.isNativePlatform?.();
+}
+
+/** Race a promise against a timeout — rejects with "timeout" if it takes too long */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), ms),
+    ),
+  ]);
 }
 
 let PreferencesModule: any = null;
@@ -39,10 +55,14 @@ export const appStorage = {
     const prefs = await getPreferences();
     if (prefs) {
       try {
-        const { value } = await prefs.get({ key: prefixed });
+        const { value } = await withTimeout(
+          prefs.get({ key: prefixed }),
+          PLUGIN_TIMEOUT_MS,
+        );
         if (value !== null && value !== undefined) return value;
-      } catch {
-        // Capacitor Preferences failed (e.g. "not implemented on web") — fall through to localStorage
+      } catch (e: any) {
+        console.warn('[storage] Capacitor Preferences get timed out or failed:', e?.message);
+        // Fall through to localStorage
       }
     }
     // Fallback for browser dev / safe fallback
@@ -61,10 +81,11 @@ export const appStorage = {
     const prefs = await getPreferences();
     if (prefs) {
       try {
-        await prefs.set({ key: prefixed, value });
+        await withTimeout(prefs.set({ key: prefixed, value }), PLUGIN_TIMEOUT_MS);
         return;
-      } catch {
-        // Capacitor Preferences failed — fall through to localStorage
+      } catch (e: any) {
+        console.warn('[storage] Capacitor Preferences set timed out or failed:', e?.message);
+        // Fall through to localStorage
       }
     }
     if (typeof window !== 'undefined') {
@@ -81,10 +102,11 @@ export const appStorage = {
     const prefs = await getPreferences();
     if (prefs) {
       try {
-        await prefs.remove({ key: prefixed });
+        await withTimeout(prefs.remove({ key: prefixed }), PLUGIN_TIMEOUT_MS);
         return;
-      } catch {
-        // Capacitor Preferences failed — fall through to localStorage
+      } catch (e: any) {
+        console.warn('[storage] Capacitor Preferences remove timed out or failed:', e?.message);
+        // Fall through to localStorage
       }
     }
     if (typeof window !== 'undefined') {
