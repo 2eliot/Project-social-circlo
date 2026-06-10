@@ -15,6 +15,31 @@
 const KEY_PREFIX = 'appchat.';
 const PLUGIN_TIMEOUT_MS = 3000;
 
+/**
+ * Suppress Capacitor plugin proxy thenable errors.
+ *
+ * Capacitor wraps native plugins in JavaScript proxies that intercept ALL
+ * property accesses — including `.then`.  When JavaScript's Promise resolution
+ * checks whether the Preferences object is "thenable" (via `proxy.then`), the
+ * Capacitor bridge forwards the `.then` access as a native method call.
+ * "then" is not a real native method, so the bridge throws
+ * `"Preferences.then()" is not implemented on android`.
+ *
+ * These errors are harmless — they don't affect actual get/set/remove calls.
+ * Suppressing them via `unhandledrejection` is the recommended workaround
+ * for Capacitor < 9.x on Android.
+ */
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (event) => {
+    const msg = (event as PromiseRejectionEvent).reason?.message;
+    if (typeof msg === 'string' && msg.includes('.then()') && msg.includes('not implemented')) {
+      event.preventDefault();
+      // Log once so we know it happened but don't pollute the console
+      console.debug('[storage] Suppressed Capacitor proxy thenable error:', msg);
+    }
+  });
+}
+
 /** Detect if running inside Capacitor native (Android/iOS), not browser/PWA */
 function isCapacitorNative(): boolean {
   if (typeof window === 'undefined') return false;
