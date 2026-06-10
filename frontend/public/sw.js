@@ -1,6 +1,6 @@
 /* Service Worker — Social Circle PWA */
 const CACHE_PREFIX = 'socialcircle';
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const NAV_CACHE = `${CACHE_PREFIX}-nav-${CACHE_VERSION}`;
 const STATIC_CACHE = `${CACHE_PREFIX}-static-${CACHE_VERSION}`;
 const UPLOADS_CACHE = `${CACHE_PREFIX}-uploads-${CACHE_VERSION}`;
