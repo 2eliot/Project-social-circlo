@@ -874,7 +874,7 @@ export default function ChatConversation({
             type="text"
             inputMode="text"
             autoComplete="off"
-            autocorrect="off"
+            autoCorrect="off"
             spellCheck={false}
             enterKeyHint="send"
             data-1p-ignore

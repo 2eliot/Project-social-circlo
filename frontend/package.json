@@ -6,9 +6,15 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "node scripts/start.mjs",
-    "lint": "next lint"
+    "lint": "next lint",
+    "cap:sync": "npx cap sync",
+    "cap:open": "npx cap open android",
+    "cap:update": "npx cap update"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
     "mediasoup-client": "^3.7.10",
     "next": "14.2.5",
     "next-pwa": "^5.6.0",

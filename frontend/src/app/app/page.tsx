@@ -1736,7 +1736,7 @@ function FeedTab({ onOpenProfile, onlineUserIds, onOpenFocusedPost }: { onOpenPr
                     <input
                       type="text"
                       autoComplete="off"
-                      autocorrect="off"
+                      autoCorrect="off"
                       spellCheck={false}
                       enterKeyHint="send"
                       value={commentDrafts[post.id] ?? ''}
@@ -2157,7 +2157,7 @@ function FocusedPostView({ postId, onClose, onOpenProfile }: { postId: string; o
                     id={`focused-comment-${post.id}`}
                     type="text"
                     autoComplete="off"
-                    autocorrect="off"
+                    autoCorrect="off"
                     spellCheck={false}
                     enterKeyHint="send"
                     value={commentDraft}
