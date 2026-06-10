@@ -15,6 +15,16 @@ export function AuthSessionSync({ children }: { children: React.ReactNode }) {
     void hydrate();
   }, [hydrate]);
 
+  // ⏱ Safety timeout: force hydrated after 8s even if something hangs
+  useEffect(() => {
+    if (hydrated) return;
+    const timer = setTimeout(() => {
+      console.warn('[AuthSessionSync] Hydrate timeout — forcing hydrated=true');
+      useAuth.setState({ hydrated: true });
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [hydrated]);
+
   useEffect(() => {
     const syncSession = () => void hydrate(true);
     const onVisibilityChange = () => {

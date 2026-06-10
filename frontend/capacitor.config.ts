@@ -5,13 +5,13 @@ const config: CapacitorConfig = {
   appName: 'SocialCircle',
   webDir: 'out',
   server: {
-    // En producción: carga la app desde el VPS
-    url: 'https://socialcircleinfo.cloud/',
-    cleartext: false,
-    androidScheme: 'https',
+    // En producción: carga directo desde el frontend container (sin dominio)
+    url: 'http://74.208.253.67:3001/',
+    cleartext: true,
+    androidScheme: 'http',
   },
   android: {
-    allowMixedContent: false,
+    allowMixedContent: true,
     webContentsDebuggingEnabled: false,
   },
 };

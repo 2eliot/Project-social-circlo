@@ -6,8 +6,9 @@ export function DevServiceWorkerCleanup() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!('serviceWorker' in navigator)) return;
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') return;
 
+    // Clear ALL service workers and caches on every load
+    // This ensures the WebView/APK never gets stuck on stale SW
     void navigator.serviceWorker.getRegistrations().then((registrations) => {
       for (const registration of registrations) {
         void registration.unregister();
