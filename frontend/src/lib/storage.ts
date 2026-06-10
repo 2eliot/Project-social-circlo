@@ -131,12 +131,13 @@ export const appStorage = {
     if (prefs) {
       try {
         await withTimeout(prefs.set({ key: prefixed, value }), PLUGIN_TIMEOUT_MS);
-        return;
       } catch (e: any) {
         console.warn('[storage] Capacitor Preferences set timed out or failed:', e?.message);
-        // Fall through to localStorage
       }
     }
+    // Always also write to localStorage so both stores stay in sync.
+    // If Capacitor Preferences succeeds, this is a safety net.
+    // If Capacitor Preferences fails/times out, this is the fallback.
     if (typeof window !== 'undefined') {
       try {
         localStorage.setItem(prefixed, value);
@@ -153,12 +154,13 @@ export const appStorage = {
     if (prefs) {
       try {
         await withTimeout(prefs.remove({ key: prefixed }), PLUGIN_TIMEOUT_MS);
-        return;
       } catch (e: any) {
         console.warn('[storage] Capacitor Preferences remove timed out or failed:', e?.message);
-        // Fall through to localStorage
       }
     }
+    // Always clear localStorage too — if a previous set() fell back to
+    // localStorage while Capacitor Prefs succeeded, the stale value would
+    // otherwise survive and get() would return it on next launch.
     if (typeof window !== 'undefined') {
       try {
         localStorage.removeItem(prefixed);

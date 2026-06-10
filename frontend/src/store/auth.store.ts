@@ -98,8 +98,14 @@ export const useAuth = create<AuthState>((set, get) => ({
     try {
       await api('/auth/logout', { method: 'POST' });
     } catch {}
-    setAccessToken(null);
-    await persistSessionUser(null);
+    // Await BOTH storage removals before updating state.
+    // Otherwise the Capacitor Preferences bridge may not finish
+    // clearing before the redirect happens, and on next cold start
+    // hydrate() reads stale tokens → auto-login with broken session.
+    await Promise.all([
+      setAccessToken(null),
+      persistSessionUser(null),
+    ]);
     set({ user: null });
   },
   async hydrate(force = false) {

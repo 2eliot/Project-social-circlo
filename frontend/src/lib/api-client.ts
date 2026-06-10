@@ -25,12 +25,18 @@ export async function restoreAccessToken(): Promise<string | null> {
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
-  // Persist to native SharedPreferences (fire-and-forget)
-  if (typeof window !== 'undefined') {
-    if (token) appStorage.set(ACCESS_TOKEN_STORAGE_KEY, token);
-    else appStorage.remove(ACCESS_TOKEN_STORAGE_KEY);
-  }
+  // Persist to native SharedPreferences.
+  // Must be awaited by callers that need the remove to complete before
+  // the WebView process is killed (e.g. logout).  Fire-and-forget is
+  // fine for set() during login because the token is also in memory.
+  const persistPromise =
+    typeof window !== 'undefined'
+      ? token
+        ? appStorage.set(ACCESS_TOKEN_STORAGE_KEY, token)
+        : appStorage.remove(ACCESS_TOKEN_STORAGE_KEY)
+      : Promise.resolve();
   listeners.forEach((l) => l(token));
+  return persistPromise;
 }
 export function getAccessToken() {
   return accessToken;
