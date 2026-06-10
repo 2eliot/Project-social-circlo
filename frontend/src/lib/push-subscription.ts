@@ -172,8 +172,6 @@ async function subscribeNativePush(): Promise<boolean> {
         window.dispatchEvent(new CustomEvent('appchat:navigate', { detail: { url } }));
       }
     });
-      }
-    });
 
     // NOW register — listeners are already in place
     await PushNotifications.register();
