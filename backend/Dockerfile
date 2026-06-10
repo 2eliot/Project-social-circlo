@@ -14,7 +14,7 @@ FROM node:22-bullseye-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 # FFmpeg necesario para convertir audio (fMP4 → WebM)
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && (apt-get install -y --no-install-recommends -o Acquire::Retries=5 ffmpeg || apt-get install -y --no-install-recommends --fix-missing ffmpeg) && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
