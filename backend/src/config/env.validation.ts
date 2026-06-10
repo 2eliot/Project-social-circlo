@@ -29,7 +29,17 @@ const envSchema = z.object({
 
   MODERATION_PROVIDER_URL: z.string().optional().default(''),
   MODERATION_PROVIDER_KEY: z.string().optional().default(''),
-});
+
+  // Firebase / FCM
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  FIREBASE_CLIENT_EMAIL: z.string().optional(),
+  FIREBASE_PRIVATE_KEY: z.string().optional(),
+
+  // VAPID (Web Push)
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().optional(),
+}).passthrough();
 
 export type AppEnv = z.infer<typeof envSchema>;
 
