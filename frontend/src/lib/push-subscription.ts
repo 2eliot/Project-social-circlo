@@ -1,6 +1,29 @@
-import { api } from './api-client';
+import { api, getAccessToken, onAccessTokenChange } from './api-client';
 
 const VAPID_PUBLIC_KEY = 'BHISlS7HQ-_rvtI5zYWsCIp1KDqc6n58_kcYiOcKEAZMPgiclv3lOW6VAoPdy5Vi4glWF-1QUo0iaEHV1MX5VEE';
+
+// ── Pending FCM token (received before auth is ready) ──
+let pendingFcmToken: string | null = null;
+let unsubscribeAuthListener: (() => void) | null = null;
+
+async function flushPendingFcmToken(token: string): Promise<void> {
+  try {
+    await api('/push/fcm/subscribe', {
+      method: 'POST',
+      body: { fcmToken: token, platform: 'android' },
+    });
+    console.log('[Push] FCM token sent to server');
+    pendingFcmToken = null;
+    // Clean up auth listener once token is sent
+    if (unsubscribeAuthListener) {
+      unsubscribeAuthListener();
+      unsubscribeAuthListener = null;
+    }
+  } catch (err) {
+    console.error('[Push] Failed to send FCM token to server:', err);
+    // Keep token pending — will retry on next auth change or explicit retry
+  }
+}
 
 // ── Detect if running inside Capacitor (native app) ──
 function isCapacitor(): boolean {
@@ -124,17 +147,24 @@ async function subscribeNativePush(): Promise<boolean> {
 
     PushNotifications.addListener('registration', async (token) => {
       console.log('[Push] FCM token received:', token.value.substring(0, 20) + '...');
-      try {
-        await api('/push/fcm/subscribe', {
-          method: 'POST',
-          body: {
-            fcmToken: token.value,
-            platform: 'android',
-          },
-        });
-        console.log('[Push] FCM token sent to server');
-      } catch (err) {
-        console.error('[Push] Failed to send FCM token to server:', err);
+
+      // Only send FCM token to server if user is already authenticated.
+      // Otherwise store it and wait — avoids 401 errors blocking the login flow.
+      if (getAccessToken()) {
+        await flushPendingFcmToken(token.value);
+      } else {
+        pendingFcmToken = token.value;
+        console.log('[Push] FCM token stored — will send after auth');
+
+        // Subscribe to auth changes so we flush the token as soon as the
+        // user logs in or the session is restored (hydrate).
+        if (!unsubscribeAuthListener) {
+          unsubscribeAuthListener = onAccessTokenChange((newToken) => {
+            if (newToken && pendingFcmToken) {
+              void flushPendingFcmToken(pendingFcmToken);
+            }
+          });
+        }
       }
     });
 
