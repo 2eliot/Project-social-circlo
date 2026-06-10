@@ -145,18 +145,21 @@ async function subscribeNativePush(): Promise<boolean> {
     // Handle incoming push when app is in foreground
     PushNotifications.addListener('pushNotificationReceived', (notification) => {
       console.log('[Push] Foreground notification received:', notification);
+      const url = notification.data?.url;
+      if (url) {
+        console.log('[Push] Navigating to:', url);
+        // In foreground, use direct navigation — the app is alive
+        window.location.replace(url);
+      }
     });
 
     // Handle notification tap (app in background or killed)
     PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
-      console.log('[Push] Notification action performed:', action);
+      console.log('[Push] Notification action performed:', JSON.stringify(action));
       const url = action.notification?.data?.url;
+      console.log('[Push] URL from notification data:', url);
       if (url) {
-        try {
-          window.sessionStorage.setItem('appchat.redirect_to', url);
-        } catch { /* ignore */ }
-        // Navigate in the Capacitor WebView
-        window.location.href = url;
+        window.location.replace(url);
       }
     });
 
