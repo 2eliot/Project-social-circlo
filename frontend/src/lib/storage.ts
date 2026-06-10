@@ -55,10 +55,11 @@ export const appStorage = {
     const prefs = await getPreferences();
     if (prefs) {
       try {
-        const { value } = await withTimeout(
+        const result: any = await withTimeout(
           prefs.get({ key: prefixed }),
           PLUGIN_TIMEOUT_MS,
         );
+        const value = result?.value;
         if (value !== null && value !== undefined) return value;
       } catch (e: any) {
         console.warn('[storage] Capacitor Preferences get timed out or failed:', e?.message);
