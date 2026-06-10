@@ -27,7 +27,13 @@ export default function LoginPage() {
       await login(email, password);
       router.push('/app');
     } catch (err: any) {
-      setError('Credenciales inválidas');
+      console.error('[Login] Error:', err);
+      // Mostrar el mensaje real del error si existe
+      const msg = err?.bodyText ? (() => { try {
+        const j = JSON.parse(err.bodyText);
+        return j.message ?? err.bodyText;
+      } catch { return err.bodyText; } })() : err?.message ?? 'Error de conexión';
+      setError(msg);
     }
   }
 

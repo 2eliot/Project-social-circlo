@@ -67,9 +67,14 @@ export interface ApiOptions extends Omit<RequestInit, 'body'> {
 export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Promise<T> {
   const { body, skipAuth, headers, ...rest } = opts;
   const isFormData = body instanceof FormData;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
   const doFetch = () =>
     fetch(`${API}${path}`, {
       ...rest,
+      signal: controller.signal,
       credentials: 'include',
       headers: {
         ...(accessToken && !skipAuth ? { authorization: `Bearer ${accessToken}` } : {}),
@@ -79,7 +84,19 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
       body: body === undefined ? undefined : isFormData ? (body as FormData) : JSON.stringify(body),
     });
 
-  let res = await doFetch();
+  let res;
+  try {
+    res = await doFetch();
+  } catch (err: any) {
+    clearTimeout(timeout);
+    if (err?.name === 'AbortError') {
+      throw new ApiError(0, 'Request timed out after 30s');
+    }
+    throw new ApiError(0, `Network error: ${err?.message ?? 'unknown'}`);
+  } finally {
+    clearTimeout(timeout);
+  }
+
   if (res.status === 401 && !skipAuth) {
     const ok = await refresh();
     if (ok) res = await doFetch();
