@@ -42,16 +42,16 @@ export class PushNotificationsService {
 
     if (firebaseProjectId && firebaseClientEmail && firebasePrivateKey) {
       try {
-        if (!admin.apps.length) {
+        if (admin.getApps().length === 0) {
           this.fcmApp = admin.initializeApp({
-            credential: admin.credential.cert({
+            credential: admin.cert({
               projectId: firebaseProjectId,
               clientEmail: firebaseClientEmail,
               privateKey: firebasePrivateKey.replace(/\\n/g, '\n'),
             }),
           });
         } else {
-          this.fcmApp = admin.app();
+          this.fcmApp = admin.getApp();
         }
         this.logger.log('Firebase Admin SDK configured for FCM');
       } catch (err: any) {
