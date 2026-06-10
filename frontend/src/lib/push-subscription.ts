@@ -211,18 +211,25 @@ async function subscribeNativePush(): Promise<boolean> {
     });
 
     // Handle notification tap (app in background or killed)
+    // ⚠️ On cold start this fires AFTER NotificationClickHandler's cold-start
+    // effect has already run (which checks sessionStorage before Capacitor
+    // delivers the notification data).  We store the URL and dispatch a
+    // lightweight "hey go check sessionStorage" event instead of navigating
+    // directly — that way the cold-start effect re-runs and only navigates
+    // when hydrated && user != null.
     PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
       console.log('[Push] Notification action performed:', JSON.stringify(action));
       const url = action.notification?.data?.url;
       console.log('[Push] URL from notification data:', url);
       if (url) {
-        // Store in sessionStorage so NotificationClickHandler can pick it up
-        // after React mounts — avoids full page reload with location.replace()
         try {
           window.sessionStorage.setItem('appchat.redirect_to', url);
         } catch { /* ignore */ }
-        // Dispatch custom event for NotificationClickHandler
-        window.dispatchEvent(new CustomEvent('appchat:navigate', { detail: { url } }));
+        // Signal NotificationClickHandler to re-check sessionStorage.
+        // We do NOT dispatch appchat:navigate here because on cold start
+        // the auth guard may not have run yet, causing the feed to show
+        // instead of the DM conversation.
+        window.dispatchEvent(new CustomEvent('appchat:redirect-available'));
       }
     });
 

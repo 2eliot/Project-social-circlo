@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/store/auth.store';
 
@@ -20,7 +20,11 @@ const REDIRECT_KEY = 'appchat.redirect_to';
 export function NotificationClickHandler() {
   const router = useRouter();
   const { hydrated, user } = useAuth();
-  const processedRef = useRef(false);
+  // Counter that ticks every time Capacitor stores a notification URL in
+  // sessionStorage (via appchat:redirect-available).  We add it to the
+  // cold-start effect's dependency array so it re-runs when the URL is
+  // stored *after* hydrate has already completed.
+  const [redirectCheckCounter, setRedirectCheckCounter] = useState(0);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -38,8 +42,19 @@ export function NotificationClickHandler() {
     };
     window.addEventListener('appchat:navigate', onNavigate);
 
+    // ── Capacitor cold-start: listen for "URL stored" signal ──
+    // pushNotificationActionPerformed stores the URL first, then fires
+    // this event so the cold-start effect below re-checks sessionStorage.
+    const onRedirectAvailable = () => {
+      setRedirectCheckCounter((c) => c + 1);
+    };
+    window.addEventListener('appchat:redirect-available', onRedirectAvailable);
+
     if (!('serviceWorker' in navigator)) {
-      return () => window.removeEventListener('appchat:navigate', onNavigate);
+      return () => {
+        window.removeEventListener('appchat:navigate', onNavigate);
+        window.removeEventListener('appchat:redirect-available', onRedirectAvailable);
+      };
     }
 
     // ── Web push: listen for postMessage from service worker ──
@@ -59,29 +74,34 @@ export function NotificationClickHandler() {
     return () => {
       navigator.serviceWorker.removeEventListener('message', onMessage);
       window.removeEventListener('appchat:navigate', onNavigate);
+      window.removeEventListener('appchat:redirect-available', onRedirectAvailable);
     };
   }, [router]);
 
   // ── Cold-start notification tap: wait for hydrate before navigating ──
+  // Re-runs when hydrated, user, or redirectCheckCounter changes (the
+  // latter ticks when Capacitor stores a URL AFTER hydrate is done).
   useEffect(() => {
-    if (!hydrated || processedRef.current) return;
+    if (!hydrated) return;
 
+    let pending: string | null = null;
     try {
-      const pending = window.sessionStorage.getItem(REDIRECT_KEY);
-      if (!pending) return;
-
-      processedRef.current = true;
-
-      if (user) {
-        // Session is ready — consume the redirect and navigate immediately
-        window.sessionStorage.removeItem(REDIRECT_KEY);
-        router.push(pending);
-      }
-      // If user is null, leave redirect_to in sessionStorage.
-      // AuthSessionSync will redirect to /login, save the current URL,
-      // and after login the redirect_to will be restored from sessionStorage.
+      pending = window.sessionStorage.getItem(REDIRECT_KEY);
     } catch { /* ignore */ }
-  }, [hydrated, user, router]);
+
+    if (!pending) return;
+
+    if (user) {
+      // Session is ready — consume the redirect and navigate immediately
+      try {
+        window.sessionStorage.removeItem(REDIRECT_KEY);
+      } catch { /* ignore */ }
+      router.push(pending);
+    }
+    // If user is null, leave redirect_to in sessionStorage.
+    // AuthSessionSync will redirect to /login, save the current URL,
+    // and after login the redirect_to will be restored from sessionStorage.
+  }, [hydrated, user, router, redirectCheckCounter]);
 
   return null;
 }
