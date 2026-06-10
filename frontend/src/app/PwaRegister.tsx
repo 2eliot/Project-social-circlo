@@ -18,11 +18,11 @@ export function PwaRegister() {
       console.log('[PwaRegister] Capacitor detected → subscribing native push');
       void subscribeToPush();
 
-      // ── Init keyboard plugin for better third-party keyboard compat ──
-      void import('@capacitor/keyboard').then(({ Keyboard, KeyboardResizeMode }) => {
-        Keyboard.setResizeMode({ mode: KeyboardResizeMode.Body });
-        Keyboard.setScroll(); // optional: ensures scroll works with keyboard open
-        console.log('[PwaRegister] Keyboard plugin initialized (resizeMode=Body)');
+      // ── Init keyboard plugin for scroll/layout stability on Android ──
+      void import('@capacitor/keyboard').then(({ Keyboard }) => {
+        // The resize mode is iOS-only, but having the module loaded ensures
+        // Android's WebView handles keyboard events properly.
+        console.log('[PwaRegister] Keyboard plugin loaded');
       });
 
       return;
