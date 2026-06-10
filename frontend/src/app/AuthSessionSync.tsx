@@ -55,8 +55,18 @@ export function AuthSessionSync({ children }: { children: React.ReactNode }) {
     // Páginas públicas que no requieren auth
     const publicPages = ['/login', '/register'];
     if (publicPages.includes(pathname)) {
-      // Si ya está logueado en una página pública, ir al feed
-      if (user) router.replace('/app');
+      // Si ya está logueado en una página pública, ir al feed.
+      // ⚠️ Pero NO si hay un redirect_to pendiente — NotificationClickHandler
+      // lo consumirá y navegará al destino correcto (DM, perfil, etc).
+      // Sin esta guardia, router.replace('/app') gana la carrera y el
+      // usuario termina en el feed en lugar del DM que tocó.
+      if (user) {
+        let pendingRedirect: string | null = null;
+        try { pendingRedirect = window.sessionStorage.getItem(REDIRECT_KEY); } catch { /* ignore */ }
+        if (!pendingRedirect) {
+          router.replace('/app');
+        }
+      }
       return;
     }
 
@@ -76,27 +86,21 @@ export function AuthSessionSync({ children }: { children: React.ReactNode }) {
     const params = new URLSearchParams(window.location.search);
     if (params.has('dm')) return;
 
-    // Restaurar redirect_to pendiente
-    let redirectTo: string | null = null;
-    try {
-      redirectTo = window.sessionStorage.getItem(REDIRECT_KEY);
-    } catch { /* ignore */ }
-
-    if (redirectTo) {
-      const currentFullUrl = pathname + window.location.search;
-      if (currentFullUrl !== redirectTo) {
-        if (redirectTo.startsWith('/')) {
-          window.sessionStorage.removeItem(REDIRECT_KEY);
-          router.replace(redirectTo);
-          return;
-        }
-        window.sessionStorage.removeItem(REDIRECT_KEY);
-      }
-    }
+    // NotificationClickHandler se encarga de consumir redirect_to.
+    // No duplicamos esa lógica aquí para evitar carreras de navegación.
 
     // Si está en raíz (sin dm), ir al feed
     if (pathname === '/') {
-      router.replace('/app');
+      // ⚠️ No redirigir al feed si hay un redirect_to pendiente.
+      // NotificationClickHandler lo consumirá cuando hydrate termine.
+      // Si redirigimos al feed aquí, ganamos la carrera contra el push
+      // de NotificationClickHandler y el usuario termina en el feed
+      // en lugar del DM/perfil que tocó en la notificación.
+      let pendingRedirect: string | null = null;
+      try { pendingRedirect = window.sessionStorage.getItem(REDIRECT_KEY); } catch { /* ignore */ }
+      if (!pendingRedirect) {
+        router.replace('/app');
+      }
     }
   }, [hydrated, user, pathname, router]);
 

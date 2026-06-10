@@ -92,11 +92,13 @@ export function NotificationClickHandler() {
     if (!pending) return;
 
     if (user) {
-      // Session is ready — consume the redirect and navigate immediately
+      // Session is ready — consume the redirect and navigate immediately.
+      // Use replace (not push) to win the race against AuthSessionSync's
+      // feed redirect which runs in the same React render cycle.
       try {
         window.sessionStorage.removeItem(REDIRECT_KEY);
       } catch { /* ignore */ }
-      router.push(pending);
+      router.replace(pending);
     }
     // If user is null, leave redirect_to in sessionStorage.
     // AuthSessionSync will redirect to /login, save the current URL,

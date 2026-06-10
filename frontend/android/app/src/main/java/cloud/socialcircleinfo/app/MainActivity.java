@@ -14,6 +14,7 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
 
     private boolean micPermissionRequested = false;
+    private boolean notifPermissionRequested = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,6 +40,39 @@ public class MainActivity extends BridgeActivity {
                 new String[] { Manifest.permission.RECORD_AUDIO },
                 1002
             );
+        } else if (micPermissionRequested && !notifPermissionRequested) {
+            // Micrófono ya resuelto (o ya concedido), pedir notificaciones
+            requestNotificationPermission();
+        }
+    }
+
+    /**
+     * Pide POST_NOTIFICATIONS en Android 13+.  Al pedirlo desde Java antes que
+     * Capacitor, el plugin de push ve el permiso ya concedido y no muestra un
+     * segundo diálogo.  Así el usuario ve: 1) micrófono, 2) notificaciones.
+     */
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+            notifPermissionRequested = true;
+            ActivityCompat.requestPermissions(
+                this,
+                new String[] { Manifest.permission.POST_NOTIFICATIONS },
+                1003
+            );
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode,
+                                           String[] permissions,
+                                           int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode == 1002) {
+            // Micrófono resuelto → pedir notificaciones a continuación
+            requestNotificationPermission();
         }
     }
 
