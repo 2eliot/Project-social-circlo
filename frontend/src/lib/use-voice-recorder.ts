@@ -43,9 +43,11 @@ function getVoiceFileExtension(mimeType: string): string {
 
 function getVoiceRecordingErrorMessage(err: unknown): string {
   if (err instanceof DOMException) {
-    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') return 'No diste permiso al micrófono. Revisa los permisos del navegador.';
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')
+      return 'Permiso de micrófono denegado. Ve a Ajustes > Apps > Social Circle > Permisos y activa el micrófono.';
     if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') return 'No se encontró ningún micrófono disponible.';
-    if (err.name === 'NotReadableError' || err.name === 'TrackStartError') return 'El micrófono está siendo usado por otra aplicación.';
+    if (err.name === 'NotReadableError' || err.name === 'TrackStartError')
+      return 'El micrófono está siendo usado por otra app. Ciérrala e intenta de nuevo.';
     if (err.name === 'NotSupportedError') return 'Tu navegador no pudo iniciar la grabación con un formato compatible.';
   }
   if (err instanceof Error && err.message) return err.message;
