@@ -15,31 +15,6 @@
 const KEY_PREFIX = 'appchat.';
 const PLUGIN_TIMEOUT_MS = 3000;
 
-/**
- * Suppress Capacitor plugin proxy thenable errors.
- *
- * Capacitor wraps native plugins in JavaScript proxies that intercept ALL
- * property accesses — including `.then`.  When JavaScript's Promise resolution
- * checks whether the Preferences object is "thenable" (via `proxy.then`), the
- * Capacitor bridge forwards the `.then` access as a native method call.
- * "then" is not a real native method, so the bridge throws
- * `"Preferences.then()" is not implemented on android`.
- *
- * These errors are harmless — they don't affect actual get/set/remove calls.
- * Suppressing them via `unhandledrejection` is the recommended workaround
- * for Capacitor < 9.x on Android.
- */
-if (typeof window !== 'undefined') {
-  window.addEventListener('unhandledrejection', (event) => {
-    const msg = (event as PromiseRejectionEvent).reason?.message;
-    if (typeof msg === 'string' && msg.includes('.then()') && msg.includes('not implemented')) {
-      event.preventDefault();
-      // Log once so we know it happened but don't pollute the console
-      console.debug('[storage] Suppressed Capacitor proxy thenable error:', msg);
-    }
-  });
-}
-
 /** Detect if running inside Capacitor native (Android/iOS), not browser/PWA */
 function isCapacitorNative(): boolean {
   if (typeof window === 'undefined') return false;
@@ -56,6 +31,28 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 
+/**
+ * Wrap a Capacitor plugin proxy so that accessing `.then` returns undefined
+ * instead of being forwarded to the native bridge.
+ *
+ * Capacitor wraps native plugins in JavaScript proxies that intercept ALL
+ * property accesses.  When JavaScript's Promise resolution checks whether an
+ * object is "thenable" it accesses `obj.then`.  The Capacitor proxy forwards
+ * this to the native bridge as `"Preferences.then()"`, which throws because
+ * "then" is not a native Android method.
+ *
+ * By wrapping the Capacitor proxy in ANOTHER proxy that intercepts `.then`
+ * first, we prevent Capacitor from ever seeing the `.then` access.
+ */
+function neuterThen<T extends object>(plugin: T): T {
+  return new Proxy(plugin, {
+    get(target, prop, receiver) {
+      if (prop === 'then') return undefined;
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
+
 let preferencesPlugin: any = null;
 let moduleLoaded = false;
 let ensurePromise: Promise<void> | null = null;
@@ -68,8 +65,8 @@ let ensurePromise: Promise<void> | null = null;
  * Capacitor bridge intercepts as a native method call → throws
  * `"Preferences.then()" is not implemented on android`.
  *
- * Instead, this function stores the proxy in a module-level variable and
- * storage methods access it synchronously after awaiting this.
+ * Instead, this function stores a wrapped proxy in a module-level variable
+ * and storage methods access it synchronously after awaiting this.
  */
 async function ensurePreferences(): Promise<void> {
   if (moduleLoaded) return;
@@ -85,7 +82,8 @@ async function ensurePreferences(): Promise<void> {
           import('@capacitor/preferences'),
           PLUGIN_TIMEOUT_MS,
         );
-        preferencesPlugin = mod.Preferences;
+        // Wrap to prevent Capacitor proxy from intercepting .then access
+        preferencesPlugin = neuterThen(mod.Preferences);
       } catch {
         // Capacitor Preferences failed to load or timed out.
         // Fall through to localStorage for this and all future calls.
