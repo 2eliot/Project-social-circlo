@@ -38,18 +38,18 @@ const SESSION_USER_STORAGE_KEY = 'appchat.sessionUser';
 
 function persistSessionUser(user: SessionUser | null) {
   if (typeof window === 'undefined') return;
-  if (user) window.sessionStorage.setItem(SESSION_USER_STORAGE_KEY, JSON.stringify(user));
-  else window.sessionStorage.removeItem(SESSION_USER_STORAGE_KEY);
+  if (user) window.localStorage.setItem(SESSION_USER_STORAGE_KEY, JSON.stringify(user));
+  else window.localStorage.removeItem(SESSION_USER_STORAGE_KEY);
 }
 
 function readSessionUser(): SessionUser | null {
   if (typeof window === 'undefined') return null;
-  const raw = window.sessionStorage.getItem(SESSION_USER_STORAGE_KEY);
+  const raw = window.localStorage.getItem(SESSION_USER_STORAGE_KEY);
   if (!raw) return null;
   try {
     return JSON.parse(raw) as SessionUser;
   } catch {
-    window.sessionStorage.removeItem(SESSION_USER_STORAGE_KEY);
+    window.localStorage.removeItem(SESSION_USER_STORAGE_KEY);
     return null;
   }
 }

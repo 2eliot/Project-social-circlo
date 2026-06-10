@@ -1,6 +1,6 @@
 /**
  * Lightweight fetch wrapper:
- *  - Access token in memory (never touches localStorage).
+ *  - Access token in localStorage for persistence across app restarts.
  *  - Refresh token rides HttpOnly cookie issued by the API.
  *  - Transparent retry on 401: hits /auth/refresh once before failing.
  */
@@ -9,15 +9,15 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? '/api/v1';
 const ACCESS_TOKEN_STORAGE_KEY = 'appchat.accessToken';
 
 let accessToken: string | null =
-  typeof window === 'undefined' ? null : window.sessionStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
+  typeof window === 'undefined' ? null : window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
 let refreshing: Promise<boolean> | null = null;
 const listeners = new Set<(t: string | null) => void>();
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
   if (typeof window !== 'undefined') {
-    if (token) window.sessionStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
-    else window.sessionStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+    if (token) window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
+    else window.localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
   }
   listeners.forEach((l) => l(token));
 }
