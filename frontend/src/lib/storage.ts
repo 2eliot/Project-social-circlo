@@ -9,16 +9,24 @@
 
 const KEY_PREFIX = 'appchat.';
 
+/** Detect if running inside Capacitor native (Android/iOS), not browser/PWA */
+function isCapacitorNative(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !!(window as any).Capacitor?.isNativePlatform?.();
+}
+
 let PreferencesModule: any = null;
 let moduleLoaded = false;
 
 async function getPreferences() {
   if (!moduleLoaded) {
-    try {
-      const mod = await import('@capacitor/preferences');
-      PreferencesModule = mod.Preferences;
-    } catch {
-      // Capacitor not available (SSR or browser dev)
+    if (isCapacitorNative()) {
+      try {
+        const mod = await import('@capacitor/preferences');
+        PreferencesModule = mod.Preferences;
+      } catch {
+        // Capacitor Preferences failed to load
+      }
     }
     moduleLoaded = true;
   }
