@@ -145,6 +145,19 @@ async function subscribeNativePush(): Promise<boolean> {
       // If app is in foreground, show an in-app toast or update badge
     });
 
+    // Handle notification tap (app in background or killed)
+    PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+      console.log('[Push] Notification action performed:', action);
+      const url = action.notification?.data?.url;
+      if (url) {
+        try {
+          window.sessionStorage.setItem('appchat.redirect_to', url);
+        } catch { /* ignore */ }
+        // Navigate in the Capacitor WebView
+        window.location.href = url;
+      }
+    });
+
     console.log('[Push] Native push registered');
     return true;
   } catch (err) {
