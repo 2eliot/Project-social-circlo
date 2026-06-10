@@ -339,14 +339,17 @@ model user_notifications {
 model PushSubscription {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId    String   @map("user_id") @db.Uuid
-  endpoint  String   @db.Text
-  p256dh    String   @db.Text
-  auth      String   @db.Text
+  endpoint  String?  @db.Text
+  p256dh    String?  @db.Text
+  auth      String?  @db.Text
+  fcmToken  String?  @map("fcm_token") @db.Text
+  platform  String?  @db.VarChar(20)
   userAgent String?  @map("user_agent")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, endpoint])
+  @@unique([userId, fcmToken])
   @@index([userId])
   @@map("push_subscriptions")
 }

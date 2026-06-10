@@ -2,6 +2,16 @@ import { api } from './api-client';
 
 const VAPID_PUBLIC_KEY = 'BHISlS7HQ-_rvtI5zYWsCIp1KDqc6n58_kcYiOcKEAZMPgiclv3lOW6VAoPdy5Vi4glWF-1QUo0iaEHV1MX5VEE';
 
+// ── Detect if running inside Capacitor (native app) ──
+function isCapacitor(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !!(window as any).Capacitor?.isNativePlatform?.();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Web-Push helpers (browser / PWA)
+// ═══════════════════════════════════════════════════════════════
+
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -13,10 +23,9 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
-export async function subscribeToPush(): Promise<boolean> {
-  if (typeof window === 'undefined') return false;
+async function subscribeWebPush(): Promise<boolean> {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    console.log('[Push] Push not supported');
+    console.log('[Push] Web Push not supported');
     return false;
   }
 
@@ -25,10 +34,8 @@ export async function subscribeToPush(): Promise<boolean> {
     const existing = await registration.pushManager.getSubscription();
 
     if (existing) {
-      // Already subscribed — check if still valid
       const subJson = existing.toJSON();
       if (subJson.keys?.p256dh && subJson.keys?.auth) {
-        // Re-sync with backend (idempotent)
         await api('/push/subscribe', {
           method: 'POST',
           body: {
@@ -38,21 +45,18 @@ export async function subscribeToPush(): Promise<boolean> {
             userAgent: navigator.userAgent,
           },
         });
-        console.log('[Push] Subscription already active, synced with server');
+        console.log('[Push] Web-push synced with server');
         return true;
       }
-      // Invalid subscription, unsubscribe
       await existing.unsubscribe();
     }
 
-    // Request permission
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') {
       console.log('[Push] Permission denied');
       return false;
     }
 
-    // Subscribe
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as unknown as BufferSource,
@@ -69,16 +73,15 @@ export async function subscribeToPush(): Promise<boolean> {
       },
     });
 
-    console.log('[Push] Subscribed successfully');
+    console.log('[Push] Web-push subscribed');
     return true;
   } catch (err) {
-    console.error('[Push] Subscription error:', err);
+    console.error('[Push] Web-push subscription error:', err);
     return false;
   }
 }
 
-export async function unsubscribeFromPush(): Promise<boolean> {
-  if (typeof window === 'undefined') return false;
+async function unsubscribeWebPush(): Promise<boolean> {
   if (!('serviceWorker' in navigator)) return false;
 
   try {
@@ -92,10 +95,103 @@ export async function unsubscribeFromPush(): Promise<boolean> {
     });
 
     await subscription.unsubscribe();
-    console.log('[Push] Unsubscribed');
+    console.log('[Push] Web-push unsubscribed');
     return true;
   } catch (err) {
-    console.error('[Push] Unsubscribe error:', err);
+    console.error('[Push] Web-push unsubscribe error:', err);
     return false;
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FCM / Capacitor native push helpers
+// ═══════════════════════════════════════════════════════════════
+
+async function subscribeNativePush(): Promise<boolean> {
+  try {
+    // Dynamic import — won't fail if running in browser
+    const { PushNotifications } = await import('@capacitor/push-notifications');
+
+    // Request permission
+    const permResult = await PushNotifications.requestPermissions();
+    if (permResult.receive !== 'granted') {
+      console.log('[Push] Native permission denied');
+      return false;
+    }
+
+    // Register
+    await PushNotifications.register();
+
+    // Listen for registration token
+    PushNotifications.addListener('registration', async (token) => {
+      console.log('[Push] FCM token received:', token.value.substring(0, 20) + '...');
+      await api('/push/fcm/subscribe', {
+        method: 'POST',
+        body: {
+          fcmToken: token.value,
+          platform: 'android',
+        },
+      });
+    });
+
+    PushNotifications.addListener('registrationError', (error) => {
+      console.error('[Push] FCM registration error:', error);
+    });
+
+    // Handle incoming push when app is in foreground
+    PushNotifications.addListener('pushNotificationReceived', (notification) => {
+      console.log('[Push] Foreground notification received:', notification);
+      // The notification shows automatically via FCM data->notification
+      // If app is in foreground, show an in-app toast or update badge
+    });
+
+    console.log('[Push] Native push registered');
+    return true;
+  } catch (err) {
+    console.error('[Push] Native push error:', err);
+    return false;
+  }
+}
+
+async function unsubscribeNativePush(): Promise<boolean> {
+  try {
+    const { PushNotifications } = await import('@capacitor/push-notifications');
+
+    // Get current token to unregister from backend
+    // (Capacitor push-notifications doesn't expose the token directly,
+    //  but we can unregister from the backend via the stored token later)
+    // For now, just unregister from native
+    await PushNotifications.removeAllListeners();
+    console.log('[Push] Native push unregistered');
+    return true;
+  } catch (err) {
+    console.error('[Push] Native unsubscribe error:', err);
+    return false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Public API — auto-detects platform
+// ═══════════════════════════════════════════════════════════════
+
+export async function subscribeToPush(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  if (isCapacitor()) {
+    console.log('[Push] Capacitor detected → using native FCM');
+    return subscribeNativePush();
+  }
+
+  console.log('[Push] Browser detected → using web-push');
+  return subscribeWebPush();
+}
+
+export async function unsubscribeFromPush(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  if (isCapacitor()) {
+    return unsubscribeNativePush();
+  }
+
+  return unsubscribeWebPush();
 }

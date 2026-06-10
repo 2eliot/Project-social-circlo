@@ -18,7 +18,7 @@ export class PushNotificationsController {
   ) {
     const userId = req.user.id;
 
-    // Upsert subscription
+    // Upsert subscription (web-push)
     await this.prisma.pushSubscription.upsert({
       where: { userId_endpoint: { userId, endpoint: body.endpoint } },
       update: {
@@ -32,6 +32,36 @@ export class PushNotificationsController {
         p256dh: body.p256dh,
         auth: body.auth,
         userAgent: body.userAgent || null,
+        platform: 'web',
+      },
+    });
+
+    return { success: true };
+  }
+
+  @Post('fcm/subscribe')
+  async subscribeFcm(
+    @Req() req: any,
+    @Body() body: { fcmToken: string; platform: string },
+  ) {
+    const userId = req.user.id;
+
+    await this.prisma.pushSubscription.upsert({
+      where: {
+        userId_fcmToken: {
+          userId,
+          fcmToken: body.fcmToken,
+        },
+      },
+      update: {
+        platform: body.platform || 'android',
+        userAgent: 'capacitor-native',
+      },
+      create: {
+        userId,
+        fcmToken: body.fcmToken,
+        platform: body.platform || 'android',
+        userAgent: 'capacitor-native',
       },
     });
 
@@ -39,11 +69,22 @@ export class PushNotificationsController {
   }
 
   @Delete('unsubscribe')
-  async unsubscribe(@Req() req: any, @Body() body: { endpoint: string }) {
+  async unsubscribe(@Req() req: any, @Body() body: { endpoint?: string }) {
     const userId = req.user.id;
 
     await this.prisma.pushSubscription.deleteMany({
-      where: { userId, endpoint: body.endpoint },
+      where: { userId, endpoint: body.endpoint || null },
+    });
+
+    return { success: true };
+  }
+
+  @Delete('fcm/unsubscribe')
+  async unsubscribeFcm(@Req() req: any, @Body() body: { fcmToken: string }) {
+    const userId = req.user.id;
+
+    await this.prisma.pushSubscription.deleteMany({
+      where: { userId, fcmToken: body.fcmToken },
     });
 
     return { success: true };

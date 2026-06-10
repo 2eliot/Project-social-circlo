@@ -8,6 +8,19 @@ uploads/
 .tools/
 .env
 .env.*
+
+# Android Studio
+frontend/android/.idea/
+frontend/android/app/release/
+frontend/android/local.properties
+frontend/android/*.jks
+frontend/android/*.keystore
+
+# Gradle daemon
+frontend/android/gradle/gradle-daemon-jvm.properties
+
+# Misc
+frontend/inefable
 !.env.example
 !.env.local.example
 !.env.vps.example
