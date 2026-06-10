@@ -1734,6 +1734,11 @@ function FeedTab({ onOpenProfile, onlineUserIds, onOpenFocusedPost }: { onOpenPr
                 <div style={{ borderTop: '1px solid rgba(255,255,255,.06)', paddingTop: 12, marginTop: 4 }}>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
                     <input
+                      type="text"
+                      autoComplete="off"
+                      autocorrect="off"
+                      spellCheck={false}
+                      enterKeyHint="send"
                       value={commentDrafts[post.id] ?? ''}
                       onChange={(e) => setCommentDrafts((current) => ({ ...current, [post.id]: e.target.value.slice(0, 80) }))}
                       placeholder="Escribe un comentario..."
@@ -2150,6 +2155,11 @@ function FocusedPostView({ postId, onClose, onOpenProfile }: { postId: string; o
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input
                     id={`focused-comment-${post.id}`}
+                    type="text"
+                    autoComplete="off"
+                    autocorrect="off"
+                    spellCheck={false}
+                    enterKeyHint="send"
                     value={commentDraft}
                     onChange={(e) => setCommentDraft(e.target.value.slice(0, 80))}
                     onKeyDown={(e) => { if (e.key === 'Enter' && commentDraft.trim()) void addComment(); }}

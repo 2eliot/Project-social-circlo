@@ -793,6 +793,9 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
               type="text"
               inputMode="text"
               autoComplete="off"
+              autocorrect="off"
+              spellCheck={false}
+              enterKeyHint="send"
               data-1p-ignore
               data-form-type="other"
               value={input}
