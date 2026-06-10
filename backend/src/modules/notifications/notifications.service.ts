@@ -126,7 +126,7 @@ export class NotificationsService implements OnModuleInit {
       `
         INSERT INTO user_notifications (user_id, actor_user_id, kind, title, body, metadata)
         VALUES ($1::uuid, $2::uuid, 'DM_MESSAGE', $3, $4, $5::jsonb)
-        RETURNING id, kind, title, body, post_id AS "postId", is_read AS "isRead", created_at AS "createdAt", actor_user_id AS "actorId"
+        RETURNING id, kind, title, body, metadata, post_id AS "postId", is_read AS "isRead", created_at AS "createdAt", actor_user_id AS "actorId"
       `,
       input.userId,
       input.actorUserId,
@@ -152,7 +152,7 @@ export class NotificationsService implements OnModuleInit {
           n.is_read AS "isRead",
           n.created_at AS "createdAt",
           n.actor_user_id AS "actorId",
-          n.metadata AS "metadata",
+          COALESCE(n.metadata::text, 'null')::jsonb AS "metadata",
           u.display_name AS "actorDisplayName",
           u.avatar_url AS "actorAvatarUrl",
           u.global_role AS "actorGlobalRole",
