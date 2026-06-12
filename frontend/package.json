@@ -9,10 +9,13 @@
     "lint": "next lint",
     "cap:sync": "npx cap sync",
     "cap:open": "npx cap open android",
-    "cap:update": "npx cap update"
+    "cap:update": "npx cap update",
+    "build:cap": "set NODE_ENV=production&& npx next build && npx cap sync",
+    "build:cap:prod": "set NODE_ENV=production&& npx next build && npx cap copy"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.0",
+    "@capacitor/app": "^8.1.0",
     "@capacitor/cli": "^8.4.0",
     "@capacitor/core": "^8.4.0",
     "@capacitor/keyboard": "^8.0.3",

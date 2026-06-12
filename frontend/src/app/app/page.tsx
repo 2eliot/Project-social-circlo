@@ -9,6 +9,7 @@ import { useVoiceClip } from '@/lib/use-voice-clip';
 import { getSocket } from '@/lib/socket-client';
 import { useVoiceRecorder } from '@/lib/use-voice-recorder';
 import { useAuth } from '@/store/auth.store';
+import { useAndroidBackButton } from '@/lib/use-android-back-button';
 import ChatsView from '@/features/chats/ChatsView';
 import ChatConversation from '@/features/chats/ChatConversation';
 
@@ -294,6 +295,38 @@ export default function AppHome() {
   const [visitedTabs, setVisitedTabs] = useState<Set<Tab>>(new Set<Tab>(['feed']));
   // Trackea si la vista de detalle del chat (ChatsTab) ya fue montada para keep-alive
   const [chatsDetailVisited, setChatsDetailVisited] = useState(false);
+  // Pila de navegación con REF (no estado): evita problemas de closures en el listener nativo
+  const tabHistoryRef = useRef<Tab[]>([]);
+
+  /* ── Navegar a un tab guardando el anterior en el historial ── */
+  function navigateToTab(nextTab: Tab) {
+    if (nextTab === tab) return;
+    tabHistoryRef.current.push(tab);
+    setTab(nextTab);
+    setVisitedTabs((prev) => {
+      if (prev.has(nextTab)) return prev;
+      const next = new Set(prev);
+      next.add(nextTab);
+      return next;
+    });
+  }
+
+  /* ── Botón nativo de retroceso Android ── */
+  const canGoBack = tabHistoryRef.current.length > 0 || selectedConversationId !== null;
+  const handleBack = useRef(() => {});
+  handleBack.current = () => {
+    if (selectedConversationId !== null) {
+      setSelectedConversationId(null);
+      return;
+    }
+    if (tabHistoryRef.current.length > 0) {
+      const prevTab = tabHistoryRef.current.pop()!;
+      setTab(prevTab);
+      router.replace(`/app?tab=${prevTab}`, { scroll: false });
+      return;
+    }
+  };
+  useAndroidBackButton(canGoBack, handleBack.current);
 
   useEffect(() => { tabRef.current = tab; }, [tab]);
   useEffect(() => { selectedConvRef.current = selectedConversationId; }, [selectedConversationId]);
@@ -560,18 +593,13 @@ export default function AppHome() {
 
   function handleOpenProfile(userId: string) {
     setProfileUserId(userId);
-    setTab('profile');
+    navigateToTab('profile');
     router.push(`/app?tab=profile&profileUserId=${encodeURIComponent(userId)}`);
   }
 
   function handleSelectTab(nextTab: Tab) {
-    setTab(nextTab);
-    setVisitedTabs((prev) => {
-      if (prev.has(nextTab)) return prev;
-      const next = new Set(prev);
-      next.add(nextTab);
-      return next;
-    });
+    if (nextTab === tab) return;
+    navigateToTab(nextTab);
     if (nextTab === 'chats') {
       // Al entrar a chats, ya "viste" todo — limpiar ambos badges
       setUnreadDmsCount(0);
@@ -596,7 +624,7 @@ export default function AppHome() {
 
   function handleOpenConversation(conversationId: string) {
     setLiveDmNotice(null);
-    setTab('chats');
+    navigateToTab('chats');
     router.push('/app?tab=chats');
     setSelectedConversationId(conversationId);
     setChatsDetailVisited(true);
@@ -657,7 +685,7 @@ export default function AppHome() {
           type="button"
           className="fixed left-1/2 -translate-x-1/2 top-[72px] z-50 flex w-[min(392px,calc(100%-42px))] items-center gap-3 rounded-[22px] border border-[#ffe08c]/16 bg-[rgba(28,24,18,.88)] px-3 py-3 text-left shadow-[0_16px_32px_rgba(0,0,0,.3)] backdrop-blur-[18px]"
           onClick={() => {
-            setTab('feed');
+            navigateToTab('feed');
             setLiveInteractionNotice(null);
             router.push('/app?tab=feed');
           }}
@@ -714,13 +742,13 @@ export default function AppHome() {
           <div className="flex-1 min-h-0 overflow-y-auto" style={{ display: tab === 'profile' ? undefined : 'none' }}>
             <ProfileTab
               viewedUserId={profileUserId}
-              onOpenChats={() => setTab('chats')}
+              onOpenChats={() => navigateToTab('chats')}
               onOpenConversation={handleOpenConversation}
               onRelationshipChanged={() => void refreshPendingChatsCount()}
               onOpenProfile={handleOpenProfile}
               onOpenGroupCreator={() => {
                 setOpenGroupCreatorOnTabChange(true);
-                setTab('groups');
+                navigateToTab('groups');
               }}
               onlineUserIds={onlineUserIds}
             />

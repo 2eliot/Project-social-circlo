@@ -1,7 +1,8 @@
 /**
  * Lightweight fetch wrapper:
  *  - Access token persists via @capacitor/preferences (SharedPreferences nativo).
- *  - Refresh token rides HttpOnly cookie issued by the API.
+ *  - Refresh token también persiste en Preferences (no confía en cookies HttpOnly,
+ *    porque el WebView de la APK no las envía en peticiones cross-origin).
  *  - Transparent retry on 401: hits /auth/refresh once before failing.
  */
 
@@ -9,9 +10,11 @@ import { appStorage } from './storage';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? '/api/v1';
 const ACCESS_TOKEN_STORAGE_KEY = 'accessToken';
+const REFRESH_TOKEN_STORAGE_KEY = 'refreshToken';
 
 // Starts null; restored asynchronously by restoreAccessToken() during hydrate.
 let accessToken: string | null = null;
+let refreshToken: string | null = null;
 let refreshing: Promise<boolean> | null = null;
 const listeners = new Set<(t: string | null) => void>();
 
@@ -46,17 +49,53 @@ export function onAccessTokenChange(cb: (t: string | null) => void) {
   return () => listeners.delete(cb);
 }
 
+/** ── Refresh token (Preferences-based, no cookie) ── */
+
+/** Restore refresh token from native storage (call during hydrate). */
+export async function restoreRefreshToken(): Promise<string | null> {
+  const raw = await appStorage.get(REFRESH_TOKEN_STORAGE_KEY);
+  refreshToken = raw;
+  return raw;
+}
+
+export function setRefreshToken(token: string | null) {
+  refreshToken = token;
+  const persistPromise =
+    typeof window !== 'undefined'
+      ? token
+        ? appStorage.set(REFRESH_TOKEN_STORAGE_KEY, token)
+        : appStorage.remove(REFRESH_TOKEN_STORAGE_KEY)
+      : Promise.resolve();
+  return persistPromise;
+}
+
+export function getRefreshToken() {
+  return refreshToken;
+}
+
 async function refresh(): Promise<boolean> {
   if (refreshing) return refreshing;
   refreshing = (async () => {
     try {
-      const res = await fetch(`${API}/auth/refresh`, { method: 'POST', credentials: 'include' });
+      const storedRefresh = refreshToken;
+      if (!storedRefresh) {
+        setAccessToken(null);
+        return false;
+      }
+      const res = await fetch(`${API}/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken: storedRefresh }),
+      });
       if (!res.ok) {
         setAccessToken(null);
+        setRefreshToken(null);
         return false;
       }
       const data = await res.json();
       setAccessToken(data.accessToken);
+      if (data.refreshToken) setRefreshToken(data.refreshToken);
       return true;
     } finally {
       refreshing = null;

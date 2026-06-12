@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
 import { resolveMediaUrl } from '@/lib/media-url';
+import { getCachedUrl, preloadAllAsBlob } from '@/lib/image-cache';
 import { getSocket } from '@/lib/socket-client';
 import { useAuth } from '@/store/auth.store';
 
@@ -166,6 +167,19 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
       return next;
     });
   }
+
+  /* --- Preload voice avatars as blob: URLs for instant display --- */
+  useEffect(() => {
+    if (!voiceHeroMembers || voiceHeroMembers.length === 0) return;
+    const urls: string[] = [];
+    for (const member of voiceHeroMembers) {
+      if (member.avatarUrl) {
+        const resolved = resolveMediaUrl(member.avatarUrl);
+        if (resolved) urls.push(resolved);
+      }
+    }
+    if (urls.length > 0) void preloadAllAsBlob(urls);
+  }, [voiceHeroMembers]);
 
   /* --- Mobile keyboard: keep composer flush with keyboard top --- */
   useEffect(() => {
@@ -534,7 +548,7 @@ function TextChannelView({ channel, minimal = false, showComposer = true, showVo
                           onClick={() => onOpenProfile?.(member.id)}
                           className="relative h-full w-full overflow-hidden rounded-full border border-white/[0.05] bg-[#101521]"
                         >
-                          {member.avatarUrl ? <img src={resolveMediaUrl(member.avatarUrl)} alt={member.displayName} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-[10px] font-black text-white/88">{member.displayName.slice(0, 2).toUpperCase()}</div>}
+                          {member.avatarUrl ? <img src={getCachedUrl(resolveMediaUrl(member.avatarUrl))} alt={member.displayName} loading="lazy" className="h-full w-full object-cover transition-opacity duration-200" /> : <div className="flex h-full w-full items-center justify-center text-[10px] font-black text-white/88">{member.displayName.slice(0, 2).toUpperCase()}</div>}
                         </button>
                       </div>
                       {/* Mic sticker overlapping the border ring */}

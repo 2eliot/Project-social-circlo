@@ -39,7 +39,7 @@ export class AuthController {
       userAgent: req.headers['user-agent'],
     });
     this.auth.setRefreshCookie(res, tokens.refreshToken);
-    return { user: tokens.user, accessToken: tokens.accessToken };
+    return { user: tokens.user, accessToken: tokens.accessToken, refreshToken: tokens.refreshToken };
   }
 
   @Post('login')
@@ -52,19 +52,24 @@ export class AuthController {
       userAgent: req.headers['user-agent'],
     });
     this.auth.setRefreshCookie(res, tokens.refreshToken);
-    return { user: tokens.user, accessToken: tokens.accessToken };
+    return { user: tokens.user, accessToken: tokens.accessToken, refreshToken: tokens.refreshToken };
   }
 
   @Post('refresh')
   @HttpCode(200)
-  async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const token = (req.cookies?.refresh_token as string | undefined) ?? '';
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body() body?: { refreshToken?: string },
+  ) {
+    // Leer refresh token: primero de cookie (navegador/PWA), luego del body (APK nativa)
+    const token = (req.cookies?.refresh_token as string | undefined) ?? body?.refreshToken ?? '';
     const tokens = await this.auth.rotateRefresh(token, {
       ip: req.ip,
       userAgent: req.headers['user-agent'],
     });
     this.auth.setRefreshCookie(res, tokens.refreshToken);
-    return { user: tokens.user, accessToken: tokens.accessToken };
+    return { user: tokens.user, accessToken: tokens.accessToken, refreshToken: tokens.refreshToken };
   }
 
   @Post('logout')

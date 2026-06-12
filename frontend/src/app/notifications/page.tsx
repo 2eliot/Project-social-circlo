@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/store/auth.store';
 import { resolveMediaUrl } from '@/lib/media-url';
+import { useAndroidBackButton } from '@/lib/use-android-back-button';
 
 interface NotificationMetadata {
   conversationId?: string;
@@ -49,6 +50,11 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  /* ── Botón nativo de retroceso Android ── */
+  useAndroidBackButton(true, () => {
+    router.back();
+  });
 
   useEffect(() => {
     if (!hydrated) return;

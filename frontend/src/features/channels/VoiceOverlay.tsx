@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
 import { useVoiceStore } from '@/store/voice.store';
+import { preloadAllAsBlob } from '@/lib/image-cache';
+import { resolveMediaUrl } from '@/lib/media-url';
+import { getActiveSfuClient, setActiveSfuClient } from '@/lib/mediasoup-client';
+import { getSocket } from '@/lib/socket-client';
 
 /**
  * Floating PIP bubble for voice channels.
@@ -17,7 +21,9 @@ export function VoiceOverlay() {
     isJoined,
     isActive,
     isMuted,
+    participants,
     clear: voiceStoreClear,
+    updateParticipant,
   } = useVoiceStore();
 
   // Esquina inferior derecha — siempre visible incluso en móviles con notch.
@@ -78,21 +84,50 @@ export function VoiceOverlay() {
     };
   }, [dragging]);
 
+  // ── Preload participant avatars as blobs so the group page has them cached ──
+  //     when the user navigates back.
+  useEffect(() => {
+    const urls = participants
+      .map((p) => (p.avatarUrl ? resolveMediaUrl(p.avatarUrl) : null))
+      .filter(Boolean) as string[];
+    if (urls.length > 0) void preloadAllAsBlob(urls);
+  }, [participants]);
+
   // ── Handlers ──
   const handleLeave = () => {
-    // Primary: invoke the store callback (works even when group page is unmounted)
-    useVoiceStore.getState().onLeaveRequested?.();
-    // Fallback: also dispatch event for the group page (when mounted)
-    window.dispatchEvent(new CustomEvent('voice:leaveRequested'));
+    const sfu = getActiveSfuClient();
+    if (sfu) {
+      sfu.disconnect().catch(() => undefined);
+      setActiveSfuClient(null);
+    }
     voiceStoreClear();
+    window.dispatchEvent(new CustomEvent('voice:leaveRequested'));
   };
 
   const handleToggleMute = () => {
     // Update store immediately so the bubble UI reflects the change
     const newMuted = !isMuted;
     useVoiceStore.getState().setMuted(newMuted);
-    // Primary: invoke the store callback (works even when group page is unmounted)
-    useVoiceStore.getState().onMicToggled?.(newMuted);
+    // Sync the participant's micMuted in the store so re-entry reads correct state
+    const storeState = useVoiceStore.getState();
+    const selfParticipant = storeState.participants.find((p) => p.isSelf);
+    if (selfParticipant) {
+      storeState.updateParticipant(selfParticipant.id, { micMuted: newMuted });
+    }
+    
+    // Call the SFU client directly
+    const sfu = getActiveSfuClient();
+    if (sfu) {
+      if (newMuted) {
+        sfu.stopMic().catch(console.error);
+      } else {
+        sfu.publishMic().catch(console.error);
+      }
+    }
+
+    // Notify server so other participants see the updated mic state
+    getSocket('/sfu').emit('set_mic_muted', { channelId: activeChannelId, muted: newMuted });
+    
     // Fallback: also dispatch event for the group page (when mounted)
     window.dispatchEvent(new CustomEvent('voice:toggleMute', { detail: { muted: newMuted } }));
   };

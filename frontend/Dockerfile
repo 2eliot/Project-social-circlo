@@ -1,28 +1,19 @@
-FROM node:22-bullseye AS deps
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
+# ── Dockerfile para servir el export estático (PWA) ──
+# NOTA: Para la APK usar build local: npm run build:cap  → genera out/ + cap sync
 
 FROM node:22-bullseye AS build
 WORKDIR /app
-ARG NEXT_PUBLIC_API_URL
-ARG NEXT_PUBLIC_WS_URL
+ARG NEXT_PUBLIC_API_URL=https://socialcircleinfo.cloud/api/v1
+ARG NEXT_PUBLIC_WS_URL=https://socialcircleinfo.cloud
 ENV NODE_ENV=production
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL}
-COPY --from=deps /app/node_modules ./node_modules
+COPY package*.json ./
+RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM node:22-bullseye-slim AS runtime
-WORKDIR /app
-ENV NODE_ENV=production
-ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-ENV NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL}
-COPY --from=build /app/package*.json ./
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/.next ./.next
-COPY --from=build /app/public ./public
-COPY --from=build /app/scripts ./scripts
-EXPOSE 3000
-CMD ["npm", "start"]
+FROM nginx:alpine AS runtime
+COPY --from=build /app/out /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]

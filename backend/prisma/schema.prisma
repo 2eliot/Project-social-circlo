@@ -51,6 +51,7 @@ model User {
   pushSubscriptions                                          PushSubscription[]
   mutedUsers                                                 UserMutedSetting[]     @relation("Muter")
   mutedBy                                                    UserMutedSetting[]     @relation("Muted")
+  voiceParticipants                                          VoiceParticipant[]
 
   @@index([globalRole])
   @@map("users")
@@ -149,6 +150,7 @@ model Channel {
   createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   group       Group       @relation(fields: [groupId], references: [id], onDelete: Cascade)
   messages    Message[]
+  voiceParticipants VoiceParticipant[]
 
   @@unique([groupId, name])
   @@index([groupId])
@@ -176,6 +178,23 @@ model Message {
   @@index([channelId, createdAt])
   @@index([authorId])
   @@map("messages")
+}
+
+model VoiceParticipant {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  channelId String   @map("channel_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  micMuted  Boolean  @default(true) @map("mic_muted")
+  joinedAt  DateTime @default(now()) @map("joined_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@index([channelId])
+  @@index([userId])
+  @@map("voice_participants")
 }
 
 model UserBlock {

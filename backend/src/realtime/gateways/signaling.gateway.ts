@@ -95,6 +95,10 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
           // If the user hasn't reconnected as a speaker by now, notify others
           const isStillSpeaking = await this.isUserSpeaking(channelId!, userId);
           if (!isStillSpeaking) {
+            // Remove participant from database when grace period expires and user hasn't reconnected
+            await this.prisma.voiceParticipant.deleteMany({
+              where: { channelId: channelId!, userId },
+            });
             socket.to(`voice:${channelId}`).emit('peer_left', { userId });
             await this.emitVoiceState(channelId!);
           }
@@ -215,6 +219,14 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
     socket.data.voiceListenOnly = false;
     socket.data.micMuted = true;
     await socket.join(`voice:${body.channelId}`);
+    
+    // Persist participant to database (survives page navigation)
+    await this.prisma.voiceParticipant.upsert({
+      where: { voice_participants_channel_id_user_id_key: { channelId: body.channelId, userId: socket.data.user.id } },
+      update: { updatedAt: new Date() },
+      create: { channelId: body.channelId, userId: socket.data.user.id, micMuted: true },
+    });
+    
     this.cancelDisconnectTimer(socket.data.user.id, body.channelId);
     socket.to(`voice:${body.channelId}`).emit('peer_joined', { userId: socket.data.user.id });
     await this.emitVoiceState(body.channelId);
@@ -280,6 +292,13 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
     }
 
     socket.data.micMuted = body.muted;
+    
+    // Persist mic muted state to database
+    await this.prisma.voiceParticipant.updateMany({
+      where: { channelId, userId: socket.data.user.id },
+      data: { micMuted: body.muted },
+    });
+    
     await this.emitVoiceState(channelId);
     return { ok: true };
   }
@@ -300,6 +319,12 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
       socket.data.voiceListenOnly = false;
       socket.data.micMuted = true;
     }
+    
+    // Remove participant from database when leaving
+    await this.prisma.voiceParticipant.deleteMany({
+      where: { channelId, userId: socket.data.user.id },
+    });
+    
     await this.emitVoiceState(channelId);
     return { ok: true };
   }
@@ -450,44 +475,41 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
   }
 
   private async buildVoiceState(channelId: string) {
-    const participantSockets = (await this.server.in(`voice:${channelId}`).fetchSockets()) as unknown as SignalingSocket[];
-    const uniqueParticipants = new Map<string, { id: string; micMuted: boolean }>();
-    for (const participantSocket of participantSockets) {
-      // Exclude listen-only sockets — they hear but don't participate as speakers.
-      if (participantSocket.data.voiceListenOnly) continue;
-      uniqueParticipants.set(participantSocket.data.user.id, {
-        id: participantSocket.data.user.id,
-        micMuted: participantSocket.data.micMuted,
-      });
-    }
+    // Read participants from database (persisted across page navigation)
+    const dbParticipants = await this.prisma.voiceParticipant.findMany({
+      where: { channelId },
+      include: {
+        user: {
+          select: { id: true, displayName: true, avatarUrl: true },
+        },
+      },
+    });
 
-    const participantIds = Array.from(uniqueParticipants.keys());
+    const participants = dbParticipants.map((p) => ({
+      id: p.user.id,
+      displayName: p.user.displayName,
+      avatarUrl: p.user.avatarUrl,
+      micMuted: p.micMuted,
+    }));
+
+    // Read pending requests from memory (temporary state)
     const pendingIds = Array.from(this.getSet(this.pendingVoiceRequests, channelId));
-    const allUserIds = Array.from(new Set([...participantIds, ...pendingIds]));
-    const users = allUserIds.length
+    const pendingUsers = pendingIds.length
       ? await this.prisma.user.findMany({
-          where: { id: { in: allUserIds } },
+          where: { id: { in: pendingIds } },
           select: { id: true, displayName: true, avatarUrl: true },
         })
       : [];
-    const userMap = new Map(users.map((item) => [item.id, item]));
+
+    // Count active sockets (for UI metrics)
+    const participantSockets = (await this.server.in(`voice:${channelId}`).fetchSockets()) as unknown as SignalingSocket[];
+    const totalActive = Array.from(new Set(participantSockets.map((s) => s.data.user.id))).length;
 
     return {
       channelId,
-      participants: participantIds
-        .map((id) => {
-          const user = userMap.get(id);
-          if (!user) return null;
-          return {
-            ...user,
-            micMuted: uniqueParticipants.get(id)?.micMuted ?? true,
-          };
-        })
-        .filter(Boolean),
-      pendingRequests: pendingIds
-        .map((id) => userMap.get(id))
-        .filter(Boolean),
-      totalActive: Array.from(new Set(participantSockets.map((s) => s.data.user.id))).length,
+      participants,
+      pendingRequests: pendingUsers,
+      totalActive,
     };
   }
 

@@ -2,6 +2,10 @@ import { Device } from 'mediasoup-client';
 import type { Transport, Consumer, Producer } from 'mediasoup-client/types';
 import { getSocket } from './socket-client';
 
+let globalSfuClient: SfuClient | null = null;
+export function getActiveSfuClient() { return globalSfuClient; }
+export function setActiveSfuClient(client: SfuClient | null) { globalSfuClient = client; }
+
 interface ProducerInfo {
   producerId: string;
   userId: string;
@@ -18,6 +22,12 @@ export class SfuClient {
   private onNewProducerHandler?: (info: ProducerInfo) => void;
   private onProducerClosedHandler?: (payload: { producerId: string }) => void;
   private listenOnly = false;
+  private _speakingDetectionStarted = false;
+  /** Cached microphone stream — kept alive for the entire voice session.
+   *  On Capacitor (Android WebView), releasing and re-acquiring getUserMedia
+   *  after track.stop() silently fails. We keep the stream alive and toggle
+   *  track.enabled instead. */
+  private micStream?: MediaStream;
 
   // ── Voice activity detection ──
   private audioContext?: AudioContext;
@@ -85,58 +95,74 @@ export class SfuClient {
   /** Start publishing mic audio. Safe to call multiple times (no-op if already publishing). */
   async publishMic() {
     if (this.listenOnly || !this.sendTransport) throw new Error('SfuClient is listen-only');
-    if (this.audioProducer && !this.audioProducer.closed) return;
-    console.log('[SfuClient] publishMic() requesting getUserMedia');
 
-    // echoCancellation evita que el micrófono capte el audio de los altavoces,
-    // previniendo eco. noiseSuppression y autoGainControl mejoran calidad de voz.
-    // Usamos { exact: true } en los constraints avanzados para que el navegador
-    // FALLE si no puede activar AEC, en vez de silenciosamente ignorarlo.
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: { exact: true },
-        channelCount: { ideal: 1 },     // Mono — crítico para AEC en móviles
-        sampleRate: { ideal: 48000 },   // 48kHz para mejor resolución del AEC
-        // Desactivar procesamiento nativo del navegador — Opus lo hace mejor y con menos delay.
-        // autoGainControl sube el ruido de fondo cuando hay silencio, colando ruido ambiental en la sala.
-        noiseSuppression: { ideal: false },
-        autoGainControl: { ideal: false },
-        // @ts-expect-error — latency existe en Chromium pero no en el tipo de TS
-        latency: { ideal: 0.005, max: 0.02 }, // Presiona al navegador a priorizar tiempo real
-      },
-      video: false,
-    });
-    const track = stream.getAudioTracks()[0];
+    // Already have a live producer — just unmute the track
+    if (this.audioProducer && !this.audioProducer.closed) {
+      const track = this.audioProducer.track;
+      if (track) {
+        track.enabled = true;
+        console.log('[SfuClient] publishMic() unmuted existing track');
+      }
+      return;
+    }
+
+    // First time or after producer was closed — get mic and create producer
+    if (!this.micStream) {
+      console.log('[SfuClient] publishMic() requesting getUserMedia (first time)');
+      // echoCancellation evita que el micrófono capte el audio de los altavoces,
+      // previniendo eco. noiseSuppression y autoGainControl mejoran calidad de voz.
+      this.micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: { exact: true },
+          channelCount: { ideal: 1 },
+          sampleRate: { ideal: 48000 },
+          noiseSuppression: { ideal: false },
+          autoGainControl: { ideal: false },
+          // @ts-expect-error — latency existe en Chromium pero no en el tipo de TS
+          latency: { ideal: 0.005, max: 0.02 },
+        },
+        video: false,
+      });
+    }
+
+    const track = this.micStream.getAudioTracks()[0];
+    track.enabled = true;
     console.log('[SfuClient] got mic track:', track.label, 'enabled=', track.enabled);
+
     this.audioProducer = await this.sendTransport.produce({
       track,
       codecOptions: {
         opusStereo: false,
         opusDtx: true,
-        opusFec: true,               // Forward Error Correction for packet loss resilience
-        opusMaxAverageBitrate: 32000, // 32kbps — calidad suficiente para que el AEC tenga buena referencia
-        opusPtime: 20,               // 20ms frames for lower latency
+        opusFec: true,
+        opusMaxAverageBitrate: 32000,
+        opusPtime: 20,
       },
     });
     console.log('[SfuClient] producer created id=', this.audioProducer.id);
     this.audioProducer.on('transportclose', () => { this.audioProducer = undefined; });
 
-    // Start voice activity detection — siempre cerramos el contexto anterior
-    // para evitar que un AudioContext suspendido interfiera con el AEC del navegador
-    // (bugs conocidos en Chrome Android y Safari).
-    this.startSpeakingDetection(stream);
+    // Start voice activity detection (only when we first acquire the mic)
+    if (!this._speakingDetectionStarted) {
+      this._speakingDetectionStarted = true;
+      this.startSpeakingDetection(this.micStream);
+    }
   }
 
-  /** Stop publishing mic audio. Cierra el AudioContext por completo para
-   *  evitar que un contexto suspendido interfere con el AEC del navegador
-   *  al volver a publicar (bugs conocidos en Chrome Android y Safari).
-   *  El overhead de recrear el contexto es irrelevante (~1ms). */
+  /** Stop publishing mic audio. Keeps the producer and mic stream alive —
+   *  only disables the audio track so no audio is sent.
+   *  On Capacitor (Android WebView), calling track.stop() + getUserMedia()
+   *  again silently fails, so we never release the mic — we just mute it. */
   async stopMic() {
     if (!this.audioProducer || this.audioProducer.closed) return;
-    this.audioProducer.close();
-    this.audioProducer = undefined;
-    // Cerrar SIEMPRE en lugar de suspender — evita interferencias con AEC
-    this.stopSpeakingDetection();
+
+    const track = this.audioProducer.track;
+    if (track) {
+      track.enabled = false;
+      console.log('[SfuClient] stopMic() disabled track');
+    }
+    // Do NOT stop the track, close producer, or stop speaking detection.
+    // The mic stays captured but sends silence.
   }
 
   /** Leave the voice channel and clean up all resources. */
@@ -145,7 +171,18 @@ export class SfuClient {
     if (this.onNewProducerHandler) socket.off('new_producer', this.onNewProducerHandler);
     if (this.onProducerClosedHandler) socket.off('producer_closed', this.onProducerClosedHandler);
 
-    await this.stopMic();
+    // Fully stop mic and release hardware
+    if (this.audioProducer && !this.audioProducer.closed) {
+      const track = this.audioProducer.track;
+      if (track) track.stop();
+      this.audioProducer.close();
+      this.audioProducer = undefined;
+    }
+    if (this.micStream) {
+      this.micStream.getTracks().forEach((t) => t.stop());
+      this.micStream = undefined;
+    }
+    this._speakingDetectionStarted = false;
     this.stopSpeakingDetection();
     for (const producerId of Array.from(this.consumers.keys())) {
       this.cleanupConsumer(producerId);

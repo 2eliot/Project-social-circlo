@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { api, getAccessToken, setAccessToken, restoreAccessToken } from '@/lib/api-client';
+import { api, getAccessToken, setAccessToken, restoreAccessToken, setRefreshToken, restoreRefreshToken } from '@/lib/api-client';
 import { appStorage } from '@/lib/storage';
 
 export interface SessionUser {
@@ -67,12 +67,13 @@ export const useAuth = create<AuthState>((set, get) => ({
   async login(email, password) {
     set({ loading: true });
     try {
-      const res = await api<{ user: SessionUser; accessToken: string }>('/auth/login', {
+      const res = await api<{ user: SessionUser; accessToken: string; refreshToken: string }>('/auth/login', {
         method: 'POST',
         body: { email, password },
         skipAuth: true,
       });
       setAccessToken(res.accessToken);
+      if (res.refreshToken) setRefreshToken(res.refreshToken);
       await persistSessionUser(res.user);
       set({ user: res.user });
     } finally {
@@ -82,11 +83,12 @@ export const useAuth = create<AuthState>((set, get) => ({
   async register(input) {
     set({ loading: true });
     try {
-      const res = await api<{ user: SessionUser & { invitationCode?: string }; accessToken: string }>(
+      const res = await api<{ user: SessionUser & { invitationCode?: string }; accessToken: string; refreshToken: string }>(
         '/auth/register',
         { method: 'POST', body: input, skipAuth: true },
       );
       setAccessToken(res.accessToken);
+      if (res.refreshToken) setRefreshToken(res.refreshToken);
       await persistSessionUser(res.user);
       set({ user: res.user });
       return { invitationCode: (res.user as any).invitationCode ?? '' };
@@ -104,6 +106,7 @@ export const useAuth = create<AuthState>((set, get) => ({
     // hydrate() reads stale tokens → auto-login with broken session.
     await Promise.all([
       setAccessToken(null),
+      setRefreshToken(null),
       persistSessionUser(null),
     ]);
     set({ user: null });
@@ -132,6 +135,7 @@ export const useAuth = create<AuthState>((set, get) => ({
         // Each Capacitor Preferences call races against a 3s timeout in storage.ts,
         // so these will throw instead of hanging indefinitely.
         const storedToken = await restoreAccessToken();
+        const storedRefresh = await restoreRefreshToken();
         const storedUser = await readSessionUser();
 
         // If we have a stored user, set it immediately regardless of token state.
@@ -140,13 +144,14 @@ export const useAuth = create<AuthState>((set, get) => ({
         if (storedUser) {
           set({ user: storedUser, hydrated: true });
           // If token is missing, try to get one in background (no big deal if fails)
-          if (!storedToken) {
+          if (!storedToken && storedRefresh) {
             try {
-              const res = await api<{ user: SessionUser; accessToken: string }>('/auth/refresh', {
+              const res = await api<{ user: SessionUser; accessToken: string; refreshToken: string }>('/auth/refresh', {
                 method: 'POST',
                 skipAuth: true,
               });
               setAccessToken(res.accessToken);
+              if (res.refreshToken) setRefreshToken(res.refreshToken);
               await persistSessionUser(res.user);
             } catch {
               // Refresh failed, but user stays logged in.
@@ -156,17 +161,20 @@ export const useAuth = create<AuthState>((set, get) => ({
           return;
         }
 
-        // No stored user at all — try refresh cookie to see if session exists
-        try {
-          const res = await api<{ user: SessionUser; accessToken: string }>('/auth/refresh', {
-            method: 'POST',
-            skipAuth: true,
-          });
-          setAccessToken(res.accessToken);
-          await persistSessionUser(res.user);
-          set({ user: res.user });
-        } catch {
-          // No session — stay logged out
+        // No stored user at all — try refresh with stored token to see if session exists
+        if (storedRefresh) {
+          try {
+            const res = await api<{ user: SessionUser; accessToken: string; refreshToken: string }>('/auth/refresh', {
+              method: 'POST',
+              skipAuth: true,
+            });
+            setAccessToken(res.accessToken);
+            if (res.refreshToken) setRefreshToken(res.refreshToken);
+            await persistSessionUser(res.user);
+            set({ user: res.user });
+          } catch {
+            // No session — stay logged out
+          }
         }
       } catch (err) {
         // Absolute last resort: something catastrophic happened (storage timeout, etc.)
