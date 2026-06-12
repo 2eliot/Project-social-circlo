@@ -222,7 +222,7 @@ export class SignalingGateway implements OnGatewayConnection, OnGatewayDisconnec
     
     // Persist participant to database (survives page navigation)
     await this.prisma.voiceParticipant.upsert({
-      where: { voice_participants_channel_id_user_id_key: { channelId: body.channelId, userId: socket.data.user.id } },
+      where: { channelId_userId: { channelId: body.channelId, userId: socket.data.user.id } },
       update: { updatedAt: new Date() },
       create: { channelId: body.channelId, userId: socket.data.user.id, micMuted: true },
     });
