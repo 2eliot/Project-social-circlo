@@ -63,37 +63,13 @@ export default function GroupPage() {
   const [group, setGroup] = useState<GroupDetail | null>(null);
   const [channelToggleBusy, setChannelToggleBusy] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [voiceParticipants, setVoiceParticipants] = useState<VoiceStateUser[]>(() => {
-    const s = useVoiceStore.getState();
-    if (s.isActive && s.activeGroupId === groupId && s.participants.length > 0) {
-      // Kick off blob preloading immediately so images are cached before paint
-      const urls = s.participants
-        .map((p: VoiceParticipant) => (p.avatarUrl ? resolveMediaUrl(p.avatarUrl) : null))
-        .filter(Boolean) as string[];
-      if (urls.length > 0) void preloadAllAsBlob(urls);
-      return s.participants.map((p: VoiceParticipant) => ({
-        id: p.id,
-        displayName: p.displayName,
-        avatarUrl: p.avatarUrl,
-        micMuted: p.micMuted,
-        isSpeaking: p.isSpeaking,
-      }));
-    }
-    return [];
-  });
+  const [voiceParticipants, setVoiceParticipants] = useState<VoiceStateUser[]>([]);
   const [pendingVoiceRequests, setPendingVoiceRequests] = useState<VoiceStateUser[]>([]);
   const [voiceTotalActive, setVoiceTotalActive] = useState(0);
   const [voiceRequestPending, setVoiceRequestPending] = useState(false);
   const [voiceJoinBusy, setVoiceJoinBusy] = useState(false);
-  const [localMicMuted, setLocalMicMuted] = useState(() => {
-    const s = useVoiceStore.getState();
-    if (s.isActive && s.activeGroupId === groupId) return s.isMuted;
-    return true;
-  });
-  const [voiceJoined, setVoiceJoined] = useState(() => {
-    const s = useVoiceStore.getState();
-    return s.isActive && s.activeGroupId === groupId ? s.isJoined : false;
-  });
+  const [localMicMuted, setLocalMicMuted] = useState(true);
+  const [voiceJoined, setVoiceJoined] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [roleChangeBusy, setRoleChangeBusy] = useState<string | null>(null);
   const [memberModerationBusy, setMemberModerationBusy] = useState<string | null>(null);
@@ -114,7 +90,6 @@ export default function GroupPage() {
   const [destructBusy, setDestructBusy] = useState(false);
   const [groupForm, setGroupForm] = useState({ name: '', description: '', privacy: 'PRIVATE' as GroupDetail['privacy'], iconUrl: null as string | null, bannerUrl: null as string | null });
   const iconInputRef = useRef<HTMLInputElement | null>(null);
-  const voiceRestoredRef = useRef(false);
   // Stable refs so the mic callback in the Zustand store always reads the latest values
   const micChangeRef = useRef(handleMicMutedChange);
   micChangeRef.current = handleMicMutedChange;
@@ -268,27 +243,6 @@ export default function GroupPage() {
 
   const currentGroup = group;
   const voiceChannel = currentGroup?.channels.find((channel) => channel.type === 'VOICE' || channel.type === 'VIDEO') ?? null;
-
-  // ΓöÇΓöÇ Persist voice speaker state to sessionStorage so a full page refresh
-  //     (F5) can restore the user as speaker instead of reconnecting as
-  //     listen-only (which would hide the avatar in the voice container).
-  useEffect(() => {
-    const onBeforeUnload = () => {
-      if (voiceChannel?.id && voiceJoined) {
-        try {
-          sessionStorage.setItem('voice_restore', JSON.stringify({
-            channelId: voiceChannel.id,
-            groupId,
-            isSpeaker: true,
-            isMuted: localMicMuted,
-            timestamp: Date.now(),
-          }));
-        } catch { /* quota exceeded ΓÇö ignore */ }
-      }
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, [voiceChannel?.id, voiceJoined, localMicMuted, groupId]);
 
   const textChannel = currentGroup?.channels.find((channel) => channel.type === 'TEXT') ?? null;
   const currentMembership = currentGroup?.members.find((member) => member.userId === user?.id) ?? null;
@@ -464,44 +418,11 @@ export default function GroupPage() {
     };
   }, [localMicMuted, user?.id, voiceChannel?.id, voiceJoined]);
 
-  // ΓöÇΓöÇ Sync voice state to global store (handles HMR/remount restore internally) ΓöÇΓöÇ
+  // ── Sync voice state to global store so VoiceOverlay bubble stays updated ──
   useEffect(() => {
     if (!voiceChannel?.isEnabled) return;
 
-    // On first run after mount/remount, check sessionStorage for a pre-refresh
-    // voice state snapshot. On full page refresh (F5) the Zustand store resets
-    // but sessionStorage survives, so we can restore the speaker status.
-    if (!voiceRestoredRef.current) {
-      voiceRestoredRef.current = true;
-      // ΓöÇΓöÇ Full page refresh restore (F5) ΓöÇΓöÇ
-      try {
-        const stored = sessionStorage.getItem('voice_restore');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          sessionStorage.removeItem('voice_restore');
-          if (parsed.groupId === groupId && parsed.isSpeaker && Date.now() - parsed.timestamp < 15_000) {
-            // User was a speaker in this group before the refresh.
-            // Restore mute state and flag for auto-upgrade after listen-only
-            // reconnects ΓÇö same path as HMR restore.
-            setLocalMicMuted(parsed.isMuted ?? true);
-            voiceNeedsUpgradeRef.current = true;
-            return; // re-render; listen-only effect will handle the upgrade
-          }
-        }
-      } catch { /* corrupt JSON ΓÇö ignore */ }
-      // ΓöÇΓöÇ HMR / remount restore (Zustand store survived) ΓöÇΓöÇ
-      const storeState = useVoiceStore.getState();
-      if (storeState.isActive && storeState.activeGroupId === groupId) {
-        // HMR / remount: the Zustand store survived but the SFU connection did not.
-        // Restore UI state and flag for auto-upgrade after listen-only reconnects.
-        setLocalMicMuted(storeState.isMuted);
-        setVoiceJoined(storeState.isJoined);
-        if (storeState.isJoined) {
-          voiceNeedsUpgradeRef.current = true;
-        }
-        return; // re-render will re-run this effect with correct values
-      }
-    }
+    // voice state is now purely server-driven (DB via socket)
 
     voiceStoreSetActive(voiceChannel.id, currentGroup?.id ?? '', currentGroup?.name ?? '');
     voiceStoreSetIsActive(true);
