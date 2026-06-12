@@ -82,7 +82,7 @@ services:
     environment:
       BACKEND_INTERNAL_URL: http://backend:4000
     ports:
-      - "${FRONTEND_PORT:-3001}:3000"
+      - "${FRONTEND_PORT:-3001}:80"
 
 volumes:
   pgdata:
